@@ -73,6 +73,7 @@ type Model struct {
 	width           int
 	height          int
 	messageCount    int
+	lastLimit       int
 	colorMap        map[string]lipgloss.Color
 	suggestions     []suggestionItem
 	suggestionIndex int
@@ -153,6 +154,7 @@ func NewModel(opts Options) (*Model, error) {
 		lastCursor:      lastCursor,
 		status:          "",
 		messageCount:    count,
+		lastLimit:       opts.Last,
 		colorMap:        colorMap,
 	}
 
@@ -175,6 +177,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.handleSuggestionKeys(msg); handled {
 			return m, cmd
 		}
+		if msg.Type == tea.KeyUp && m.input.Value() == "" {
+			if m.prefillEditCommand() {
+				return m, nil
+			}
+		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
@@ -187,8 +194,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if value == "" {
 				return m, nil
 			}
-			if value == "/quit" || value == "/exit" {
-				return m, tea.Quit
+			if handled, cmd := m.handleSlashCommand(value); handled {
+				return m, cmd
 			}
 			return m, m.handleSubmit(value)
 		case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
@@ -333,6 +340,14 @@ func (m *Model) refreshSuggestions() {
 	}
 	m.lastInputValue = value
 	m.lastInputPos = pos
+
+	if strings.HasPrefix(strings.TrimSpace(value), "/") {
+		if len(m.suggestions) > 0 {
+			m.clearSuggestions()
+			m.resize()
+		}
+		return
+	}
 
 	kind, start, prefix := findSuggestionToken(value, pos)
 	if kind == suggestionNone {
