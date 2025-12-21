@@ -37,6 +37,7 @@ func NewRootCmd(version string) *cobra.Command {
 		NewNewCmd(),
 		NewPostCmd(),
 		NewGetCmd(),
+		NewChatCmd(),
 	)
 
 	return cmd
