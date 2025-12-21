@@ -40,6 +40,9 @@ var (
 	statusColor = lipgloss.Color("241")
 	metaColor   = lipgloss.Color("242")
 	inputBg     = lipgloss.Color("236")
+	caretColor  = lipgloss.Color("250")
+	textColor   = lipgloss.Color("252")
+	blurText    = lipgloss.Color("246")
 )
 
 // Options configure chat.
@@ -140,13 +143,18 @@ func NewModel(opts Options) (*Model, error) {
 	}
 
 	input := textarea.New()
-	input.Prompt = ""
+	input.Prompt = "> "
 	input.CharLimit = 0
 	input.ShowLineNumbers = false
 	input.MaxHeight = inputMaxHeight
-	input.FocusedStyle.Base = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(inputBg)
+	input.Cursor.SetChar("▍")
+	input.FocusedStyle.Base = lipgloss.NewStyle().Foreground(textColor).Background(inputBg)
+	input.FocusedStyle.Text = lipgloss.NewStyle().Foreground(textColor).Background(inputBg)
+	input.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(caretColor).Background(inputBg)
 	input.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(inputBg)
-	input.BlurredStyle.Base = lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Background(inputBg)
+	input.BlurredStyle.Base = lipgloss.NewStyle().Foreground(blurText).Background(inputBg)
+	input.BlurredStyle.Text = lipgloss.NewStyle().Foreground(blurText).Background(inputBg)
+	input.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(caretColor).Background(inputBg)
 	input.BlurredStyle.CursorLine = lipgloss.NewStyle().Background(inputBg)
 	input.Focus()
 
@@ -316,16 +324,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	statusLine := lipgloss.NewStyle().Foreground(statusColor).Render(" ")
-	if m.status != "" {
-		statusLine = lipgloss.NewStyle().Foreground(statusColor).Render(m.status)
-	}
+	statusLine := lipgloss.NewStyle().Foreground(statusColor).Render(m.statusLine())
 
 	lines := []string{m.viewport.View()}
 	if suggestions := m.renderSuggestions(); suggestions != "" {
 		lines = append(lines, suggestions)
 	}
-	lines = append(lines, statusLine, m.renderInput())
+	lines = append(lines, m.renderInput(), statusLine)
 
 	main := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	if !m.sidebarOpen {
@@ -343,6 +348,14 @@ func (m *Model) renderInput() string {
 		style = style.Width(width)
 	}
 	return style.Render(content)
+}
+
+func (m *Model) statusLine() string {
+	channel := m.channelLabel()
+	if m.status == "" {
+		return fmt.Sprintf("#%s", channel)
+	}
+	return fmt.Sprintf("%s · #%s", m.status, channel)
 }
 
 func (m *Model) handleSubmit(text string) tea.Cmd {
@@ -557,6 +570,23 @@ func (m *Model) renderSidebar() string {
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(metaColor).
 		Render(content)
+}
+
+func (m *Model) channelLabel() string {
+	for _, entry := range m.channels {
+		if samePath(entry.Path, m.projectRoot) {
+			if entry.Name != "" {
+				return entry.Name
+			}
+			if entry.ID != "" {
+				return entry.ID
+			}
+		}
+	}
+	if m.projectName != "" {
+		return m.projectName
+	}
+	return "channel"
 }
 
 func (m *Model) sidebarWidth() int {
@@ -951,7 +981,7 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
 		body = ansi.Wrap(body, width, "")
 	}
 	bodyLine := lipgloss.NewStyle().Foreground(color).Render(body)
-	meta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(fmt.Sprintf("#%s %s", m.projectName, core.GetGUIDPrefix(msg.ID, prefixLength)))
+	meta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(fmt.Sprintf("#%s", core.GetGUIDPrefix(msg.ID, prefixLength)))
 
 	lines := []string{}
 	if msg.ReplyTo != nil {
