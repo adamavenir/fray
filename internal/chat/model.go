@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const pollInterval = time.Second
@@ -75,11 +76,13 @@ type Model struct {
 	input           textinput.Model
 	messages        []types.Message
 	lastCursor      *types.MessageCursor
+	oldestCursor    *types.MessageCursor
 	status          string
 	width           int
 	height          int
 	messageCount    int
 	lastLimit       int
+	hasMore         bool
 	colorMap        map[string]lipgloss.Color
 	suggestions     []suggestionItem
 	suggestionIndex int
@@ -140,21 +143,27 @@ func NewModel(opts Options) (*Model, error) {
 
 	vp := viewport.New(0, 0)
 
-	messages, err := db.GetMessages(opts.DB, &types.MessageQueryOptions{
+	rawMessages, err := db.GetMessages(opts.DB, &types.MessageQueryOptions{
 		Limit:           opts.Last,
 		IncludeArchived: opts.IncludeArchived,
 	})
 	if err != nil {
 		return nil, err
 	}
+	messages := filterUpdates(rawMessages, opts.ShowUpdates)
 
 	var lastCursor *types.MessageCursor
 	if len(messages) > 0 {
 		last := messages[len(messages)-1]
 		lastCursor = &types.MessageCursor{GUID: last.ID, TS: last.TS}
 	}
+	var oldestCursor *types.MessageCursor
+	if len(rawMessages) > 0 {
+		first := rawMessages[0]
+		oldestCursor = &types.MessageCursor{GUID: first.ID, TS: first.TS}
+	}
 
-	count, err := countMessages(opts.DB)
+	count, err := countMessages(opts.DB, opts.IncludeArchived)
 	if err != nil {
 		return nil, err
 	}
@@ -169,11 +178,13 @@ func NewModel(opts Options) (*Model, error) {
 		includeArchived: opts.IncludeArchived,
 		viewport:        vp,
 		input:           input,
-		messages:        filterUpdates(messages, opts.ShowUpdates),
+		messages:        messages,
 		lastCursor:      lastCursor,
+		oldestCursor:    oldestCursor,
 		status:          "",
 		messageCount:    count,
 		lastLimit:       opts.Last,
+		hasMore:         len(rawMessages) < count,
 		colorMap:        colorMap,
 		channels:        channels,
 		channelIndex:    channelIndex,
@@ -234,6 +245,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
+			if (msg.Type == tea.KeyPgUp || msg.Type == tea.KeyHome) && m.viewport.AtTop() {
+				m.loadOlderMessages()
+			}
 			return m, cmd
 		}
 		var cmd tea.Cmd
@@ -766,6 +780,48 @@ func (m *Model) refreshViewport(scrollToBottom bool) {
 	}
 }
 
+func (m *Model) loadOlderMessages() {
+	if !m.hasMore || m.oldestCursor == nil {
+		return
+	}
+
+	options := &types.MessageQueryOptions{
+		Before:          m.oldestCursor,
+		Limit:           m.lastLimit,
+		IncludeArchived: m.includeArchived,
+	}
+
+	prevHeight := lipgloss.Height(m.renderMessages())
+	rawMessages, err := db.GetMessages(m.db, options)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	if len(rawMessages) == 0 {
+		m.hasMore = false
+		return
+	}
+
+	first := rawMessages[0]
+	m.oldestCursor = &types.MessageCursor{GUID: first.ID, TS: first.TS}
+	if len(rawMessages) < m.lastLimit {
+		m.hasMore = false
+	}
+
+	older := filterUpdates(rawMessages, m.showUpdates)
+	if len(older) == 0 {
+		return
+	}
+
+	m.messages = append(older, m.messages...)
+	m.refreshViewport(false)
+	newHeight := lipgloss.Height(m.renderMessages())
+	delta := newHeight - prevHeight
+	if delta > 0 {
+		m.viewport.SetYOffset(m.viewport.YOffset + delta)
+	}
+}
+
 func (m *Model) renderMessages() string {
 	prefixLength := core.GetDisplayPrefixLength(m.messageCount)
 	chunks := make([]string, 0, len(m.messages))
@@ -801,6 +857,10 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
 
 	sender := renderByline(msg.FromAgent, color)
 	body := highlightCodeBlocks(msg.Body)
+	width := m.mainWidth()
+	if width > 0 {
+		body = ansi.Wrap(body, width, "")
+	}
 	bodyLine := lipgloss.NewStyle().Foreground(color).Render(body)
 	meta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(fmt.Sprintf("#%s %s", m.projectName, core.GetGUIDPrefix(msg.ID, prefixLength)))
 
@@ -992,10 +1052,12 @@ func filterUpdates(messages []types.Message, showUpdates bool) []types.Message {
 	return filtered
 }
 
-func countMessages(dbConn *sql.DB) (int, error) {
-	row := dbConn.QueryRow(`
-		SELECT COUNT(*) FROM mm_messages WHERE archived_at IS NULL
-	`)
+func countMessages(dbConn *sql.DB, includeArchived bool) (int, error) {
+	query := "SELECT COUNT(*) FROM mm_messages"
+	if !includeArchived {
+		query += " WHERE archived_at IS NULL"
+	}
+	row := dbConn.QueryRow(query)
 	var count int
 	if err := row.Scan(&count); err != nil {
 		return 0, err

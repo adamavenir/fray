@@ -253,7 +253,7 @@ func (m *Model) applyMessageUpdate(msg types.Message) {
 }
 
 func (m *Model) refreshMessageCount() error {
-	count, err := countMessages(m.db)
+	count, err := countMessages(m.db, m.includeArchived)
 	if err != nil {
 		return err
 	}
@@ -262,13 +262,14 @@ func (m *Model) refreshMessageCount() error {
 }
 
 func (m *Model) reloadMessages() error {
-	messages, err := db.GetMessages(m.db, &types.MessageQueryOptions{
+	rawMessages, err := db.GetMessages(m.db, &types.MessageQueryOptions{
 		Limit:           m.lastLimit,
 		IncludeArchived: m.includeArchived,
 	})
 	if err != nil {
 		return err
 	}
+	messages := filterUpdates(rawMessages, m.showUpdates)
 
 	var lastCursor *types.MessageCursor
 	if len(messages) > 0 {
@@ -276,7 +277,13 @@ func (m *Model) reloadMessages() error {
 		lastCursor = &types.MessageCursor{GUID: last.ID, TS: last.TS}
 	}
 
-	count, err := countMessages(m.db)
+	var oldestCursor *types.MessageCursor
+	if len(rawMessages) > 0 {
+		first := rawMessages[0]
+		oldestCursor = &types.MessageCursor{GUID: first.ID, TS: first.TS}
+	}
+
+	count, err := countMessages(m.db, m.includeArchived)
 	if err != nil {
 		return err
 	}
@@ -286,9 +293,11 @@ func (m *Model) reloadMessages() error {
 		return err
 	}
 
-	m.messages = filterUpdates(messages, m.showUpdates)
+	m.messages = messages
 	m.lastCursor = lastCursor
+	m.oldestCursor = oldestCursor
 	m.messageCount = count
+	m.hasMore = len(rawMessages) < count
 	m.colorMap = colorMap
 	m.refreshViewport(true)
 	return nil
