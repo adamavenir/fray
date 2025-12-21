@@ -41,8 +41,8 @@ var (
 	metaColor   = lipgloss.Color("242")
 	inputBg     = lipgloss.Color("236")
 	caretColor  = lipgloss.Color("250")
-	textColor   = lipgloss.Color("252")
-	blurText    = lipgloss.Color("246")
+	textColor   = lipgloss.Color("255")
+	blurText    = lipgloss.Color("248")
 )
 
 // Options configure chat.
@@ -330,7 +330,7 @@ func (m *Model) View() string {
 	if suggestions := m.renderSuggestions(); suggestions != "" {
 		lines = append(lines, suggestions)
 	}
-	lines = append(lines, m.renderInput(), statusLine)
+	lines = append(lines, "", m.renderInput(), statusLine)
 
 	main := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	if !m.sidebarOpen {
@@ -347,7 +347,8 @@ func (m *Model) renderInput() string {
 	if width := m.mainWidth(); width > 0 {
 		style = style.Width(width)
 	}
-	return style.Render(content)
+	blank := style.Render("")
+	return strings.Join([]string{blank, style.Render(content), blank}, "\n")
 }
 
 func (m *Model) statusLine() string {
@@ -1102,12 +1103,13 @@ func (m *Model) resize() {
 		lineCount = inputMaxHeight
 	}
 	m.input.SetHeight(lineCount)
-	inputHeight := m.input.Height()
+	inputHeight := m.input.Height() + 2
 
 	statusHeight := 1
 	suggestionHeight := m.suggestionHeight()
+	marginHeight := 1
 	m.viewport.Width = width
-	m.viewport.Height = m.height - inputHeight - statusHeight - suggestionHeight
+	m.viewport.Height = m.height - inputHeight - statusHeight - suggestionHeight - marginHeight
 	if m.viewport.Height < 1 {
 		m.viewport.Height = 1
 	}
