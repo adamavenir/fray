@@ -68,9 +68,14 @@ func NewMentionsCmd() *cobra.Command {
 				fmt.Fprintf(out, "Messages mentioning @%s:\n", prefix)
 			}
 
+			bases, err := db.GetAgentBases(ctx.DB)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+
 			projectName := GetProjectName(ctx.Project.Root)
 			for _, msg := range messages {
-				formatted := FormatMessage(msg, projectName)
+				formatted := FormatMessage(msg, projectName, bases)
 				readCount, err := db.GetReadReceiptCount(ctx.DB, msg.ID)
 				if err != nil {
 					return writeCommandError(cmd, err)

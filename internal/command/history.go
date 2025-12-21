@@ -74,9 +74,14 @@ func NewHistoryCmd() *cobra.Command {
 				return nil
 			}
 
+			bases, err := db.GetAgentBases(ctx.DB)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+
 			projectName := GetProjectName(ctx.Project.Root)
 			for _, row := range rows {
-				fmt.Fprintln(out, FormatMessage(row, projectName))
+				fmt.Fprintln(out, FormatMessage(row, projectName, bases))
 			}
 			return nil
 		},

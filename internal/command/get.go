@@ -39,6 +39,13 @@ func NewGetCmd() *cobra.Command {
 			isQueryMode := last != "" || since != "" || before != "" || from != "" || to != "" || all
 
 			projectName := GetProjectName(ctx.Project.Root)
+			var agentBases map[string]struct{}
+			if !ctx.JSONMode {
+				agentBases, err = db.GetAgentBases(ctx.DB)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+			}
 			var resolvedAgentID string
 			if len(args) > 0 {
 				resolvedAgentID = ResolveAgentRef(args[0], ctx.ProjectConfig)
@@ -113,7 +120,7 @@ func NewGetCmd() *cobra.Command {
 					return nil
 				}
 				for _, msg := range messages {
-					fmt.Fprintln(out, FormatMessage(msg, projectName))
+					fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
 				}
 				return nil
 			}
@@ -182,7 +189,7 @@ func NewGetCmd() *cobra.Command {
 				} else {
 					fmt.Fprintln(out, "ROOM:")
 					for _, msg := range roomMessages {
-						fmt.Fprintln(out, FormatMessage(msg, projectName))
+						fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
 					}
 				}
 
@@ -195,7 +202,7 @@ func NewGetCmd() *cobra.Command {
 				} else {
 					fmt.Fprintf(out, "@%s:\n", agentBase)
 					for _, msg := range filtered {
-						fmt.Fprintln(out, FormatMessage(msg, projectName))
+						fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
 					}
 				}
 				fmt.Fprintln(out, "")

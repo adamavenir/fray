@@ -30,6 +30,13 @@ func NewWatchCmd() *cobra.Command {
 
 			projectName := GetProjectName(ctx.Project.Root)
 			out := cmd.OutOrStdout()
+			var agentBases map[string]struct{}
+			if !ctx.JSONMode {
+				agentBases, err = db.GetAgentBases(ctx.DB)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+			}
 
 			var cursor *types.MessageCursor
 			if last == 0 {
@@ -52,7 +59,7 @@ func NewWatchCmd() *cobra.Command {
 						}
 					} else {
 						for _, msg := range recent {
-							fmt.Fprintln(out, FormatMessage(msg, projectName))
+							fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
 						}
 						fmt.Fprintln(out, "--- watching (Ctrl+C to stop) ---")
 					}
@@ -87,7 +94,7 @@ func NewWatchCmd() *cobra.Command {
 						}
 					} else {
 						for _, msg := range newMessages {
-							fmt.Fprintln(out, FormatMessage(msg, projectName))
+							fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
 						}
 					}
 					lastMsg := newMessages[len(newMessages)-1]

@@ -57,13 +57,18 @@ func NewThreadCmd() *cobra.Command {
 			}
 			fmt.Fprintf(out, "Thread #%s (%d %s):\n\n", messageID, replyCount, label)
 
+			bases, err := db.GetAgentBases(ctx.DB)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+
 			projectName := GetProjectName(ctx.Project.Root)
 			for _, row := range thread {
 				prefix := ""
 				if row.ID != messageID {
 					prefix = "  ↳ "
 				}
-				fmt.Fprintln(out, prefix+FormatMessage(row, projectName))
+				fmt.Fprintln(out, prefix+FormatMessage(row, projectName, bases))
 			}
 
 			return nil
