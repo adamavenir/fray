@@ -5,6 +5,7 @@ import (
 	"github.com/alecthomas/chroma/lexers"
 )
 
+// Stub lexer until the updated TextMate grammar is ported.
 var mlldLexer = lexers.Register(chroma.MustNewLexer(
 	&chroma.Config{
 		Name:      "MLLD",
@@ -16,18 +17,7 @@ var mlldLexer = lexers.Register(chroma.MustNewLexer(
 	},
 	chroma.Rules{
 		"root": {
-			{`\s+`, chroma.Text, nil},
-			{`//[^\n]*`, chroma.CommentSingle, nil},
-			{`#[^\n]*`, chroma.CommentSingle, nil},
-			{`/\*.*?\*/`, chroma.CommentMultiline, nil},
-			{`"(\\\\|\\"|[^"])*"`, chroma.LiteralStringDouble, nil},
-			{`'(\\\\|\\'|[^'])*'`, chroma.LiteralStringSingle, nil},
-			{`\b(true|false|null)\b`, chroma.KeywordConstant, nil},
-			{`\b(let|set|if|else|for|in|return|fn|func|include|import|use|when|then|case|default)\b`, chroma.Keyword, nil},
-			{`\b\d+(\.\d+)?\b`, chroma.LiteralNumber, nil},
-			{`[{}()[\],.;]`, chroma.Punctuation, nil},
-			{`[-+*/=<>!:%&|^]+`, chroma.Operator, nil},
-			{`[A-Za-z_][A-Za-z0-9_]*`, chroma.Name, nil},
+			{`[\s\S]+`, chroma.Text, nil},
 		},
 	},
 ))
