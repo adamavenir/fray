@@ -28,6 +28,17 @@ func NewRootCmd(version string) *cobra.Command {
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)
 
+	cmd.PersistentFlags().String("project", "", "operate in linked project")
+	cmd.PersistentFlags().String("in", "", "operate in channel context")
+	cmd.PersistentFlags().Bool("json", false, "output in JSON format")
+
+	cmd.AddCommand(
+		NewInitCmd(),
+		NewNewCmd(),
+		NewPostCmd(),
+		NewGetCmd(),
+	)
+
 	return cmd
 }
 
