@@ -57,7 +57,7 @@ func Run(opts Options) error {
 	if err != nil {
 		return err
 	}
-	program := tea.NewProgram(model)
+	program := tea.NewProgram(model, tea.WithMouseCellMotion())
 	_, err = program.Run()
 	model.Close()
 	return err
@@ -254,6 +254,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.sidebarFocus {
 			m.input, cmd = m.input.Update(msg)
 			m.refreshSuggestions()
+		}
+		return m, cmd
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		if msg.Button == tea.MouseButtonWheelUp && m.viewport.AtTop() {
+			m.loadOlderMessages()
 		}
 		return m, cmd
 	case pollMsg:
