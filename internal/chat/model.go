@@ -15,7 +15,7 @@ import (
 	"github.com/adamavenir/mini-msg/internal/core"
 	"github.com/adamavenir/mini-msg/internal/db"
 	"github.com/adamavenir/mini-msg/internal/types"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -24,6 +24,8 @@ import (
 
 const pollInterval = time.Second
 const suggestionLimit = 8
+const inputMaxHeight = 6
+const inputPadding = 1
 
 var (
 	agentPalette = []lipgloss.Color{
@@ -37,6 +39,7 @@ var (
 	userColor   = lipgloss.Color("249")
 	statusColor = lipgloss.Color("241")
 	metaColor   = lipgloss.Color("242")
+	inputBg     = lipgloss.Color("236")
 )
 
 // Options configure chat.
@@ -73,7 +76,7 @@ type Model struct {
 	showUpdates     bool
 	includeArchived bool
 	viewport        viewport.Model
-	input           textinput.Model
+	input           textarea.Model
 	messages        []types.Message
 	lastCursor      *types.MessageCursor
 	oldestCursor    *types.MessageCursor
@@ -136,9 +139,13 @@ func NewModel(opts Options) (*Model, error) {
 		return nil, err
 	}
 
-	input := textinput.New()
+	input := textarea.New()
 	input.Prompt = ""
 	input.CharLimit = 0
+	input.ShowLineNumbers = false
+	input.MaxHeight = inputMaxHeight
+	input.FocusedStyle.Base = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(inputBg)
+	input.BlurredStyle.Base = lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Background(inputBg)
 	input.Focus()
 
 	vp := viewport.New(0, 0)
@@ -223,6 +230,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if msg.Type == tea.KeyCtrlJ {
+			m.insertInputText("\n")
+			return m, nil
+		}
+		if msg.Type == tea.KeyRunes && !msg.Paste && strings.ContainsRune(string(msg.Runes), '\n') {
+			m.insertInputText(normalizeNewlines(string(msg.Runes)))
+			return m, nil
+		}
+		if msg.Type == tea.KeyRunes && msg.Paste {
+			m.insertInputText(normalizeNewlines(string(msg.Runes)))
+			return m, nil
+		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
@@ -231,7 +250,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Reset()
 			m.clearSuggestions()
 			m.lastInputValue = m.input.Value()
-			m.lastInputPos = m.input.Position()
+			m.lastInputPos = m.inputCursorPos()
+			m.resize()
 			if value == "" {
 				return m, nil
 			}
@@ -254,6 +274,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.sidebarFocus {
 			m.input, cmd = m.input.Update(msg)
 			m.refreshSuggestions()
+			m.resize()
 		}
 		return m, cmd
 	case tea.MouseMsg:
@@ -302,7 +323,7 @@ func (m *Model) View() string {
 	if suggestions := m.renderSuggestions(); suggestions != "" {
 		lines = append(lines, suggestions)
 	}
-	lines = append(lines, statusLine, m.input.View())
+	lines = append(lines, statusLine, m.renderInput())
 
 	main := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	if !m.sidebarOpen {
@@ -311,6 +332,15 @@ func (m *Model) View() string {
 
 	sidebar := m.renderSidebar()
 	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, main)
+}
+
+func (m *Model) renderInput() string {
+	content := m.input.View()
+	style := lipgloss.NewStyle().Background(inputBg).Padding(0, inputPadding)
+	if width := m.mainWidth(); width > 0 {
+		style = style.Width(width)
+	}
+	return style.Render(content)
 }
 
 func (m *Model) handleSubmit(text string) tea.Cmd {
@@ -398,7 +428,7 @@ func (m *Model) handleSuggestionKeys(msg tea.KeyMsg) (bool, tea.Cmd) {
 
 func (m *Model) refreshSuggestions() {
 	value := m.input.Value()
-	pos := m.input.Position()
+	pos := m.inputCursorPos()
 	if value == m.lastInputValue && pos == m.lastInputPos {
 		return
 	}
@@ -625,7 +655,7 @@ func (m *Model) handleSidebarKeys(msg tea.KeyMsg) (bool, tea.Cmd) {
 
 func (m *Model) applySuggestion(item suggestionItem) {
 	value := []rune(m.input.Value())
-	cursor := m.input.Position()
+	cursor := m.inputCursorPos()
 	start := m.suggestionStart
 	if start < 0 || start > len(value) {
 		start = cursor
@@ -643,11 +673,61 @@ func (m *Model) applySuggestion(item suggestionItem) {
 
 	updated := append(append(before, insertRunes...), after...)
 	m.input.SetValue(string(updated))
-	m.input.SetCursor(len(before) + len(insertRunes))
+	m.input.CursorEnd()
 	m.clearSuggestions()
 	m.lastInputValue = m.input.Value()
-	m.lastInputPos = m.input.Position()
+	m.lastInputPos = m.inputCursorPos()
 	m.resize()
+}
+
+func (m *Model) insertInputText(text string) {
+	if text == "" {
+		return
+	}
+	m.input.InsertString(text)
+	m.refreshSuggestions()
+	m.resize()
+}
+
+func (m *Model) inputCursorPos() int {
+	value := m.input.Value()
+	if value == "" {
+		return 0
+	}
+	lines := strings.Split(value, "\n")
+	row := m.input.Line()
+	if row < 0 {
+		row = 0
+	}
+	if row >= len(lines) {
+		row = len(lines) - 1
+	}
+	col := m.input.LineInfo().ColumnOffset
+	if col < 0 {
+		col = 0
+	}
+	lineRunes := []rune(lines[row])
+	if col > len(lineRunes) {
+		col = len(lineRunes)
+	}
+
+	pos := 0
+	for i := 0; i < row; i++ {
+		pos += len([]rune(lines[i])) + 1
+	}
+	pos += col
+
+	total := len([]rune(value))
+	if pos > total {
+		pos = total
+	}
+	return pos
+}
+
+func normalizeNewlines(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	return value
 }
 
 func findSuggestionToken(value string, cursor int) (suggestionKind, int, string) {
@@ -975,15 +1055,30 @@ func (m *Model) resize() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	inputHeight := lipgloss.Height(m.input.View())
+
+	width := m.mainWidth()
+	inputWidth := width - inputPadding*2
+	if inputWidth < 1 {
+		inputWidth = 1
+	}
+	m.input.SetWidth(inputWidth)
+	lineCount := m.input.LineCount()
+	if lineCount < 1 {
+		lineCount = 1
+	}
+	if lineCount > inputMaxHeight {
+		lineCount = inputMaxHeight
+	}
+	m.input.SetHeight(lineCount)
+	inputHeight := m.input.Height()
+
 	statusHeight := 1
 	suggestionHeight := m.suggestionHeight()
-	m.viewport.Width = m.mainWidth()
+	m.viewport.Width = width
 	m.viewport.Height = m.height - inputHeight - statusHeight - suggestionHeight
 	if m.viewport.Height < 1 {
 		m.viewport.Height = 1
 	}
-	m.input.Width = m.mainWidth()
 	m.refreshViewport(false)
 }
 

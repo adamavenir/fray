@@ -25,7 +25,7 @@ func (m *Model) handleSlashCommand(input string) (bool, tea.Cmd) {
 		m.input.SetValue(input)
 		m.input.CursorEnd()
 		m.lastInputValue = m.input.Value()
-		m.lastInputPos = m.input.Position()
+		m.lastInputPos = m.inputCursorPos()
 		return true, nil
 	}
 
@@ -68,7 +68,7 @@ func (m *Model) prefillEditCommand() bool {
 	m.input.CursorEnd()
 	m.clearSuggestions()
 	m.lastInputValue = m.input.Value()
-	m.lastInputPos = m.input.Position()
+	m.lastInputPos = m.inputCursorPos()
 	m.status = ""
 	return true
 }
