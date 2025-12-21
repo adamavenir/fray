@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS mm_messages (
   type TEXT DEFAULT 'agent',           -- 'user' or 'agent'
   reply_to TEXT,                       -- parent message guid for threading
   edited_at INTEGER,                   -- unix timestamp of last edit
-  archived_at INTEGER                  -- unix timestamp of archival
+  archived_at INTEGER,                 -- unix timestamp of archival
+  reactions TEXT NOT NULL DEFAULT '{}' -- JSON object of reactions
 );
 
 CREATE INDEX IF NOT EXISTS idx_mm_messages_ts ON mm_messages(ts);
@@ -360,7 +361,8 @@ func migrateSchema(db DBTX) error {
 				type TEXT DEFAULT 'agent',
 				reply_to TEXT,
 				edited_at INTEGER,
-				archived_at INTEGER
+				archived_at INTEGER,
+				reactions TEXT NOT NULL DEFAULT '{}'
 			);
 		`); err != nil {
 			return err
@@ -403,8 +405,8 @@ func migrateSchema(db DBTX) error {
 
 			if _, err := db.Exec(`
 				INSERT INTO mm_messages_new (
-					guid, ts, channel_id, from_agent, body, mentions, type, reply_to, edited_at, archived_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					guid, ts, channel_id, from_agent, body, mentions, type, reply_to, edited_at, archived_at, reactions
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`,
 				idToGUID[msg.ID],
 				msg.TS,
@@ -416,6 +418,7 @@ func migrateSchema(db DBTX) error {
 				replyValue,
 				editedAt,
 				archivedAt,
+				"{}",
 			); err != nil {
 				return err
 			}
@@ -425,6 +428,11 @@ func migrateSchema(db DBTX) error {
 			return err
 		}
 		if _, err := db.Exec("ALTER TABLE mm_messages_new RENAME TO mm_messages"); err != nil {
+			return err
+		}
+	}
+	if len(messageColumns) > 0 && !needsMessageMigration && !hasColumn(messageColumns, "reactions") {
+		if _, err := db.Exec("ALTER TABLE mm_messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '{}'"); err != nil {
 			return err
 		}
 	}

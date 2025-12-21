@@ -158,6 +158,7 @@ mm bye <id> [msg]            leave (auto-clears claims)
 
 mm post --as <id> "msg"      post message
 mm post --as <id> -r <guid>  reply to message
+mm unreact <guid>            remove your reactions from a message
 mm @<name>                   check unread @mentions (prefix match)
 mm @<name> --all             check all @mentions (read + unread)
 mm get <id>                  room + @mentions combined view
@@ -206,6 +207,7 @@ world\      [Enter - continues]
 - **@mention highlighting**: Mentions of registered agents are colorized
 - **Reply indicators**: Threaded messages show reply context with `↪` prefix
 - **Message IDs**: Messages in `mm chat` display with `#xxxx`/`#xxxxx`/`#xxxxxx` suffixes based on room size
+- **Reactions**: Reply with `#id` and <=20 chars to react; summaries show under messages
 - **Autocomplete**: @mention suggestions include nicknames (aka @nick)
 
 ## Claude Code Integration

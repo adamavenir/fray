@@ -20,26 +20,28 @@ const (
 
 // MessageJSONLRecord represents a message entry in JSONL.
 type MessageJSONLRecord struct {
-	Type       string            `json:"type"`
-	ID         string            `json:"id"`
-	ChannelID  *string           `json:"channel_id"`
-	FromAgent  string            `json:"from_agent"`
-	Body       string            `json:"body"`
-	Mentions   []string          `json:"mentions"`
-	MsgType    types.MessageType `json:"message_type"`
-	ReplyTo    *string           `json:"reply_to"`
-	TS         int64             `json:"ts"`
-	EditedAt   *int64            `json:"edited_at"`
-	ArchivedAt *int64            `json:"archived_at"`
+	Type       string              `json:"type"`
+	ID         string              `json:"id"`
+	ChannelID  *string             `json:"channel_id"`
+	FromAgent  string              `json:"from_agent"`
+	Body       string              `json:"body"`
+	Mentions   []string            `json:"mentions"`
+	Reactions  map[string][]string `json:"reactions,omitempty"`
+	MsgType    types.MessageType   `json:"message_type"`
+	ReplyTo    *string             `json:"reply_to"`
+	TS         int64               `json:"ts"`
+	EditedAt   *int64              `json:"edited_at"`
+	ArchivedAt *int64              `json:"archived_at"`
 }
 
 // MessageUpdateJSONLRecord represents a message update entry in JSONL.
 type MessageUpdateJSONLRecord struct {
-	Type       string  `json:"type"`
-	ID         string  `json:"id"`
-	Body       *string `json:"body,omitempty"`
-	EditedAt   *int64  `json:"edited_at,omitempty"`
-	ArchivedAt *int64  `json:"archived_at,omitempty"`
+	Type       string               `json:"type"`
+	ID         string               `json:"id"`
+	Body       *string              `json:"body,omitempty"`
+	EditedAt   *int64               `json:"edited_at,omitempty"`
+	ArchivedAt *int64               `json:"archived_at,omitempty"`
+	Reactions  *map[string][]string `json:"reactions,omitempty"`
 }
 
 // AgentJSONLRecord represents an agent entry in JSONL.
@@ -188,6 +190,7 @@ func AppendMessage(projectPath string, message types.Message) error {
 		FromAgent:  message.FromAgent,
 		Body:       message.Body,
 		Mentions:   message.Mentions,
+		Reactions:  normalizeReactions(message.Reactions),
 		MsgType:    message.Type,
 		ReplyTo:    message.ReplyTo,
 		TS:         message.TS,
@@ -384,6 +387,7 @@ func ReadMessages(projectPath string) ([]MessageJSONLRecord, error) {
 				Body       json.RawMessage `json:"body"`
 				EditedAt   json.RawMessage `json:"edited_at"`
 				ArchivedAt json.RawMessage `json:"archived_at"`
+				Reactions  json.RawMessage `json:"reactions"`
 			}
 			if err := json.Unmarshal([]byte(line), &update); err != nil {
 				continue
@@ -416,6 +420,12 @@ func ReadMessages(projectPath string) ([]MessageJSONLRecord, error) {
 					if err := json.Unmarshal(update.ArchivedAt, &archivedAt); err == nil {
 						existing.ArchivedAt = &archivedAt
 					}
+				}
+			}
+			if update.Reactions != nil && string(update.Reactions) != "null" {
+				var reactions map[string][]string
+				if err := json.Unmarshal(update.Reactions, &reactions); err == nil {
+					existing.Reactions = normalizeReactions(reactions)
 				}
 			}
 			messageMap[update.ID] = existing
@@ -527,12 +537,16 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 
 	insertMessage := `
 		INSERT OR REPLACE INTO mm_messages (
-			guid, ts, channel_id, from_agent, body, mentions, type, reply_to, edited_at, archived_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			guid, ts, channel_id, from_agent, body, mentions, type, reply_to, edited_at, archived_at, reactions
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, message := range messages {
 		mentionsJSON, err := json.Marshal(message.Mentions)
+		if err != nil {
+			return err
+		}
+		reactionsJSON, err := json.Marshal(normalizeReactions(message.Reactions))
 		if err != nil {
 			return err
 		}
@@ -552,6 +566,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 			message.ReplyTo,
 			message.EditedAt,
 			message.ArchivedAt,
+			string(reactionsJSON),
 		); err != nil {
 			return err
 		}

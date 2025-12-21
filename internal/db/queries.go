@@ -306,6 +306,10 @@ func RenameAgent(db *sql.DB, oldID, newID string) error {
 		return err
 	}
 
+	if err := updateReactionsForAgent(db, oldID, newID); err != nil {
+		return err
+	}
+
 	return UpdateClaimsAgentID(db, oldID, newID)
 }
 
@@ -384,11 +388,64 @@ func mergeAgentHistoryWith(tx *sql.Tx, fromID, toID string) (int64, error) {
 		return 0, err
 	}
 
+	if err := updateReactionsForAgent(tx, fromID, toID); err != nil {
+		return 0, err
+	}
+
 	if _, err := tx.Exec("UPDATE mm_claims SET agent_id = ? WHERE agent_id = ?", toID, fromID); err != nil {
 		return 0, err
 	}
 
 	return messageCount, nil
+}
+
+func updateReactionsForAgent(db DBTX, oldID, newID string) error {
+	rows, err := db.Query(`
+		SELECT guid, reactions FROM mm_messages
+		WHERE reactions LIKE ?
+	`, fmt.Sprintf("%%\"%s\"%%", oldID))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var guid string
+		var reactionsJSON string
+		if err := rows.Scan(&guid, &reactionsJSON); err != nil {
+			return err
+		}
+
+		var reactions map[string][]string
+		if err := json.Unmarshal([]byte(reactionsJSON), &reactions); err != nil {
+			return err
+		}
+
+		updated := false
+		for reaction, users := range reactions {
+			next := make([]string, 0, len(users))
+			for _, user := range users {
+				if user == oldID {
+					user = newID
+					updated = true
+				}
+				next = append(next, user)
+			}
+			reactions[reaction] = dedupeNonEmpty(next)
+		}
+		if !updated {
+			continue
+		}
+		reactions = normalizeReactions(reactions)
+		updatedJSON, err := json.Marshal(reactions)
+		if err != nil {
+			return err
+		}
+		if _, err := db.Exec("UPDATE mm_messages SET reactions = ? WHERE guid = ?", string(updatedJSON), guid); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }
 
 // GetMaxVersion returns the highest version for a base name.
@@ -452,6 +509,10 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 	if err != nil {
 		return types.Message{}, err
 	}
+	reactionsJSON, err := json.Marshal(normalizeReactions(message.Reactions))
+	if err != nil {
+		return types.Message{}, err
+	}
 
 	msgType := message.Type
 	if msgType == "" {
@@ -464,9 +525,9 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 	}
 
 	_, err = db.Exec(`
-		INSERT INTO mm_messages (guid, ts, channel_id, from_agent, body, mentions, type, reply_to, edited_at, archived_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
-	`, guid, ts, channelID, message.FromAgent, message.Body, string(mentionsJSON), msgType, message.ReplyTo)
+		INSERT INTO mm_messages (guid, ts, channel_id, from_agent, body, mentions, type, reply_to, edited_at, archived_at, reactions)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+	`, guid, ts, channelID, message.FromAgent, message.Body, string(mentionsJSON), msgType, message.ReplyTo, string(reactionsJSON))
 	if err != nil {
 		return types.Message{}, err
 	}
@@ -478,6 +539,7 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 		FromAgent:  message.FromAgent,
 		Body:       message.Body,
 		Mentions:   message.Mentions,
+		Reactions:  normalizeReactions(message.Reactions),
 		Type:       msgType,
 		ReplyTo:    message.ReplyTo,
 		EditedAt:   nil,
@@ -745,6 +807,131 @@ func GetMessageByPrefix(db *sql.DB, prefix string) (*types.Message, error) {
 		return &messages[0], nil
 	}
 	return nil, nil
+}
+
+// AddReaction adds a reaction for a message.
+func AddReaction(db *sql.DB, messageID, reactor, reaction string) (*types.Message, bool, error) {
+	msg, err := GetMessage(db, messageID)
+	if err != nil {
+		return nil, false, err
+	}
+	if msg == nil {
+		return nil, false, fmt.Errorf("message %s not found", messageID)
+	}
+
+	reactions := cloneReactions(msg.Reactions)
+	users := append([]string{}, reactions[reaction]...)
+	if containsString(users, reactor) {
+		return msg, false, nil
+	}
+	users = append(users, reactor)
+	reactions[reaction] = users
+	reactions = normalizeReactions(reactions)
+
+	reactionsJSON, err := json.Marshal(reactions)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, err := db.Exec("UPDATE mm_messages SET reactions = ? WHERE guid = ?", string(reactionsJSON), messageID); err != nil {
+		return nil, false, err
+	}
+
+	updated, err := GetMessage(db, messageID)
+	if err != nil {
+		return nil, false, err
+	}
+	if updated == nil {
+		return nil, false, fmt.Errorf("message %s not found", messageID)
+	}
+	return updated, true, nil
+}
+
+// RemoveReactions removes a reactor from all reactions on a message.
+func RemoveReactions(db *sql.DB, messageID, reactor string) (*types.Message, bool, error) {
+	msg, err := GetMessage(db, messageID)
+	if err != nil {
+		return nil, false, err
+	}
+	if msg == nil {
+		return nil, false, fmt.Errorf("message %s not found", messageID)
+	}
+
+	removed := false
+	reactions := cloneReactions(msg.Reactions)
+	next := map[string][]string{}
+	for reaction, users := range reactions {
+		cleaned, didRemove := removeString(users, reactor)
+		if didRemove {
+			removed = true
+		}
+		if len(cleaned) == 0 {
+			continue
+		}
+		next[reaction] = cleaned
+	}
+	next = normalizeReactions(next)
+
+	if !removed {
+		return msg, false, nil
+	}
+
+	reactionsJSON, err := json.Marshal(next)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, err := db.Exec("UPDATE mm_messages SET reactions = ? WHERE guid = ?", string(reactionsJSON), messageID); err != nil {
+		return nil, false, err
+	}
+
+	updated, err := GetMessage(db, messageID)
+	if err != nil {
+		return nil, false, err
+	}
+	if updated == nil {
+		return nil, false, fmt.Errorf("message %s not found", messageID)
+	}
+	return updated, true, nil
+}
+
+// GetMessageReactions returns reactions for the given message IDs.
+func GetMessageReactions(db *sql.DB, messageIDs []string) (map[string]map[string][]string, error) {
+	if len(messageIDs) == 0 {
+		return map[string]map[string][]string{}, nil
+	}
+
+	placeholders := make([]string, 0, len(messageIDs))
+	args := make([]any, 0, len(messageIDs))
+	for _, id := range messageIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf("SELECT guid, reactions FROM mm_messages WHERE guid IN (%s)", strings.Join(placeholders, ", "))
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]map[string][]string)
+	for rows.Next() {
+		var guid string
+		var reactionsJSON string
+		if err := rows.Scan(&guid, &reactionsJSON); err != nil {
+			return nil, err
+		}
+		var reactions map[string][]string
+		if reactionsJSON != "" {
+			if err := json.Unmarshal([]byte(reactionsJSON), &reactions); err != nil {
+				return nil, err
+			}
+		}
+		result[guid] = normalizeReactions(reactions)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // EditMessage updates message body and logs event.
@@ -1286,7 +1473,7 @@ func scanMessages(rows *sql.Rows) ([]types.Message, error) {
 
 func scanMessage(scanner interface{ Scan(dest ...any) error }) (types.Message, error) {
 	var row messageRow
-	if err := scanner.Scan(&row.GUID, &row.TS, &row.ChannelID, &row.FromAgent, &row.Body, &row.Mentions, &row.MsgType, &row.ReplyTo, &row.EditedAt, &row.ArchivedAt); err != nil {
+	if err := scanner.Scan(&row.GUID, &row.TS, &row.ChannelID, &row.FromAgent, &row.Body, &row.Mentions, &row.MsgType, &row.ReplyTo, &row.EditedAt, &row.ArchivedAt, &row.Reactions); err != nil {
 		return types.Message{}, err
 	}
 	return row.toMessage()
@@ -1383,6 +1570,7 @@ type messageRow struct {
 	FromAgent  string
 	Body       string
 	Mentions   string
+	Reactions  string
 	MsgType    sql.NullString
 	ReplyTo    sql.NullString
 	EditedAt   sql.NullInt64
@@ -1393,6 +1581,12 @@ func (row messageRow) toMessage() (types.Message, error) {
 	mentions := []string{}
 	if row.Mentions != "" {
 		if err := json.Unmarshal([]byte(row.Mentions), &mentions); err != nil {
+			return types.Message{}, err
+		}
+	}
+	reactions := map[string][]string{}
+	if row.Reactions != "" {
+		if err := json.Unmarshal([]byte(row.Reactions), &reactions); err != nil {
 			return types.Message{}, err
 		}
 	}
@@ -1408,6 +1602,7 @@ func (row messageRow) toMessage() (types.Message, error) {
 		FromAgent:  row.FromAgent,
 		Body:       row.Body,
 		Mentions:   mentions,
+		Reactions:  normalizeReactions(reactions),
 		Type:       msgType,
 		ReplyTo:    nullStringPtr(row.ReplyTo),
 		EditedAt:   nullIntPtr(row.EditedAt),

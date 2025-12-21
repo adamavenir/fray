@@ -57,6 +57,7 @@ func NewRootCmd(version string) *cobra.Command {
 		NewHistoryCmd(),
 		NewBetweenCmd(),
 		NewThreadCmd(),
+		NewUnreactCmd(),
 		NewChatCmd(),
 		NewWatchCmd(),
 		NewPruneCmd(),

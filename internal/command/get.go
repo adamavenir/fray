@@ -203,6 +203,9 @@ func NewGetCmd() *cobra.Command {
 					fmt.Fprintf(out, "@%s:\n", agentBase)
 					for _, msg := range filtered {
 						fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
+						for _, reactionLine := range formatReactionEvents(msg) {
+							fmt.Fprintf(out, "  %s\n", reactionLine)
+						}
 					}
 				}
 				fmt.Fprintln(out, "")

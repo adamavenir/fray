@@ -36,13 +36,14 @@ var (
 		lipgloss.Color("183"),
 		lipgloss.Color("230"),
 	}
-	userColor   = lipgloss.Color("249")
-	statusColor = lipgloss.Color("241")
-	metaColor   = lipgloss.Color("242")
-	inputBg     = lipgloss.Color("236")
-	caretColor  = lipgloss.Color("243")
-	textColor   = lipgloss.Color("255")
-	blurText    = lipgloss.Color("248")
+	userColor     = lipgloss.Color("249")
+	statusColor   = lipgloss.Color("241")
+	metaColor     = lipgloss.Color("242")
+	inputBg       = lipgloss.Color("236")
+	caretColor    = lipgloss.Color("243")
+	reactionColor = lipgloss.Color("220")
+	textColor     = lipgloss.Color("255")
+	blurText      = lipgloss.Color("248")
 )
 
 // Options configure chat.
@@ -94,6 +95,7 @@ type Model struct {
 	suggestionIndex int
 	suggestionStart int
 	suggestionKind  suggestionKind
+	reactionMode    bool
 	lastInputValue  string
 	lastInputPos    int
 	channels        []channelEntry
@@ -153,14 +155,7 @@ func NewModel(opts Options) (*Model, error) {
 		}
 		return "  "
 	})
-	input.FocusedStyle.Base = lipgloss.NewStyle().Foreground(textColor).Background(inputBg)
-	input.FocusedStyle.Text = lipgloss.NewStyle().Foreground(textColor).Background(inputBg)
-	input.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(caretColor).Background(inputBg)
-	input.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(inputBg)
-	input.BlurredStyle.Base = lipgloss.NewStyle().Foreground(blurText).Background(inputBg)
-	input.BlurredStyle.Text = lipgloss.NewStyle().Foreground(blurText).Background(inputBg)
-	input.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(caretColor).Background(inputBg)
-	input.BlurredStyle.CursorLine = lipgloss.NewStyle().Background(inputBg)
+	applyInputStyles(&input, textColor, blurText)
 	input.Focus()
 
 	vp := viewport.New(0, 0)
@@ -266,6 +261,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.clearSuggestions()
 			m.lastInputValue = m.input.Value()
 			m.lastInputPos = m.inputCursorPos()
+			m.updateInputStyle()
 			m.resize()
 			if value == "" {
 				return m, nil
@@ -315,6 +311,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.refreshViewport(true)
 			}
+		}
+		if err := m.refreshReactions(); err != nil {
+			m.status = err.Error()
 		}
 		return m, m.pollCmd()
 	case errMsg:
@@ -377,9 +376,17 @@ func (m *Model) handleSubmit(text string) tea.Cmd {
 
 	body := text
 	var replyTo *string
+	var replyMatch *ReplyMatch
 	if resolution.Kind == ReplyResolved {
 		body = resolution.Body
 		replyTo = &resolution.ReplyTo
+		replyMatch = resolution.Match
+	}
+
+	if replyTo != nil {
+		if reaction, ok := core.NormalizeReactionText(body); ok {
+			return m.handleReaction(reaction, *replyTo, replyMatch)
+		}
 	}
 
 	agentBases, err := db.GetAgentBases(m.db)
@@ -411,6 +418,37 @@ func (m *Model) handleSubmit(text string) tea.Cmd {
 	if created.ArchivedAt == nil {
 		m.messageCount++
 	}
+	m.status = ""
+	m.refreshViewport(true)
+
+	return nil
+}
+
+func (m *Model) handleReaction(reaction, messageID string, match *ReplyMatch) tea.Cmd {
+	updated, changed, err := db.AddReaction(m.db, messageID, m.username, reaction)
+	if err != nil {
+		m.status = err.Error()
+		return nil
+	}
+	if !changed {
+		m.status = "Reaction already added."
+		return nil
+	}
+
+	update := db.MessageUpdateJSONLRecord{ID: updated.ID, Reactions: &updated.Reactions}
+	if err := db.AppendMessageUpdate(m.projectDBPath, update); err != nil {
+		m.status = err.Error()
+		return nil
+	}
+
+	m.applyMessageUpdate(*updated)
+
+	body := updated.Body
+	if match != nil && match.Body != "" {
+		body = match.Body
+	}
+	eventLine := core.FormatReactionEvent([]string{m.username}, reaction, updated.ID, body)
+	m.messages = append(m.messages, newEventMessage(eventLine))
 	m.status = ""
 	m.refreshViewport(true)
 
@@ -455,6 +493,7 @@ func (m *Model) refreshSuggestions() {
 	}
 	m.lastInputValue = value
 	m.lastInputPos = pos
+	m.updateInputStyle()
 
 	if strings.HasPrefix(strings.TrimSpace(value), "/") {
 		if len(m.suggestions) > 0 {
@@ -502,6 +541,19 @@ func (m *Model) clearSuggestions() {
 	m.suggestionIndex = 0
 	m.suggestionStart = 0
 	m.suggestionKind = suggestionNone
+}
+
+func (m *Model) updateInputStyle() {
+	_, reactionMode := reactionInputText(m.input.Value())
+	if reactionMode == m.reactionMode {
+		return
+	}
+	m.reactionMode = reactionMode
+	if reactionMode {
+		applyInputStyles(&m.input, reactionColor, reactionColor)
+		return
+	}
+	applyInputStyles(&m.input, textColor, blurText)
 }
 
 func (m *Model) suggestionHeight() int {
@@ -766,6 +818,26 @@ func normalizeNewlines(value string) string {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
 	return value
+}
+
+func applyInputStyles(input *textarea.Model, textColor, blurColor lipgloss.Color) {
+	input.FocusedStyle.Base = lipgloss.NewStyle().Foreground(textColor).Background(inputBg)
+	input.FocusedStyle.Text = lipgloss.NewStyle().Foreground(textColor).Background(inputBg)
+	input.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(caretColor).Background(inputBg)
+	input.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(inputBg)
+	input.BlurredStyle.Base = lipgloss.NewStyle().Foreground(blurColor).Background(inputBg)
+	input.BlurredStyle.Text = lipgloss.NewStyle().Foreground(blurColor).Background(inputBg)
+	input.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(caretColor).Background(inputBg)
+	input.BlurredStyle.CursorLine = lipgloss.NewStyle().Background(inputBg)
+}
+
+func reactionInputText(value string) (string, bool) {
+	match := replyPrefixRe.FindStringSubmatchIndex(value)
+	if match == nil {
+		return "", false
+	}
+	stripped := strings.TrimLeft(value[match[1]:], " \t")
+	return core.NormalizeReactionText(stripped)
 }
 
 func findSuggestionToken(value string, cursor int) (suggestionKind, int, string) {
@@ -1058,6 +1130,54 @@ func (m *Model) renderMessages() string {
 	return strings.Join(chunks, "\n\n")
 }
 
+func (m *Model) refreshReactions() error {
+	ids := make([]string, 0, len(m.messages))
+	for _, msg := range m.messages {
+		if msg.Type == types.MessageTypeEvent {
+			continue
+		}
+		if !strings.HasPrefix(msg.ID, "msg-") {
+			continue
+		}
+		ids = append(ids, msg.ID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	updated, err := db.GetMessageReactions(m.db, ids)
+	if err != nil {
+		return err
+	}
+
+	events := make([]types.Message, 0)
+	for i, msg := range m.messages {
+		if msg.Type == types.MessageTypeEvent {
+			continue
+		}
+		next, ok := updated[msg.ID]
+		if !ok {
+			continue
+		}
+		added := diffReactions(msg.Reactions, next)
+		if len(added) > 0 {
+			for reaction, users := range added {
+				eventLine := core.FormatReactionEvent(users, reaction, msg.ID, msg.Body)
+				events = append(events, newEventMessage(eventLine))
+			}
+		}
+		if !reactionsEqual(msg.Reactions, next) {
+			m.messages[i].Reactions = next
+		}
+	}
+
+	if len(events) > 0 {
+		m.messages = append(m.messages, events...)
+		m.refreshViewport(true)
+	}
+	return nil
+}
+
 func (m *Model) filterNewMessages(incoming []types.Message) []types.Message {
 	if len(incoming) == 0 {
 		return nil
@@ -1076,7 +1196,119 @@ func (m *Model) filterNewMessages(incoming []types.Message) []types.Message {
 	return filtered
 }
 
+func diffReactions(before, after map[string][]string) map[string][]string {
+	added := map[string][]string{}
+	beforeSets := reactionSets(before)
+	for reaction, users := range after {
+		previous := beforeSets[reaction]
+		for _, user := range users {
+			if _, ok := previous[user]; ok {
+				continue
+			}
+			added[reaction] = append(added[reaction], user)
+		}
+	}
+	return added
+}
+
+func reactionsEqual(left, right map[string][]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	leftSets := reactionSets(left)
+	rightSets := reactionSets(right)
+	if len(leftSets) != len(rightSets) {
+		return false
+	}
+	for reaction, leftUsers := range leftSets {
+		rightUsers, ok := rightSets[reaction]
+		if !ok || len(leftUsers) != len(rightUsers) {
+			return false
+		}
+		for user := range leftUsers {
+			if _, ok := rightUsers[user]; !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func reactionSets(values map[string][]string) map[string]map[string]struct{} {
+	out := make(map[string]map[string]struct{}, len(values))
+	for reaction, users := range values {
+		set := map[string]struct{}{}
+		for _, user := range users {
+			if user == "" {
+				continue
+			}
+			set[user] = struct{}{}
+		}
+		out[reaction] = set
+	}
+	return out
+}
+
+func newEventMessage(body string) types.Message {
+	return types.Message{
+		ID:        fmt.Sprintf("evt-%d", time.Now().UnixNano()),
+		TS:        time.Now().Unix(),
+		FromAgent: "system",
+		Body:      body,
+		Type:      types.MessageTypeEvent,
+	}
+}
+
+func formatReactionSummary(reactions map[string][]string) string {
+	if len(reactions) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(reactions))
+	for reaction := range reactions {
+		keys = append(keys, reaction)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(keys))
+	for _, reaction := range keys {
+		users := uniqueSortedStrings(reactions[reaction])
+		if len(users) == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %s", reaction, strings.Join(users, ", ")))
+	}
+	return strings.Join(parts, " · ")
+}
+
+func uniqueSortedStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
+	if msg.Type == types.MessageTypeEvent {
+		body := msg.Body
+		width := m.mainWidth()
+		if width > 0 {
+			body = ansi.Wrap(body, width, "")
+		}
+		style := lipgloss.NewStyle().Foreground(metaColor).Italic(true)
+		return style.Render(body)
+	}
+
 	color := userColor
 	if msg.Type != types.MessageTypeUser {
 		color = colorForAgent(msg.FromAgent, m.colorMap)
@@ -1096,6 +1328,13 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
 		lines = append(lines, m.replyContext(*msg.ReplyTo, prefixLength))
 	}
 	lines = append(lines, fmt.Sprintf("%s\n%s", sender, bodyLine))
+	if reactionLine := formatReactionSummary(msg.Reactions); reactionLine != "" {
+		line := lipgloss.NewStyle().Foreground(metaColor).Faint(true).Render(reactionLine)
+		if width > 0 {
+			line = ansi.Wrap(line, width, "")
+		}
+		lines = append(lines, line)
+	}
 	lines = append(lines, meta)
 	return strings.Join(lines, "\n")
 }

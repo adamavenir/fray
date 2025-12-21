@@ -58,6 +58,54 @@ func NewPostCmd() *cobra.Command {
 				replyID = &trimmed
 			}
 
+			reactionText := ""
+			if replyID != nil {
+				if reaction, ok := core.NormalizeReactionText(args[0]); ok {
+					reactionText = reaction
+				}
+			}
+
+			if reactionText != "" && replyID != nil {
+				updated, changed, err := db.AddReaction(ctx.DB, *replyID, agentID, reactionText)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				if changed {
+					update := db.MessageUpdateJSONLRecord{ID: updated.ID, Reactions: &updated.Reactions}
+					if err := db.AppendMessageUpdate(ctx.Project.DBPath, update); err != nil {
+						return writeCommandError(cmd, err)
+					}
+				}
+
+				now := time.Now().Unix()
+				updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
+				if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
+					return writeCommandError(cmd, err)
+				}
+
+				if silent {
+					return nil
+				}
+
+				if ctx.JSONMode {
+					payload := map[string]any{
+						"id":       updated.ID,
+						"from":     agentID,
+						"reaction": reactionText,
+						"reacted":  changed,
+					}
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
+				}
+
+				out := cmd.OutOrStdout()
+				if changed {
+					fmt.Fprintf(out, "Reacted %q to #%s\n", reactionText, updated.ID)
+				} else {
+					fmt.Fprintf(out, "Reaction %q already exists for #%s\n", reactionText, updated.ID)
+				}
+				return nil
+			}
+
 			bases, err := db.GetAgentBases(ctx.DB)
 			if err != nil {
 				return writeCommandError(cmd, err)

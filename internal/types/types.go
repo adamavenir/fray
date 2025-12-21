@@ -22,16 +22,17 @@ type Agent struct {
 
 // Message represents a room message.
 type Message struct {
-	ID         string      `json:"id"`
-	TS         int64       `json:"ts"`
-	ChannelID  *string     `json:"channel_id,omitempty"`
-	FromAgent  string      `json:"from_agent"`
-	Body       string      `json:"body"`
-	Mentions   []string    `json:"mentions"`
-	Type       MessageType `json:"type"`
-	ReplyTo    *string     `json:"reply_to,omitempty"`
-	EditedAt   *int64      `json:"edited_at,omitempty"`
-	ArchivedAt *int64      `json:"archived_at,omitempty"`
+	ID         string              `json:"id"`
+	TS         int64               `json:"ts"`
+	ChannelID  *string             `json:"channel_id,omitempty"`
+	FromAgent  string              `json:"from_agent"`
+	Body       string              `json:"body"`
+	Mentions   []string            `json:"mentions"`
+	Reactions  map[string][]string `json:"reactions"`
+	Type       MessageType         `json:"type"`
+	ReplyTo    *string             `json:"reply_to,omitempty"`
+	EditedAt   *int64              `json:"edited_at,omitempty"`
+	ArchivedAt *int64              `json:"archived_at,omitempty"`
 }
 
 // MessageRow is a raw database row representation of a message.
@@ -42,6 +43,7 @@ type MessageRow struct {
 	FromAgent  string
 	Body       string
 	Mentions   string
+	Reactions  string
 	Type       MessageType
 	ReplyTo    *string
 	EditedAt   *int64

@@ -35,8 +35,8 @@ type batchUpdateResult struct {
 // NewBatchUpdateCmd creates the batch-update command.
 func NewBatchUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "batch-update",
-		Short: "Batch register or update agents using JSON input",
+		Use:     "batch-update",
+		Short:   "Batch register or update agents using JSON input",
 		Example: "  mm batch-update --file agents.json\n  echo '{\"agents\":[{\"agent_id\":\"devrel\",\"status\":\"working on docs\",\"purpose\":\"developer relations\",\"nicks\":[\"dr\",\"devrel-alias\"]}]}' | mm batch-update",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := GetContext(cmd)

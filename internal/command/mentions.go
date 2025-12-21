@@ -85,6 +85,9 @@ func NewMentionsCmd() *cobra.Command {
 					formatted = fmt.Sprintf("%s [✓%d]", formatted, readCount)
 				}
 				fmt.Fprintln(out, formatted)
+				for _, reactionLine := range formatReactionEvents(msg) {
+					fmt.Fprintf(out, "  %s\n", reactionLine)
+				}
 			}
 
 			if len(messages) > 0 {
