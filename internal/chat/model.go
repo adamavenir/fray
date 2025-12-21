@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -209,16 +210,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case pollMsg:
 		if len(msg.messages) > 0 {
-			m.status = ""
-			m.messages = append(m.messages, msg.messages...)
-			for _, msg := range msg.messages {
-				if msg.ArchivedAt == nil {
-					m.messageCount++
-				}
-			}
+			incoming := m.filterNewMessages(msg.messages)
 			last := msg.messages[len(msg.messages)-1]
 			m.lastCursor = &types.MessageCursor{GUID: last.ID, TS: last.TS}
-			m.refreshViewport(true)
+
+			if len(incoming) > 0 {
+				m.status = ""
+				m.messages = append(m.messages, incoming...)
+				for _, msg := range incoming {
+					if msg.ArchivedAt == nil {
+						m.messageCount++
+					}
+				}
+				m.refreshViewport(true)
+			}
 		}
 		return m, m.pollCmd()
 	case errMsg:
@@ -593,16 +598,40 @@ func (m *Model) renderMessages() string {
 	return strings.Join(chunks, "\n\n")
 }
 
+func (m *Model) filterNewMessages(incoming []types.Message) []types.Message {
+	if len(incoming) == 0 {
+		return nil
+	}
+	existing := make(map[string]struct{}, len(m.messages))
+	for _, msg := range m.messages {
+		existing[msg.ID] = struct{}{}
+	}
+	filtered := make([]types.Message, 0, len(incoming))
+	for _, msg := range incoming {
+		if _, ok := existing[msg.ID]; ok {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	return filtered
+}
+
 func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
-	sender := m.renderSender(msg)
-	meta := lipgloss.NewStyle().Foreground(metaColor).Render(fmt.Sprintf("#%s %s", m.projectName, core.GetGUIDPrefix(msg.ID, prefixLength)))
+	color := userColor
+	if msg.Type != types.MessageTypeUser {
+		color = colorForAgent(msg.FromAgent, m.colorMap)
+	}
+
+	sender := renderByline(msg.FromAgent, color)
 	body := highlightCodeBlocks(msg.Body)
+	bodyLine := lipgloss.NewStyle().Foreground(color).Render(body)
+	meta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(fmt.Sprintf("#%s %s", m.projectName, core.GetGUIDPrefix(msg.ID, prefixLength)))
 
 	lines := []string{}
 	if msg.ReplyTo != nil {
 		lines = append(lines, m.replyContext(*msg.ReplyTo, prefixLength))
 	}
-	lines = append(lines, fmt.Sprintf("%s %s", sender, body))
+	lines = append(lines, fmt.Sprintf("%s\n%s", sender, bodyLine))
 	lines = append(lines, meta)
 	return strings.Join(lines, "\n")
 }
@@ -621,13 +650,70 @@ func (m *Model) replyContext(replyTo string, prefixLength int) string {
 	return lipgloss.NewStyle().Foreground(metaColor).Render(fmt.Sprintf("↪ Reply to @%s: %s", fromAgent, preview))
 }
 
-func (m *Model) renderSender(msg types.Message) string {
-	color := userColor
-	if msg.Type != types.MessageTypeUser {
-		color = colorForAgent(msg.FromAgent, m.colorMap)
+func renderByline(agent string, color lipgloss.Color) string {
+	content := fmt.Sprintf(" @%s: ", agent)
+	textColor := contrastTextColor(color)
+	style := lipgloss.NewStyle().Background(color).Foreground(textColor).Bold(true)
+	return style.Render(content)
+}
+
+func contrastTextColor(color lipgloss.Color) lipgloss.Color {
+	code, ok := parseColorCode(color)
+	if !ok {
+		return lipgloss.Color("231")
 	}
-	style := lipgloss.NewStyle().Foreground(color).Bold(true)
-	return style.Render("@" + msg.FromAgent + ":")
+	r, g, b := colorCodeToRGB(code)
+	luminance := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
+	if luminance > 128 {
+		return lipgloss.Color("16")
+	}
+	return lipgloss.Color("231")
+}
+
+func parseColorCode(color lipgloss.Color) (int, bool) {
+	trimmed := strings.TrimSpace(string(color))
+	if trimmed == "" {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func colorCodeToRGB(code int) (int, int, int) {
+	if code < 16 {
+		standard := [16][3]int{
+			{0, 0, 0}, {128, 0, 0}, {0, 128, 0}, {128, 128, 0},
+			{0, 0, 128}, {128, 0, 128}, {0, 128, 128}, {192, 192, 192},
+			{128, 128, 128}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
+			{0, 0, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255},
+		}
+		values := standard[code]
+		return values[0], values[1], values[2]
+	}
+
+	if code >= 16 && code <= 231 {
+		index := code - 16
+		r := index / 36
+		g := (index % 36) / 6
+		b := index % 6
+		toRGB := func(value int) int {
+			if value == 0 {
+				return 0
+			}
+			return 55 + value*40
+		}
+		return toRGB(r), toRGB(g), toRGB(b)
+	}
+
+	if code >= 232 && code <= 255 {
+		gray := 8 + (code-232)*10
+		return gray, gray, gray
+	}
+
+	return 128, 128, 128
 }
 
 func (m *Model) ambiguousStatus(resolution ReplyResolution) string {

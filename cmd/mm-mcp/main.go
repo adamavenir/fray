@@ -38,7 +38,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if err := server.Run(ctx, os.Stdin, os.Stdout); err != nil {
+	if err := server.Run(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 		os.Exit(1)
 	}

@@ -1,8 +1,8 @@
 package mcp
 
 import (
+	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,23 +11,8 @@ import (
 	"github.com/adamavenir/mini-msg/internal/core"
 	"github.com/adamavenir/mini-msg/internal/db"
 	"github.com/adamavenir/mini-msg/internal/types"
+	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-type ToolDefinition struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"inputSchema,omitempty"`
-}
-
-type ToolContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-type ToolResult struct {
-	Content []ToolContent `json:"content"`
-	IsError bool          `json:"isError,omitempty"`
-}
 
 type ToolContext struct {
 	AgentID string
@@ -35,277 +20,132 @@ type ToolContext struct {
 	Project core.Project
 }
 
-func toolDefinitions() []ToolDefinition {
-	return []ToolDefinition{
-		{
-			Name:        "mm_post",
-			Description: "Post a message to the mm room. Use @mentions to direct messages to specific agents.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"body": map[string]any{
-						"type":        "string",
-						"description": "Message body. Supports @mentions like @alice.1 or @all for broadcast.",
-					},
-				},
-				"required": []string{"body"},
-			},
-		},
-		{
-			Name:        "mm_get",
-			Description: "Get recent room messages. Use for catching up on conversation.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"since": map[string]any{
-						"type":        "string",
-						"description": "Get messages after this GUID (for polling new messages)",
-					},
-					"limit": map[string]any{
-						"type":        "number",
-						"description": "Maximum number of messages to return (default: 10)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "mm_mentions",
-			Description: "Get messages that mention me. Use to check for messages directed at you.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"since": map[string]any{
-						"type":        "string",
-						"description": "Get mentions after this GUID (for polling)",
-					},
-					"limit": map[string]any{
-						"type":        "number",
-						"description": "Maximum number of mentions to return (default: 10)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "mm_here",
-			Description: "List active agents in the room. See who is available to collaborate.",
-			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
-		},
-		{
-			Name:        "mm_whoami",
-			Description: "Show my agent identity. Returns your agent ID and status.",
-			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
-		},
-		{
-			Name:        "mm_claim",
-			Description: "Claim resources (files, bd issues, GitHub issues) to prevent collision with other agents.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"files": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "File paths or glob patterns to claim (e.g., [\"src/auth.ts\", \"lib/*.ts\"])",
-					},
-					"bd": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "Beads issue IDs to claim (e.g., [\"xyz-123\"])",
-					},
-					"issues": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "GitHub issue numbers to claim (e.g., [\"456\"])",
-					},
-					"reason": map[string]any{
-						"type":        "string",
-						"description": "Reason for claim (optional)",
-					},
-					"ttl_minutes": map[string]any{
-						"type":        "number",
-						"description": "Time to live in minutes (optional, default: no expiry)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "mm_clear",
-			Description: "Clear claims. Clear all your claims or specific ones.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"file": map[string]any{
-						"type":        "string",
-						"description": "Specific file claim to clear (optional)",
-					},
-					"bd": map[string]any{
-						"type":        "string",
-						"description": "Specific bd issue claim to clear (optional)",
-					},
-					"issue": map[string]any{
-						"type":        "string",
-						"description": "Specific GitHub issue claim to clear (optional)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "mm_claims",
-			Description: "List active claims. Shows who has claimed what resources.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"agent": map[string]any{
-						"type":        "string",
-						"description": "Filter by agent ID (optional, defaults to all agents)",
-					},
-				},
-			},
-		},
-		{
-			Name:        "mm_status",
-			Description: "Update your status with optional resource claims. Sets your status and claims resources in one operation.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"message": map[string]any{
-						"type":        "string",
-						"description": "Status message (your current task/focus)",
-					},
-					"files": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "File paths or glob patterns to claim",
-					},
-					"bd": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "Beads issue IDs to claim",
-					},
-					"issues": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "GitHub issue numbers to claim",
-					},
-					"ttl_minutes": map[string]any{
-						"type":        "number",
-						"description": "Time to live in minutes for claims",
-					},
-					"clear": map[string]any{
-						"type":        "boolean",
-						"description": "Clear all claims and reset status",
-					},
-				},
-			},
-		},
-	}
+type postArgs struct {
+	Body string `json:"body" jsonschema:"Message body. Supports @mentions like @alice.1 or @all for broadcast."`
 }
 
-func handleToolCall(ctx ToolContext, name string, args json.RawMessage) (ToolResult, error) {
-	switch name {
-	case "mm_post":
-		var params struct {
-			Body string `json:"body"`
-		}
-		if err := decodeArgs(args, &params); err != nil {
-			return errorResult(err), nil
-		}
-		return handlePost(ctx, params.Body)
-	case "mm_get":
-		var params struct {
-			Since string `json:"since"`
-			Limit int    `json:"limit"`
-		}
-		if err := decodeArgs(args, &params); err != nil {
-			return errorResult(err), nil
-		}
-		return handleGet(ctx, params.Since, params.Limit)
-	case "mm_mentions":
-		var params struct {
-			Since string `json:"since"`
-			Limit int    `json:"limit"`
-		}
-		if err := decodeArgs(args, &params); err != nil {
-			return errorResult(err), nil
-		}
-		return handleMentions(ctx, params.Since, params.Limit)
-	case "mm_here":
-		return handleHere(ctx)
-	case "mm_whoami":
-		return handleWhoami(ctx)
-	case "mm_claim":
-		var params struct {
-			Files      []string `json:"files"`
-			BD         []string `json:"bd"`
-			Issues     []string `json:"issues"`
-			Reason     string   `json:"reason"`
-			TTLMinutes int      `json:"ttl_minutes"`
-		}
-		if err := decodeArgs(args, &params); err != nil {
-			return errorResult(err), nil
-		}
-		return handleClaim(ctx, params.Files, params.BD, params.Issues, params.Reason, params.TTLMinutes)
-	case "mm_clear":
-		var params struct {
-			File  string `json:"file"`
-			BD    string `json:"bd"`
-			Issue string `json:"issue"`
-		}
-		if err := decodeArgs(args, &params); err != nil {
-			return errorResult(err), nil
-		}
-		return handleClear(ctx, params.File, params.BD, params.Issue)
-	case "mm_claims":
-		var params struct {
-			Agent string `json:"agent"`
-		}
-		if err := decodeArgs(args, &params); err != nil {
-			return errorResult(err), nil
-		}
-		return handleClaims(ctx, params.Agent)
-	case "mm_status":
-		var params struct {
-			Message    string   `json:"message"`
-			Files      []string `json:"files"`
-			BD         []string `json:"bd"`
-			Issues     []string `json:"issues"`
-			TTLMinutes int      `json:"ttl_minutes"`
-			Clear      bool     `json:"clear"`
-		}
-		if err := decodeArgs(args, &params); err != nil {
-			return errorResult(err), nil
-		}
-		return handleStatus(ctx, params.Message, params.Files, params.BD, params.Issues, params.TTLMinutes, params.Clear)
-	default:
-		return ToolResult{Content: []ToolContent{{Type: "text", Text: fmt.Sprintf("Unknown tool: %s", name)}}, IsError: true}, nil
-	}
+type getArgs struct {
+	Since string `json:"since,omitempty" jsonschema:"Get messages after this GUID (for polling new messages)"`
+	Limit int    `json:"limit,omitempty" jsonschema:"Maximum number of messages to return (default: 10)"`
 }
 
-func decodeArgs(raw json.RawMessage, target any) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	return json.Unmarshal(raw, target)
+type mentionsArgs struct {
+	Since string `json:"since,omitempty" jsonschema:"Get mentions after this GUID (for polling)"`
+	Limit int    `json:"limit,omitempty" jsonschema:"Maximum number of mentions to return (default: 10)"`
 }
 
-func handlePost(ctx ToolContext, body string) (ToolResult, error) {
+type claimArgs struct {
+	Files      []string `json:"files,omitempty" jsonschema:"File paths or glob patterns to claim"`
+	BD         []string `json:"bd,omitempty" jsonschema:"Beads issue IDs to claim"`
+	Issues     []string `json:"issues,omitempty" jsonschema:"GitHub issue numbers to claim"`
+	Reason     string   `json:"reason,omitempty" jsonschema:"Reason for claim (optional)"`
+	TTLMinutes int      `json:"ttl_minutes,omitempty" jsonschema:"Time to live in minutes (optional, default: no expiry)"`
+}
+
+type clearArgs struct {
+	File  string `json:"file,omitempty" jsonschema:"Specific file claim to clear (optional)"`
+	BD    string `json:"bd,omitempty" jsonschema:"Specific bd issue claim to clear (optional)"`
+	Issue string `json:"issue,omitempty" jsonschema:"Specific GitHub issue claim to clear (optional)"`
+}
+
+type claimsArgs struct {
+	Agent string `json:"agent,omitempty" jsonschema:"Filter by agent ID (optional, defaults to all agents)"`
+}
+
+type statusArgs struct {
+	Message    string   `json:"message,omitempty" jsonschema:"Status message (your current task/focus)"`
+	Files      []string `json:"files,omitempty" jsonschema:"File paths or glob patterns to claim"`
+	BD         []string `json:"bd,omitempty" jsonschema:"Beads issue IDs to claim"`
+	Issues     []string `json:"issues,omitempty" jsonschema:"GitHub issue numbers to claim"`
+	TTLMinutes int      `json:"ttl_minutes,omitempty" jsonschema:"Time to live in minutes for claims"`
+	Clear      bool     `json:"clear,omitempty" jsonschema:"Clear all claims and reset status"`
+}
+
+// RegisterTools registers all MCP tools for mm.
+func RegisterTools(server *mcp.Server, ctx *ToolContext) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_post",
+		Description: "Post a message to the mm room. Use @mentions to direct messages to specific agents.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, args postArgs) (*mcp.CallToolResult, any, error) {
+		return handlePost(*ctx, args.Body), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_get",
+		Description: "Get recent room messages. Use for catching up on conversation.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, args getArgs) (*mcp.CallToolResult, any, error) {
+		return handleGet(*ctx, args.Since, args.Limit), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_mentions",
+		Description: "Get messages that mention me. Use to check for messages directed at you.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, args mentionsArgs) (*mcp.CallToolResult, any, error) {
+		return handleMentions(*ctx, args.Since, args.Limit), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_here",
+		Description: "List active agents in the room. See who is available to collaborate.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+		return handleHere(*ctx), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_whoami",
+		Description: "Show my agent identity. Returns your agent ID and status.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+		return handleWhoami(*ctx), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_claim",
+		Description: "Claim resources (files, bd issues, GitHub issues) to prevent collision with other agents.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, args claimArgs) (*mcp.CallToolResult, any, error) {
+		return handleClaim(*ctx, args.Files, args.BD, args.Issues, args.Reason, args.TTLMinutes), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_clear",
+		Description: "Clear claims. Clear all your claims or specific ones.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, args clearArgs) (*mcp.CallToolResult, any, error) {
+		return handleClear(*ctx, args.File, args.BD, args.Issue), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_claims",
+		Description: "List active claims. Shows who has claimed what resources.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, args claimsArgs) (*mcp.CallToolResult, any, error) {
+		return handleClaims(*ctx, args.Agent), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "mm_status",
+		Description: "Update your status with optional resource claims. Sets your status and claims resources in one operation.",
+	}, func(_ context.Context, _ *mcp.CallToolRequest, args statusArgs) (*mcp.CallToolResult, any, error) {
+		return handleStatus(*ctx, args.Message, args.Files, args.BD, args.Issues, args.TTLMinutes, args.Clear), nil, nil
+	})
+}
+
+func handlePost(ctx ToolContext, body string) *mcp.CallToolResult {
 	if strings.TrimSpace(body) == "" {
-		return textResult("Error: Message body cannot be empty"), nil
+		return toolError("Error: Message body cannot be empty")
 	}
 
 	agent, err := db.GetAgent(ctx.DB, ctx.AgentID)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if agent == nil {
-		return textResult(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID)), nil
+		return toolError(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID))
 	}
 	if agent.LeftAt != nil {
-		return textResult(fmt.Sprintf("Error: Agent %s has left the room", ctx.AgentID)), nil
+		return toolError(fmt.Sprintf("Error: Agent %s has left the room", ctx.AgentID))
 	}
 
 	bases, err := db.GetAgentBases(ctx.DB)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	mentions := core.ExtractMentions(body, bases)
 
@@ -317,7 +157,7 @@ func handlePost(ctx ToolContext, body string) (ToolResult, error) {
 		Mentions:  mentions,
 	})
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	_ = db.AppendMessage(ctx.Project.DBPath, created)
 
@@ -328,10 +168,10 @@ func handlePost(ctx ToolContext, body string) (ToolResult, error) {
 	if len(mentions) > 0 {
 		mentionInfo = fmt.Sprintf(" (mentioned: %s)", strings.Join(mentions, ", "))
 	}
-	return textResult(fmt.Sprintf("Posted message #%s%s", created.ID, mentionInfo)), nil
+	return toolResult(fmt.Sprintf("Posted message #%s%s", created.ID, mentionInfo), false)
 }
 
-func handleGet(ctx ToolContext, since string, limit int) (ToolResult, error) {
+func handleGet(ctx ToolContext, since string, limit int) *mcp.CallToolResult {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -342,14 +182,14 @@ func handleGet(ctx ToolContext, since string, limit int) (ToolResult, error) {
 
 	messages, err := db.GetMessages(ctx.DB, options)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if len(messages) == 0 {
 		qualifier := ""
 		if since != "" {
 			qualifier = fmt.Sprintf(" after message #%s", sanitizeMessageID(since))
 		}
-		return textResult(fmt.Sprintf("No messages%s", qualifier)), nil
+		return toolResult(fmt.Sprintf("No messages%s", qualifier), false)
 	}
 
 	formatted := formatMessages(messages)
@@ -357,10 +197,10 @@ func handleGet(ctx ToolContext, since string, limit int) (ToolResult, error) {
 	if since != "" {
 		header = fmt.Sprintf("Messages after #%s (%d):", sanitizeMessageID(since), len(messages))
 	}
-	return textResult(fmt.Sprintf("%s\n\n%s", header, formatted)), nil
+	return toolResult(fmt.Sprintf("%s\n\n%s", header, formatted), false)
 }
 
-func handleMentions(ctx ToolContext, since string, limit int) (ToolResult, error) {
+func handleMentions(ctx ToolContext, since string, limit int) *mcp.CallToolResult {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -376,14 +216,14 @@ func handleMentions(ctx ToolContext, since string, limit int) (ToolResult, error
 
 	messages, err := db.GetMessagesWithMention(ctx.DB, prefix, options)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if len(messages) == 0 {
 		qualifier := ""
 		if since != "" {
 			qualifier = fmt.Sprintf(" after message #%s", sanitizeMessageID(since))
 		}
-		return textResult(fmt.Sprintf("No mentions%s", qualifier)), nil
+		return toolResult(fmt.Sprintf("No mentions%s", qualifier), false)
 	}
 
 	formatted := formatMessages(messages)
@@ -391,10 +231,10 @@ func handleMentions(ctx ToolContext, since string, limit int) (ToolResult, error
 	if since != "" {
 		header = fmt.Sprintf("Mentions after #%s (%d):", sanitizeMessageID(since), len(messages))
 	}
-	return textResult(fmt.Sprintf("%s\n\n%s", header, formatted)), nil
+	return toolResult(fmt.Sprintf("%s\n\n%s", header, formatted), false)
 }
 
-func handleHere(ctx ToolContext) (ToolResult, error) {
+func handleHere(ctx ToolContext) *mcp.CallToolResult {
 	staleHours := 4
 	if raw, err := db.GetConfig(ctx.DB, "stale_hours"); err == nil {
 		staleHours = parseStaleHours(raw, 4)
@@ -402,10 +242,10 @@ func handleHere(ctx ToolContext) (ToolResult, error) {
 
 	agents, err := db.GetActiveAgents(ctx.DB, staleHours)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if len(agents) == 0 {
-		return textResult("No active agents"), nil
+		return toolResult("No active agents", false)
 	}
 
 	lines := make([]string, 0, len(agents))
@@ -416,16 +256,16 @@ func handleHere(ctx ToolContext) (ToolResult, error) {
 		}
 		lines = append(lines, fmt.Sprintf("  %s%s", agent.AgentID, status))
 	}
-	return textResult(fmt.Sprintf("Active agents (%d):\n%s", len(agents), strings.Join(lines, "\n"))), nil
+	return toolResult(fmt.Sprintf("Active agents (%d):\n%s", len(agents), strings.Join(lines, "\n")), false)
 }
 
-func handleWhoami(ctx ToolContext) (ToolResult, error) {
+func handleWhoami(ctx ToolContext) *mcp.CallToolResult {
 	agent, err := db.GetAgent(ctx.DB, ctx.AgentID)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if agent == nil {
-		return textResult(fmt.Sprintf("Agent ID: %s (not found in database)", ctx.AgentID)), nil
+		return toolResult(fmt.Sprintf("Agent ID: %s (not found in database)", ctx.AgentID), false)
 	}
 
 	activeStatus := "active"
@@ -440,16 +280,16 @@ func handleWhoami(ctx ToolContext) (ToolResult, error) {
 	if agent.Purpose != nil && *agent.Purpose != "" {
 		purposeLine = fmt.Sprintf("\nPurpose: %s", *agent.Purpose)
 	}
-	return textResult(fmt.Sprintf("Agent ID: %s\nActive: %s%s%s", ctx.AgentID, activeStatus, statusLine, purposeLine)), nil
+	return toolResult(fmt.Sprintf("Agent ID: %s\nActive: %s%s%s", ctx.AgentID, activeStatus, statusLine, purposeLine), false)
 }
 
-func handleClaim(ctx ToolContext, files, bdClaims, issues []string, reason string, ttlMinutes int) (ToolResult, error) {
+func handleClaim(ctx ToolContext, files, bdClaims, issues []string, reason string, ttlMinutes int) *mcp.CallToolResult {
 	agent, err := db.GetAgent(ctx.DB, ctx.AgentID)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if agent == nil {
-		return textResult(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID)), nil
+		return toolError(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID))
 	}
 
 	_, _ = db.PruneExpiredClaims(ctx.DB)
@@ -472,7 +312,7 @@ func handleClaim(ctx ToolContext, files, bdClaims, issues []string, reason strin
 	}
 
 	if len(claims) == 0 {
-		return textResult("Error: No claims specified. Provide files, bd, or issues."), nil
+		return toolError("Error: No claims specified. Provide files, bd, or issues.")
 	}
 
 	created := make([]types.Claim, 0, len(claims))
@@ -527,16 +367,16 @@ func handleClaim(ctx ToolContext, files, bdClaims, issues []string, reason strin
 		result += fmt.Sprintf("\n\nExpires in %d minutes", ttlMinutes)
 	}
 
-	return textResult(result), nil
+	return toolResult(result, len(errors) > 0)
 }
 
-func handleClear(ctx ToolContext, file, bdEntry, issue string) (ToolResult, error) {
+func handleClear(ctx ToolContext, file, bdEntry, issue string) *mcp.CallToolResult {
 	agent, err := db.GetAgent(ctx.DB, ctx.AgentID)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if agent == nil {
-		return textResult(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID)), nil
+		return toolError(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID))
 	}
 
 	cleared := 0
@@ -591,13 +431,13 @@ func handleClear(ctx ToolContext, file, bdEntry, issue string) (ToolResult, erro
 		if err == nil {
 			_ = db.AppendMessage(ctx.Project.DBPath, msg)
 		}
-		return textResult(fmt.Sprintf("Cleared %d claim", cleared) + pluralSuffix(cleared) + ":\n  " + strings.Join(clearedItems, "\n  ")), nil
+		return toolResult(fmt.Sprintf("Cleared %d claim", cleared)+pluralSuffix(cleared)+":\n  "+strings.Join(clearedItems, "\n  "), false)
 	}
 
-	return textResult("No claims to clear"), nil
+	return toolResult("No claims to clear", false)
 }
 
-func handleClaims(ctx ToolContext, agent string) (ToolResult, error) {
+func handleClaims(ctx ToolContext, agent string) *mcp.CallToolResult {
 	var claims []types.Claim
 	var err error
 	if agent != "" {
@@ -606,14 +446,14 @@ func handleClaims(ctx ToolContext, agent string) (ToolResult, error) {
 		claims, err = db.GetAllClaims(ctx.DB)
 	}
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if len(claims) == 0 {
 		qualifier := ""
 		if agent != "" {
 			qualifier = fmt.Sprintf(" for @%s", agent)
 		}
-		return textResult(fmt.Sprintf("No active claims%s", qualifier)), nil
+		return toolResult(fmt.Sprintf("No active claims%s", qualifier), false)
 	}
 
 	byAgent := make(map[string][]types.Claim)
@@ -637,22 +477,22 @@ func handleClaims(ctx ToolContext, agent string) (ToolResult, error) {
 		}
 	}
 
-	return textResult(strings.Join(lines, "\n")), nil
+	return toolResult(strings.Join(lines, "\n"), false)
 }
 
-func handleStatus(ctx ToolContext, message string, files, bdClaims, issues []string, ttlMinutes int, clear bool) (ToolResult, error) {
+func handleStatus(ctx ToolContext, message string, files, bdClaims, issues []string, ttlMinutes int, clear bool) *mcp.CallToolResult {
 	agent, err := db.GetAgent(ctx.DB, ctx.AgentID)
 	if err != nil {
-		return errorResult(err), nil
+		return toolError(err.Error())
 	}
 	if agent == nil {
-		return textResult(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID)), nil
+		return toolError(fmt.Sprintf("Error: Agent %s not found", ctx.AgentID))
 	}
 
 	if clear {
 		count, err := db.DeleteClaimsByAgent(ctx.DB, ctx.AgentID)
 		if err != nil {
-			return errorResult(err), nil
+			return toolError(err.Error())
 		}
 
 		now := time.Now().Unix()
@@ -683,7 +523,7 @@ func handleStatus(ctx ToolContext, message string, files, bdClaims, issues []str
 		if count > 0 {
 			result += fmt.Sprintf(", released %d claim", count) + pluralSuffix(int(count))
 		}
-		return textResult(result), nil
+		return toolResult(result, false)
 	}
 
 	_, _ = db.PruneExpiredClaims(ctx.DB)
@@ -774,7 +614,7 @@ func handleStatus(ctx ToolContext, message string, files, bdClaims, issues []str
 		result += "\n\nErrors:\n  " + strings.Join(errors, "\n  ")
 	}
 
-	return textResult(result), nil
+	return toolResult(result, len(errors) > 0)
 }
 
 func formatMessages(messages []types.Message) string {
@@ -789,19 +629,22 @@ func formatMessages(messages []types.Message) string {
 	return strings.Join(lines, "\n")
 }
 
+func toolResult(text string, isError bool) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
+		IsError: isError,
+	}
+}
+
+func toolError(text string) *mcp.CallToolResult {
+	return toolResult(text, true)
+}
+
 func sanitizeMessageID(value string) string {
 	trimmed := strings.TrimSpace(value)
 	trimmed = strings.TrimPrefix(trimmed, "@")
 	trimmed = strings.TrimPrefix(trimmed, "#")
 	return trimmed
-}
-
-func textResult(text string) ToolResult {
-	return ToolResult{Content: []ToolContent{{Type: "text", Text: text}}}
-}
-
-func errorResult(err error) ToolResult {
-	return ToolResult{Content: []ToolContent{{Type: "text", Text: fmt.Sprintf("Error: %s", err.Error())}}, IsError: true}
 }
 
 func stripHash(value string) string {
