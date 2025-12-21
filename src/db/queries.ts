@@ -104,21 +104,12 @@ export function getAllAgents(db: Database.Database): Agent[] {
 }
 
 /**
- * Get active users (humans using mm chat) based on recent messages.
- * @param staleHours - Hours of inactivity before considered inactive
- * @returns Array of usernames who have posted type='user' messages recently
+ * Get active users (humans using mm chat).
+ * Returns the configured username if set (means someone has used mm chat).
  */
-export function getActiveUsers(db: Database.Database, staleHours: number): string[] {
-  const stmt = db.prepare(`
-    SELECT from_agent, MAX(ts) as last_ts
-    FROM mm_messages
-    WHERE type = 'user'
-      AND ts > (strftime('%s', 'now') - ? * 3600)
-    GROUP BY from_agent
-    ORDER BY last_ts DESC
-  `);
-  const rows = stmt.all(staleHours) as { from_agent: string; last_ts: number }[];
-  return rows.map(r => r.from_agent);
+export function getActiveUsers(db: Database.Database): string[] {
+  const username = getConfig(db, 'username');
+  return username ? [username] : [];
 }
 
 /**

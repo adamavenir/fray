@@ -12,7 +12,7 @@ export function quickstartCommand(): Command {
         const staleHours = parseInt(getConfig(db, 'stale_hours') || '4', 10);
 
         const activeAgents = getActiveAgents(db, staleHours);
-        const activeUsers = getActiveUsers(db, staleHours);
+        const activeUsers = getActiveUsers(db);
 
         if (jsonMode) {
           console.log(JSON.stringify({
