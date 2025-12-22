@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const helpText = "Commands: /edit <id> <text> | /delete <id> | /prune [--keep N] [--all] | /help | /quit"
+const helpText = "Shortcuts: Ctrl-C (clear/exit), Ctrl-J (newline), Tab (channels), PgUp/PgDn/Home/End (scroll), Up (prefill edit), j/k or Up/Down (channel select), Esc (exit channel select), ? (help)\nCommands: /edit <id> <text> | /delete <id> | /rm <id> | /prune [--keep N] [--all] | /help | /quit"
 
 func (m *Model) handleSlashCommand(input string) (bool, tea.Cmd) {
 	trimmed := strings.TrimSpace(input)
@@ -42,7 +42,7 @@ func (m *Model) runSlashCommand(input string) (tea.Cmd, error) {
 	case "/quit", "/exit":
 		return tea.Quit, nil
 	case "/help":
-		m.status = helpText
+		m.showHelp()
 		return nil, nil
 	case "/edit":
 		return nil, m.runEditCommand(input)
@@ -53,6 +53,12 @@ func (m *Model) runSlashCommand(input string) (tea.Cmd, error) {
 	}
 
 	return nil, fmt.Errorf("unknown command: %s", fields[0])
+}
+
+func (m *Model) showHelp() {
+	m.messages = append(m.messages, newEventMessage(helpText))
+	m.status = ""
+	m.refreshViewport(true)
 }
 
 func (m *Model) prefillEditCommand() bool {

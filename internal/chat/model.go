@@ -235,6 +235,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.handleSidebarKeys(msg); handled {
 			return m, cmd
 		}
+		if msg.Type == tea.KeyRunes && !msg.Paste && msg.String() == "?" && m.input.Value() == "" {
+			m.showHelp()
+			return m, nil
+		}
 		if msg.Type == tea.KeyUp && m.input.Value() == "" {
 			if m.prefillEditCommand() {
 				return m, nil
@@ -254,6 +258,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
+			if m.input.Value() != "" {
+				m.input.Reset()
+				m.clearSuggestions()
+				m.lastInputValue = m.input.Value()
+				m.lastInputPos = m.inputCursorPos()
+				m.updateInputStyle()
+				m.resize()
+				return m, nil
+			}
 			return m, tea.Quit
 		case tea.KeyEnter:
 			value := strings.TrimSpace(m.input.Value())
@@ -1692,12 +1705,3 @@ func projectFromRoot(rootPath string) (core.Project, error) {
 func isAlphaNum(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
-			if m.input.Value() != "" {
-				m.input.Reset()
-				m.clearSuggestions()
-				m.lastInputValue = m.input.Value()
-				m.lastInputPos = m.inputCursorPos()
-				m.updateInputStyle()
-				m.resize()
-				return m, nil
-			}
