@@ -68,7 +68,7 @@ func NewPruneCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Int("keep", 100, "number of recent messages to keep")
+	cmd.Flags().Int("keep", 20, "number of recent messages to keep")
 	cmd.Flags().Bool("all", false, "delete history.jsonl before pruning")
 	return cmd
 }
@@ -84,6 +84,10 @@ func pruneMessages(projectPath string, keep int, pruneAll bool) (pruneResult, er
 	mmDir := resolveMMDir(projectPath)
 	messagesPath := filepath.Join(mmDir, "messages.jsonl")
 	historyPath := filepath.Join(mmDir, "history.jsonl")
+
+	if pruneAll {
+		keep = 0
+	}
 
 	if pruneAll {
 		if err := os.Remove(historyPath); err != nil && !os.IsNotExist(err) {

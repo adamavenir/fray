@@ -349,7 +349,7 @@ func parseDeleteCommand(input string) (string, error) {
 }
 
 func parsePruneArgs(args []string) (int, bool, error) {
-	keep := 100
+	keep := 20
 	pruneAll := false
 
 	for i := 0; i < len(args); i++ {
