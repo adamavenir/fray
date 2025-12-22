@@ -1692,3 +1692,12 @@ func projectFromRoot(rootPath string) (core.Project, error) {
 func isAlphaNum(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
+			if m.input.Value() != "" {
+				m.input.Reset()
+				m.clearSuggestions()
+				m.lastInputValue = m.input.Value()
+				m.lastInputPos = m.inputCursorPos()
+				m.updateInputStyle()
+				m.resize()
+				return m, nil
+			}
