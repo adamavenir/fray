@@ -56,7 +56,12 @@ func (m *Model) runSlashCommand(input string) (tea.Cmd, error) {
 }
 
 func (m *Model) showHelp() {
-	m.messages = append(m.messages, newEventMessage(helpText))
+	if m.helpMessageID != "" {
+		_ = m.removeMessageByID(m.helpMessageID)
+	}
+	msg := newEventMessage(helpText)
+	m.helpMessageID = msg.ID
+	m.messages = append(m.messages, msg)
 	m.status = ""
 	m.refreshViewport(true)
 }

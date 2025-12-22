@@ -56,7 +56,6 @@ type Options struct {
 	Last            int
 	ShowUpdates     bool
 	IncludeArchived bool
-	EnableMouse     bool
 }
 
 // Run starts the chat UI.
@@ -65,11 +64,7 @@ func Run(opts Options) error {
 	if err != nil {
 		return err
 	}
-	options := []tea.ProgramOption{}
-	if opts.EnableMouse {
-		options = append(options, tea.WithMouseCellMotion())
-	}
-	program := tea.NewProgram(model, options...)
+	program := tea.NewProgram(model, tea.WithMouseCellMotion())
 	_, err = program.Run()
 	model.Close()
 	return err
@@ -110,6 +105,8 @@ type Model struct {
 	sidebarFilter       string
 	sidebarMatches      []int
 	sidebarFilterActive bool
+	helpMessageID       string
+	initialScroll       bool
 }
 
 type pollMsg struct {
@@ -213,9 +210,8 @@ func NewModel(opts Options) (*Model, error) {
 		colorMap:        colorMap,
 		channels:        channels,
 		channelIndex:    channelIndex,
+		initialScroll:   true,
 	}
-
-	model.refreshViewport(true)
 	return model, nil
 }
 
@@ -515,6 +511,7 @@ func (m *Model) refreshSuggestions() {
 	m.lastInputValue = value
 	m.lastInputPos = pos
 	m.updateInputStyle()
+	m.dismissHelpOnInput(value)
 
 	if strings.HasPrefix(strings.TrimSpace(value), "/") {
 		if len(m.suggestions) > 0 {
@@ -555,6 +552,27 @@ func (m *Model) refreshSuggestions() {
 	m.suggestionStart = start
 	m.suggestionKind = kind
 	m.resize()
+}
+
+func (m *Model) dismissHelpOnInput(value string) {
+	if m.helpMessageID == "" || value == "" {
+		return
+	}
+	if m.removeMessageByID(m.helpMessageID) {
+		m.helpMessageID = ""
+		m.refreshViewport(true)
+	}
+}
+
+func (m *Model) removeMessageByID(id string) bool {
+	for i, msg := range m.messages {
+		if msg.ID != id {
+			continue
+		}
+		m.messages = append(m.messages[:i], m.messages[i+1:]...)
+		return true
+	}
+	return false
 }
 
 func (m *Model) clearSuggestions() {
@@ -1199,6 +1217,17 @@ func (m *Model) refreshViewport(scrollToBottom bool) {
 	m.viewport.SetContent(content)
 	if scrollToBottom {
 		m.viewport.GotoBottom()
+		return
+	}
+	if m.viewport.Height <= 0 {
+		return
+	}
+	maxOffset := lipgloss.Height(content) - m.viewport.Height
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.viewport.YOffset > maxOffset {
+		m.viewport.SetYOffset(maxOffset)
 	}
 }
 
@@ -1581,6 +1610,11 @@ func (m *Model) resize() {
 	m.viewport.Height = m.height - inputHeight - statusHeight - suggestionHeight - marginHeight
 	if m.viewport.Height < 1 {
 		m.viewport.Height = 1
+	}
+	if m.initialScroll {
+		m.refreshViewport(true)
+		m.initialScroll = false
+		return
 	}
 	m.refreshViewport(false)
 }
