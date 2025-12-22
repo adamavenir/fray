@@ -56,6 +56,7 @@ type Options struct {
 	Last            int
 	ShowUpdates     bool
 	IncludeArchived bool
+	EnableMouse     bool
 }
 
 // Run starts the chat UI.
@@ -64,7 +65,11 @@ func Run(opts Options) error {
 	if err != nil {
 		return err
 	}
-	program := tea.NewProgram(model, tea.WithMouseCellMotion())
+	options := []tea.ProgramOption{}
+	if opts.EnableMouse {
+		options = append(options, tea.WithMouseCellMotion())
+	}
+	program := tea.NewProgram(model, options...)
 	_, err = program.Run()
 	model.Close()
 	return err

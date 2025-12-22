@@ -26,6 +26,7 @@ func NewChatCmd() *cobra.Command {
 			last, _ := cmd.Flags().GetInt("last")
 			showUpdates, _ := cmd.Flags().GetBool("show-updates")
 			archived, _ := cmd.Flags().GetBool("archived")
+			enableMouse, _ := cmd.Flags().GetBool("mouse")
 
 			var ctx *CommandContext
 			var err error
@@ -94,6 +95,7 @@ func NewChatCmd() *cobra.Command {
 				Last:            last,
 				ShowUpdates:     showUpdates,
 				IncludeArchived: archived,
+				EnableMouse:     enableMouse,
 			}
 
 			return chat.Run(options)
@@ -103,6 +105,7 @@ func NewChatCmd() *cobra.Command {
 	cmd.Flags().Int("last", 20, "show last N messages")
 	cmd.Flags().Bool("show-updates", false, "include system event messages")
 	cmd.Flags().Bool("archived", false, "include archived messages")
+	cmd.Flags().Bool("mouse", false, "enable mouse capture for scrolling")
 
 	return cmd
 }
