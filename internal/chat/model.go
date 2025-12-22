@@ -385,10 +385,25 @@ func (m *Model) renderInput() string {
 
 func (m *Model) statusLine() string {
 	channel := m.channelLabel()
-	if m.status == "" {
-		return fmt.Sprintf("#%s", channel)
+	right := "? for help"
+	left := fmt.Sprintf("#%s", channel)
+	if m.status != "" {
+		left = fmt.Sprintf("%s · #%s", m.status, channel)
 	}
-	return fmt.Sprintf("%s · #%s", m.status, channel)
+	return alignStatusLine(left, right, m.mainWidth())
+}
+
+func alignStatusLine(left, right string, width int) string {
+	if width <= 0 || right == "" {
+		return left
+	}
+	leftWidth := ansi.StringWidth(left)
+	rightWidth := ansi.StringWidth(right)
+	if leftWidth+rightWidth+1 > width {
+		return left
+	}
+	spaces := width - leftWidth - rightWidth
+	return left + strings.Repeat(" ", spaces) + right
 }
 
 func (m *Model) handleSubmit(text string) tea.Cmd {
@@ -812,6 +827,13 @@ func (m *Model) renderSidebar() string {
 			lines = append(lines, style.Render(" "+line))
 		}
 	}
+
+	if m.height > 0 {
+		for len(lines) < m.height-1 {
+			lines = append(lines, "")
+		}
+	}
+	lines = append(lines, itemStyle.Render(" # - filter"))
 
 	content := strings.Join(lines, "\n")
 	return lipgloss.NewStyle().
@@ -1587,9 +1609,13 @@ func uniqueSortedStrings(values []string) []string {
 func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
 	if msg.Type == types.MessageTypeEvent {
 		body := msg.Body
+		hasANSI := strings.Contains(body, "\x1b[")
 		width := m.mainWidth()
 		if width > 0 {
 			body = ansi.Wrap(body, width, "")
+		}
+		if hasANSI {
+			return body
 		}
 		style := lipgloss.NewStyle().Foreground(metaColor).Italic(true)
 		return style.Render(body)

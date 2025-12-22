@@ -9,9 +9,14 @@ import (
 	"github.com/adamavenir/mini-msg/internal/db"
 	"github.com/adamavenir/mini-msg/internal/types"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
-const helpText = "Shortcuts: Ctrl-C (clear/exit), Ctrl-J (newline), Tab (channels), Space/# (filter channels), PgUp/PgDn/Home/End (scroll), Up (prefill edit), j/k or Up/Down (channel select), Esc (exit channel select), ? (help)\nMouse: click message (reply), double-click (copy), click channel (switch)\nCommands: /edit <id> <text> | /delete <id> | /rm <id> | /prune [--keep N] [--all] | /help | /quit"
+const (
+	helpLabelStyle = "\x1b[1m\x1b[97m"
+	helpItemStyle  = "\x1b[94m"
+	helpResetStyle = "\x1b[0m"
+)
 
 func (m *Model) handleSlashCommand(input string) (bool, tea.Cmd) {
 	trimmed := strings.TrimSpace(input)
@@ -59,11 +64,64 @@ func (m *Model) showHelp() {
 	if m.helpMessageID != "" {
 		_ = m.removeMessageByID(m.helpMessageID)
 	}
-	msg := newEventMessage(helpText)
+	msg := newEventMessage(buildHelpText())
 	m.helpMessageID = msg.ID
 	m.messages = append(m.messages, msg)
 	m.status = ""
 	m.refreshViewport(true)
+}
+
+func buildHelpText() string {
+	label := helpLabelStyle + "Shortcuts" + helpResetStyle
+	lines := []string{
+		label,
+		formatHelpRow(
+			helpItemStyle+"Ctrl-C"+helpResetStyle+" - clear text",
+			helpItemStyle+"Up"+helpResetStyle+" - edit last",
+			helpItemStyle+"Tab"+helpResetStyle+" - channel picker",
+			25,
+			22,
+		),
+		"",
+		helpLabelStyle + "Commands" + helpResetStyle,
+		formatHelpRow(
+			helpItemStyle+"/edit <id>"+helpResetStyle,
+			helpItemStyle+"/delete <id>"+helpResetStyle,
+			helpItemStyle+"/prune [--keep N]"+helpResetStyle,
+			25,
+			22,
+		),
+		formatHelpRow(
+			helpItemStyle+"/help"+helpResetStyle,
+			helpItemStyle+"/quit"+helpResetStyle,
+			"",
+			25,
+			22,
+		),
+		"",
+		helpItemStyle + "Click" + helpResetStyle + " a message to start a threaded reply. " +
+			helpItemStyle + "Double-click" + helpResetStyle + " to copy.",
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatHelpRow(col1, col2, col3 string, col1Width, col2Width int) string {
+	row := padHelpColumn(col1, col1Width) + padHelpColumn(col2, col2Width)
+	if col3 != "" {
+		row += col3
+	}
+	return strings.TrimRight(row, " ")
+}
+
+func padHelpColumn(value string, width int) string {
+	if width <= 0 {
+		return value
+	}
+	pad := width - ansi.StringWidth(value)
+	if pad < 2 {
+		pad = 2
+	}
+	return value + strings.Repeat(" ", pad)
 }
 
 func (m *Model) prefillEditCommand() bool {
