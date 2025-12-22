@@ -40,7 +40,7 @@ func TestParsePruneArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if keep != 100 || all {
+	if keep != 20 || all {
 		t.Fatalf("default: got keep=%d all=%v", keep, all)
 	}
 
