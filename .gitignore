@@ -5,6 +5,8 @@ node_modules/
 dist/
 build/
 out/
+mm
+mm-mcp
 npm/bin/mm
 npm/bin/mm-mcp
 npm/bin/*.exe

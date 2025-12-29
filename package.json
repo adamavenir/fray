@@ -1,0 +1,29 @@
+{
+  "name": "mini-msg",
+  "version": "0.2.0",
+  "description": "Lightweight agent-to-agent messaging CLI.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adamavenir/mini-msg.git"
+  },
+  "homepage": "https://github.com/adamavenir/mini-msg",
+  "bin": {
+    "mm": "npm/bin/mm.js",
+    "mm-mcp": "npm/bin/mm-mcp.js"
+  },
+  "scripts": {
+    "postinstall": "node npm/install.js"
+  },
+  "files": [
+    "npm/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tar": "^6.2.1"
+  }
+}

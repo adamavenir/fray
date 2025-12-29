@@ -1,0 +1,58 @@
+version: 2
+
+project_name: mini-msg
+
+builds:
+  - id: mm
+    main: ./cmd/mm
+    binary: mm
+    ldflags:
+      - -s -w
+      - -X github.com/adamavenir/mini-msg/internal/command.Version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+  - id: mm-mcp
+    main: ./cmd/mm-mcp
+    binary: mm-mcp
+    ldflags:
+      - -s -w
+      - -X github.com/adamavenir/mini-msg/cmd/mm-mcp.Version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - name_template: "mini-msg_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    builds:
+      - mm
+      - mm-mcp
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+brews:
+  - name: mini-msg
+    directory: Formula
+    repository:
+      owner: adamavenir
+      name: mini-msg
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: "https://github.com/adamavenir/mini-msg"
+    description: "Lightweight agent-to-agent messaging CLI."
+    license: "MIT"
+    install: |
+      bin.install "mm"
+      bin.install "mm-mcp"
