@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -47,6 +48,7 @@ type MessageUpdateJSONLRecord struct {
 	EditedAt   *int64               `json:"edited_at,omitempty"`
 	ArchivedAt *int64               `json:"archived_at,omitempty"`
 	Reactions  *map[string][]string `json:"reactions,omitempty"`
+	Reason     *string              `json:"reason,omitempty"`
 }
 
 // QuestionJSONLRecord represents a question entry in JSONL.
@@ -641,6 +643,234 @@ func ReadMessages(projectPath string) ([]MessageJSONLRecord, error) {
 		}
 		messages = append(messages, record)
 	}
+	return messages, nil
+}
+
+// GetMessageVersions returns the full version history for a single message.
+func GetMessageVersions(projectPath string, messageID string) (*types.MessageVersionHistory, error) {
+	frayDir := resolveFrayDir(projectPath)
+	lines, err := readJSONLLines(filepath.Join(frayDir, messagesFile))
+	if err != nil {
+		return nil, err
+	}
+
+	type versionUpdate struct {
+		body      string
+		timestamp *int64
+		reason    string
+		seq       int
+	}
+
+	var original *MessageJSONLRecord
+	var updates []versionUpdate
+	var archivedAt *int64
+	seq := 0
+
+	for _, line := range lines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+
+		switch envelope.Type {
+		case "message":
+			var record MessageJSONLRecord
+			if err := json.Unmarshal([]byte(line), &record); err != nil {
+				continue
+			}
+			if record.ID != messageID {
+				continue
+			}
+			if record.Home == "" {
+				record.Home = "room"
+			}
+			original = &record
+			archivedAt = record.ArchivedAt
+		case "message_update":
+			var update struct {
+				ID         string          `json:"id"`
+				Body       json.RawMessage `json:"body"`
+				EditedAt   json.RawMessage `json:"edited_at"`
+				ArchivedAt json.RawMessage `json:"archived_at"`
+				Reason     json.RawMessage `json:"reason"`
+			}
+			if err := json.Unmarshal([]byte(line), &update); err != nil {
+				continue
+			}
+			if update.ID != messageID {
+				continue
+			}
+
+			if update.ArchivedAt != nil {
+				if string(update.ArchivedAt) == "null" {
+					archivedAt = nil
+				} else {
+					var value int64
+					if err := json.Unmarshal(update.ArchivedAt, &value); err == nil {
+						archivedAt = &value
+					}
+				}
+			}
+
+			if update.Body != nil && string(update.Body) != "null" {
+				var body string
+				if err := json.Unmarshal(update.Body, &body); err == nil {
+					var editedAt *int64
+					if update.EditedAt != nil && string(update.EditedAt) != "null" {
+						var value int64
+						if err := json.Unmarshal(update.EditedAt, &value); err == nil {
+							editedAt = &value
+						}
+					}
+					var reason string
+					if update.Reason != nil && string(update.Reason) != "null" {
+						_ = json.Unmarshal(update.Reason, &reason)
+					}
+					updates = append(updates, versionUpdate{body: body, timestamp: editedAt, reason: reason, seq: seq})
+					seq++
+				}
+			}
+		}
+	}
+
+	if original == nil {
+		return nil, fmt.Errorf("message not found: %s", messageID)
+	}
+
+	for i := range updates {
+		if updates[i].timestamp == nil {
+			value := original.TS
+			updates[i].timestamp = &value
+		}
+	}
+
+	sort.SliceStable(updates, func(i, j int) bool {
+		if *updates[i].timestamp == *updates[j].timestamp {
+			return updates[i].seq < updates[j].seq
+		}
+		return *updates[i].timestamp < *updates[j].timestamp
+	})
+
+	versions := make([]types.MessageVersion, 0, len(updates)+1)
+	versions = append(versions, types.MessageVersion{
+		Version:    1,
+		Body:       original.Body,
+		Timestamp:  original.TS,
+		IsOriginal: true,
+	})
+
+	for i, update := range updates {
+		versions = append(versions, types.MessageVersion{
+			Version:   i + 2,
+			Body:      update.body,
+			Timestamp: *update.timestamp,
+			Reason:    update.reason,
+		})
+	}
+
+	if len(versions) > 0 {
+		versions[len(versions)-1].IsCurrent = true
+	}
+
+	history := &types.MessageVersionHistory{
+		MessageID:    messageID,
+		VersionCount: len(versions),
+		IsArchived:   archivedAt != nil,
+		Versions:     versions,
+	}
+	return history, nil
+}
+
+// GetMessageEditCounts returns the number of edits per message ID.
+func GetMessageEditCounts(projectPath string, messageIDs []string) (map[string]int, error) {
+	counts := make(map[string]int)
+	if len(messageIDs) == 0 {
+		return counts, nil
+	}
+
+	idSet := make(map[string]struct{}, len(messageIDs))
+	for _, id := range messageIDs {
+		if id == "" {
+			continue
+		}
+		idSet[id] = struct{}{}
+	}
+	if len(idSet) == 0 {
+		return counts, nil
+	}
+
+	frayDir := resolveFrayDir(projectPath)
+	lines, err := readJSONLLines(filepath.Join(frayDir, messagesFile))
+	if err != nil {
+		return nil, err
+	}
+
+	for _, line := range lines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+		if envelope.Type != "message_update" {
+			continue
+		}
+		var update struct {
+			ID         string          `json:"id"`
+			Body       json.RawMessage `json:"body"`
+			EditedAt   json.RawMessage `json:"edited_at"`
+			ArchivedAt json.RawMessage `json:"archived_at"`
+		}
+		if err := json.Unmarshal([]byte(line), &update); err != nil {
+			continue
+		}
+		if _, ok := idSet[update.ID]; !ok {
+			continue
+		}
+
+		hasEdit := update.EditedAt != nil && string(update.EditedAt) != "null"
+		if !hasEdit && update.Body != nil && string(update.Body) != "null" {
+			if update.ArchivedAt == nil || string(update.ArchivedAt) == "null" {
+				hasEdit = true
+			}
+		}
+		if hasEdit {
+			counts[update.ID]++
+		}
+	}
+
+	return counts, nil
+}
+
+// ApplyMessageEditCounts populates edit metadata on messages from JSONL.
+func ApplyMessageEditCounts(projectPath string, messages []types.Message) ([]types.Message, error) {
+	if len(messages) == 0 {
+		return messages, nil
+	}
+
+	ids := make([]string, 0, len(messages))
+	for _, msg := range messages {
+		ids = append(ids, msg.ID)
+	}
+
+	counts, err := GetMessageEditCounts(projectPath, ids)
+	if err != nil {
+		return messages, err
+	}
+
+	for i := range messages {
+		count := counts[messages[i].ID]
+		if count == 0 && messages[i].EditedAt != nil {
+			count = 1
+		}
+		if count > 0 {
+			messages[i].Edited = true
+			messages[i].EditCount = count
+		}
+	}
+
 	return messages, nil
 }
 

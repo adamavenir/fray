@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray reply` for reply chains (renamed from `fray thread`)
 - Thread/Question CLI commands (`thread`, `threads`, `surface`, `note`, `notes`, `meta`)
 - Chat TUI thread panel with filtering and pseudo-thread question views
+- `fray versions` to show message edit history with optional diffs
+- Edit events with required reasons plus edited metadata in message output
 
 ### Changed
 - Messages now include `home`, `references`, and `surface_message` fields

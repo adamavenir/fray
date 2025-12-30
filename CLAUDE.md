@@ -168,6 +168,7 @@ fray post --as alice --answer <q> "message"   # Answer question
 fray get alice                 # Room + my @mentions
 fray @alice                    # Check mentions for alice
 fray reply <guid>              # View reply chain
+fray versions <guid>           # Show message edit history
 fray thread <ref>              # View thread messages
 fray threads                   # List threads
 fray wonder "..." --as alice   # Create unasked question

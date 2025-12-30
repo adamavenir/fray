@@ -36,6 +36,10 @@ func NewThreadCmd() *cobra.Command {
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
+			messages, err = db.ApplyMessageEditCounts(ctx.Project.DBPath, messages)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
 
 			path, err := buildThreadPath(ctx.DB, thread)
 			if err != nil {

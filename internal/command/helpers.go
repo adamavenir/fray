@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/adamavenir/fray/internal/db"
+	"github.com/adamavenir/fray/internal/types"
 )
 
 func formatRelative(ts int64) string {
@@ -194,4 +195,15 @@ func formatAgentLabel(agentID string, nicks []string) string {
 		return "@" + agentID
 	}
 	return fmt.Sprintf("@%s (aka %s)", agentID, strings.Join(formatted, ", "))
+}
+
+func filterEventMessages(messages []types.Message) []types.Message {
+	filtered := make([]types.Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Type == types.MessageTypeEvent {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	return filtered
 }

@@ -51,6 +51,10 @@ func NewMentionsCmd() *cobra.Command {
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
+			messages, err = db.ApplyMessageEditCounts(ctx.Project.DBPath, messages)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
 
 			if ctx.JSONMode {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(messages)

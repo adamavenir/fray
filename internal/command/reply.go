@@ -40,6 +40,10 @@ func NewReplyCmd() *cobra.Command {
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
+			thread, err = db.ApplyMessageEditCounts(ctx.Project.DBPath, thread)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
 
 			if ctx.JSONMode {
 				payload := map[string]any{
@@ -87,6 +91,8 @@ func renderReplyJSON(messages []types.Message) []map[string]any {
 			"body":       msg.Body,
 			"reply_to":   msg.ReplyTo,
 			"ts":         msg.TS,
+			"edited":     msg.Edited,
+			"edit_count": msg.EditCount,
 		})
 	}
 	return payload

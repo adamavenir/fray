@@ -53,6 +53,10 @@ func NewMetaCmd() *cobra.Command {
 				if err != nil {
 					return writeCommandError(cmd, err)
 				}
+				messages, err = db.ApplyMessageEditCounts(ctx.Project.DBPath, messages)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
 
 				if ctx.JSONMode {
 					payload := map[string]any{

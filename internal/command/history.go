@@ -62,6 +62,10 @@ func NewHistoryCmd() *cobra.Command {
 					rows = append(rows, msg)
 				}
 			}
+			rows, err = db.ApplyMessageEditCounts(ctx.Project.DBPath, rows)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
 
 			if ctx.JSONMode {
 				payload := buildHistoryPayload(agent, rows)
@@ -108,6 +112,8 @@ func buildHistoryPayload(agent *types.Agent, rows []types.Message) map[string]an
 			"age_seconds": maxInt64(0, now-row.TS),
 			"mentions":    row.Mentions,
 			"reply_to":    row.ReplyTo,
+			"edited":      row.Edited,
+			"edit_count":  row.EditCount,
 		})
 	}
 	return map[string]any{

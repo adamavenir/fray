@@ -999,7 +999,7 @@ func GetMessageReactions(db *sql.DB, messageIDs []string) (map[string]map[string
 	return result, nil
 }
 
-// EditMessage updates message body and logs event.
+// EditMessage updates message body.
 func EditMessage(db *sql.DB, messageID, newBody, agentID string) error {
 	msg, err := GetMessage(db, messageID)
 	if err != nil {
@@ -1016,14 +1016,7 @@ func EditMessage(db *sql.DB, messageID, newBody, agentID string) error {
 	if _, err := db.Exec("UPDATE fray_messages SET body = ?, edited_at = ? WHERE guid = ?", newBody, editedAt, messageID); err != nil {
 		return err
 	}
-
-	_, err = CreateMessage(db, types.Message{
-		FromAgent: "system",
-		Body:      fmt.Sprintf("update: _@%s edited message #%s_", agentID, messageID),
-		Mentions:  []string{agentID},
-		Type:      types.MessageTypeEvent,
-	})
-	return err
+	return nil
 }
 
 // DeleteMessage marks a message as deleted.

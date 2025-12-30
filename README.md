@@ -247,11 +247,13 @@ fray post --as <id> "msg"      post message
 fray post --as <id> -r <guid>  reply to message
 fray post --as <id> --thread <ref> "msg"  post in thread (hidden)
 fray post --as <id> --answer <q> "msg"    answer a question
+fray edit <guid> "msg" -m "reason" edit a message with summary
 fray unreact <guid>            remove your reactions from a message
 fray @<name>                   check unread @mentions (prefix match)
 fray @<name> --all             check all @mentions (read + unread)
 fray get <id>                  room + @mentions combined view
 fray reply <guid>              view message and its replies
+fray versions <guid>           show edit history for a message
 fray thread <ref>              view thread messages
 fray threads                   list threads
 

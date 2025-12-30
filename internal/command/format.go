@@ -51,7 +51,11 @@ func GetProjectName(projectRoot string) string {
 
 // FormatMessage formats a message for display.
 func FormatMessage(msg types.Message, projectName string, agentBases map[string]struct{}) string {
-	idBlock := fmt.Sprintf("%s[%s#%s%s %s]%s", dim, bold, projectName, reset, dim+msg.ID, reset)
+	editedSuffix := ""
+	if msg.Edited || msg.EditCount > 0 || msg.EditedAt != nil {
+		editedSuffix = " (edited)"
+	}
+	idBlock := fmt.Sprintf("%s[%s#%s%s %s]%s", dim, bold, projectName, reset, dim+msg.ID+editedSuffix, reset)
 
 	color := getAgentColor(msg.FromAgent, msg.Type, nil)
 	truncated := truncateForDisplay(msg.Body, msg.ID)

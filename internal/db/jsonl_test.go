@@ -44,6 +44,141 @@ func TestAppendAndReadMessages(t *testing.T) {
 	}
 }
 
+func TestGetMessageVersions(t *testing.T) {
+	projectDir := t.TempDir()
+
+	message := types.Message{
+		ID:        "msg-abc12345",
+		TS:        1000,
+		FromAgent: "alice",
+		Body:      "original text",
+		Mentions:  []string{},
+		Type:      types.MessageTypeAgent,
+	}
+
+	if err := AppendMessage(projectDir, message); err != nil {
+		t.Fatalf("append message: %v", err)
+	}
+
+	body1 := "first edit"
+	editedAt1 := int64(2000)
+	reason1 := "first reason"
+	if err := AppendMessageUpdate(projectDir, MessageUpdateJSONLRecord{
+		ID:       message.ID,
+		Body:     &body1,
+		EditedAt: &editedAt1,
+		Reason:   &reason1,
+	}); err != nil {
+		t.Fatalf("append update 1: %v", err)
+	}
+
+	body2 := "second edit"
+	editedAt2 := int64(3000)
+	reason2 := "second reason"
+	if err := AppendMessageUpdate(projectDir, MessageUpdateJSONLRecord{
+		ID:       message.ID,
+		Body:     &body2,
+		EditedAt: &editedAt2,
+		Reason:   &reason2,
+	}); err != nil {
+		t.Fatalf("append update 2: %v", err)
+	}
+
+	archivedAt := int64(4000)
+	if err := AppendMessageUpdate(projectDir, MessageUpdateJSONLRecord{
+		ID:         message.ID,
+		ArchivedAt: &archivedAt,
+	}); err != nil {
+		t.Fatalf("append update archived: %v", err)
+	}
+
+	history, err := GetMessageVersions(projectDir, message.ID)
+	if err != nil {
+		t.Fatalf("get versions: %v", err)
+	}
+	if history.VersionCount != 3 {
+		t.Fatalf("expected 3 versions, got %d", history.VersionCount)
+	}
+	if len(history.Versions) != 3 {
+		t.Fatalf("expected 3 versions, got %d", len(history.Versions))
+	}
+	if !history.IsArchived {
+		t.Fatalf("expected archived history")
+	}
+	if history.Versions[0].Body != "original text" || !history.Versions[0].IsOriginal {
+		t.Fatalf("expected original version")
+	}
+	if history.Versions[1].Body != "first edit" || history.Versions[1].Timestamp != editedAt1 {
+		t.Fatalf("expected first edit")
+	}
+	if history.Versions[1].Reason != reason1 {
+		t.Fatalf("expected first reason")
+	}
+	if history.Versions[2].Body != "second edit" || !history.Versions[2].IsCurrent {
+		t.Fatalf("expected current version")
+	}
+	if history.Versions[2].Reason != reason2 {
+		t.Fatalf("expected second reason")
+	}
+}
+
+func TestApplyMessageEditCounts(t *testing.T) {
+	projectDir := t.TempDir()
+
+	msg1 := types.Message{
+		ID:        "msg-aaa11111",
+		TS:        100,
+		FromAgent: "alice",
+		Body:      "original",
+		Type:      types.MessageTypeAgent,
+	}
+	msg2 := types.Message{
+		ID:        "msg-bbb22222",
+		TS:        200,
+		FromAgent: "bob",
+		Body:      "reacted",
+		Type:      types.MessageTypeAgent,
+	}
+
+	if err := AppendMessage(projectDir, msg1); err != nil {
+		t.Fatalf("append message 1: %v", err)
+	}
+	if err := AppendMessage(projectDir, msg2); err != nil {
+		t.Fatalf("append message 2: %v", err)
+	}
+
+	body := "edited text"
+	editedAt := int64(300)
+	reason := "fix typo"
+	if err := AppendMessageUpdate(projectDir, MessageUpdateJSONLRecord{
+		ID:       msg1.ID,
+		Body:     &body,
+		EditedAt: &editedAt,
+		Reason:   &reason,
+	}); err != nil {
+		t.Fatalf("append edit update: %v", err)
+	}
+
+	reactions := map[string][]string{":+1:": {"alice"}}
+	if err := AppendMessageUpdate(projectDir, MessageUpdateJSONLRecord{
+		ID:        msg2.ID,
+		Reactions: &reactions,
+	}); err != nil {
+		t.Fatalf("append reaction update: %v", err)
+	}
+
+	annotated, err := ApplyMessageEditCounts(projectDir, []types.Message{msg1, msg2})
+	if err != nil {
+		t.Fatalf("apply edit counts: %v", err)
+	}
+	if !annotated[0].Edited || annotated[0].EditCount != 1 {
+		t.Fatalf("expected msg1 edited count 1, got edited=%v count=%d", annotated[0].Edited, annotated[0].EditCount)
+	}
+	if annotated[1].Edited || annotated[1].EditCount != 0 {
+		t.Fatalf("expected msg2 unedited, got edited=%v count=%d", annotated[1].Edited, annotated[1].EditCount)
+	}
+}
+
 func TestAppendAndReadAgents(t *testing.T) {
 	projectDir := t.TempDir()
 

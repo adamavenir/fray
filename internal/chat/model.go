@@ -218,6 +218,10 @@ func NewModel(opts Options) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	rawMessages, err = db.ApplyMessageEditCounts(opts.ProjectDBPath, rawMessages)
+	if err != nil {
+		return nil, err
+	}
 	messages := filterUpdates(rawMessages, opts.ShowUpdates)
 
 	var lastCursor *types.MessageCursor
@@ -1921,6 +1925,10 @@ func (m *Model) pollCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err: err}
 		}
+		roomMessages, err = db.ApplyMessageEditCounts(m.projectDBPath, roomMessages)
+		if err != nil {
+			return errMsg{err: err}
+		}
 		roomMessages = filterUpdates(roomMessages, showUpdates)
 
 		threadID := ""
@@ -1928,6 +1936,10 @@ func (m *Model) pollCmd() tea.Cmd {
 		if currentThread != nil {
 			threadID = currentThread.GUID
 			threadMessages, err = db.GetThreadMessages(m.db, currentThread.GUID)
+			if err != nil {
+				return errMsg{err: err}
+			}
+			threadMessages, err = db.ApplyMessageEditCounts(m.projectDBPath, threadMessages)
 			if err != nil {
 				return errMsg{err: err}
 			}
@@ -2289,7 +2301,13 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
 		body = ansi.Wrap(body, width, "")
 	}
 	bodyLine := lipgloss.NewStyle().Foreground(color).Render(body)
-	meta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(fmt.Sprintf("#%s", core.GetGUIDPrefix(msg.ID, prefixLength)))
+	editedSuffix := ""
+	if msg.Edited || msg.EditCount > 0 || msg.EditedAt != nil {
+		editedSuffix = " (edited)"
+	}
+	meta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(
+		fmt.Sprintf("#%s%s", core.GetGUIDPrefix(msg.ID, prefixLength), editedSuffix),
+	)
 
 	lines := []string{}
 	if msg.ReplyTo != nil {
@@ -2513,6 +2531,11 @@ func (m *Model) refreshThreadMessages() {
 		return
 	}
 	messages, err := db.GetThreadMessages(m.db, m.currentThread.GUID)
+	if err != nil {
+		m.status = err.Error()
+		return
+	}
+	messages, err = db.ApplyMessageEditCounts(m.projectDBPath, messages)
 	if err != nil {
 		m.status = err.Error()
 		return

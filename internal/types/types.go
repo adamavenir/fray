@@ -36,7 +36,27 @@ type Message struct {
 	SurfaceMessage *string             `json:"surface_message,omitempty"`
 	ReplyTo        *string             `json:"reply_to,omitempty"`
 	EditedAt       *int64              `json:"edited_at,omitempty"`
+	Edited         bool                `json:"edited,omitempty"`
+	EditCount      int                 `json:"edit_count,omitempty"`
 	ArchivedAt     *int64              `json:"archived_at,omitempty"`
+}
+
+// MessageVersion represents a version of a message body.
+type MessageVersion struct {
+	Version    int    `json:"version"`
+	Body       string `json:"body"`
+	Timestamp  int64  `json:"timestamp"`
+	Reason     string `json:"reason,omitempty"`
+	IsOriginal bool   `json:"is_original,omitempty"`
+	IsCurrent  bool   `json:"is_current,omitempty"`
+}
+
+// MessageVersionHistory summarizes all versions of a message.
+type MessageVersionHistory struct {
+	MessageID    string           `json:"message_id"`
+	VersionCount int              `json:"version_count"`
+	IsArchived   bool             `json:"is_archived,omitempty"`
+	Versions     []MessageVersion `json:"versions"`
 }
 
 // MessageRow is a raw database row representation of a message.
