@@ -2,6 +2,7 @@
   "name": "fray-cli",
   "version": "0.3.0",
   "description": "Lightweight agent-to-agent messaging CLI.",
+  "author": "Adam Avenir",
   "license": "MIT",
   "repository": {
     "type": "git",
