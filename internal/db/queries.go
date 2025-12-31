@@ -1219,6 +1219,93 @@ func GetReadReceiptCount(db *sql.DB, messageID string) (int64, error) {
 	return count, nil
 }
 
+// ReadTo represents a watermark position for an agent in a context.
+type ReadTo struct {
+	AgentID     string `json:"agent_id"`
+	Home        string `json:"home"`
+	MessageGUID string `json:"message_guid"`
+	MessageTS   int64  `json:"message_ts"`
+	SetAt       int64  `json:"set_at"`
+}
+
+// SetReadTo sets or updates an agent's read watermark for a context.
+func SetReadTo(db *sql.DB, agentID, home, messageGUID string, messageTS int64) error {
+	now := time.Now().Unix()
+	_, err := db.Exec(`
+		INSERT INTO fray_read_to (agent_id, home, message_guid, message_ts, set_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(agent_id, home) DO UPDATE SET
+			message_guid = excluded.message_guid,
+			message_ts = excluded.message_ts,
+			set_at = excluded.set_at
+		WHERE excluded.message_ts > fray_read_to.message_ts
+	`, agentID, home, messageGUID, messageTS, now)
+	return err
+}
+
+// GetReadTo returns an agent's read watermark for a context.
+func GetReadTo(db *sql.DB, agentID, home string) (*ReadTo, error) {
+	row := db.QueryRow(`
+		SELECT agent_id, home, message_guid, message_ts, set_at
+		FROM fray_read_to
+		WHERE agent_id = ? AND home = ?
+	`, agentID, home)
+	var r ReadTo
+	if err := row.Scan(&r.AgentID, &r.Home, &r.MessageGUID, &r.MessageTS, &r.SetAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &r, nil
+}
+
+// GetReadToForHome returns all agents' read watermarks for a context.
+func GetReadToForHome(db *sql.DB, home string) ([]ReadTo, error) {
+	rows, err := db.Query(`
+		SELECT agent_id, home, message_guid, message_ts, set_at
+		FROM fray_read_to
+		WHERE home = ?
+		ORDER BY message_ts DESC
+	`, home)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []ReadTo
+	for rows.Next() {
+		var r ReadTo
+		if err := rows.Scan(&r.AgentID, &r.Home, &r.MessageGUID, &r.MessageTS, &r.SetAt); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+// GetReadToByMessage returns agents who have read up to a specific message.
+func GetReadToByMessage(db *sql.DB, home, messageGUID string) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT agent_id FROM fray_read_to
+		WHERE home = ? AND message_guid = ?
+	`, home, messageGUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var agents []string
+	for rows.Next() {
+		var agentID string
+		if err := rows.Scan(&agentID); err != nil {
+			return nil, err
+		}
+		agents = append(agents, agentID)
+	}
+	return agents, rows.Err()
+}
+
 // ArchiveMessages archives messages before a cursor.
 func ArchiveMessages(db *sql.DB, before *types.MessageCursor, beforeID string) (int64, error) {
 	archivedAt := time.Now().Unix()

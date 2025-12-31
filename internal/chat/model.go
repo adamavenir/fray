@@ -809,8 +809,9 @@ func (m *Model) messageAtLine(line int) (*types.Message, bool) {
 	prefixLength := core.GetDisplayPrefixLength(m.messageCount)
 	cursor := 0
 	messages := m.currentMessages()
+	emptyReadTo := map[string][]string{}
 	for i, msg := range messages {
-		formatted := m.formatMessage(msg, prefixLength)
+		formatted := m.formatMessage(msg, prefixLength, emptyReadTo)
 		lines := lipgloss.Height(formatted)
 		if line >= cursor && line < cursor+lines {
 			if msg.Type == types.MessageTypeEvent {
@@ -2115,9 +2116,22 @@ func (m *Model) renderMessages() string {
 	}
 	messages := m.currentMessages()
 	prefixLength := core.GetDisplayPrefixLength(m.messageCount)
+
+	// Build read_to map: message_guid -> list of agents
+	home := "room"
+	if m.currentThread != nil {
+		home = m.currentThread.GUID
+	}
+	readToMap := make(map[string][]string)
+	if positions, err := db.GetReadToForHome(m.db, home); err == nil {
+		for _, pos := range positions {
+			readToMap[pos.MessageGUID] = append(readToMap[pos.MessageGUID], pos.AgentID)
+		}
+	}
+
 	chunks := make([]string, 0, len(messages))
 	for _, msg := range messages {
-		chunks = append(chunks, m.formatMessage(msg, prefixLength))
+		chunks = append(chunks, m.formatMessage(msg, prefixLength, readToMap))
 	}
 	return strings.Join(chunks, "\n\n")
 }
@@ -2326,7 +2340,7 @@ func uniqueSortedStrings(values []string) []string {
 	return out
 }
 
-func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
+func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map[string][]string) string {
 	if msg.Type == types.MessageTypeEvent {
 		body := msg.Body
 		hasANSI := strings.Contains(body, "\x1b[")
@@ -2357,9 +2371,34 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int) string {
 	if msg.Edited || msg.EditCount > 0 || msg.EditedAt != nil {
 		editedSuffix = " (edited)"
 	}
-	meta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(
-		fmt.Sprintf("#%s%s", core.GetGUIDPrefix(msg.ID, prefixLength), editedSuffix),
-	)
+
+	// Build the meta line with guid and read_to markers
+	guidPart := fmt.Sprintf("#%s%s", core.GetGUIDPrefix(msg.ID, prefixLength), editedSuffix)
+	readToPart := ""
+	if agents, ok := readToMap[msg.ID]; ok && len(agents) > 0 {
+		mentions := make([]string, len(agents))
+		for i, agent := range agents {
+			mentions[i] = "@" + agent
+		}
+		readToPart = "read_to: " + strings.Join(mentions, " ")
+	}
+
+	var meta string
+	if readToPart != "" && width > 0 {
+		// Right-align read_to on the same line
+		guidWidth := len(guidPart)
+		readWidth := len(readToPart)
+		padding := width - guidWidth - readWidth
+		if padding < 2 {
+			padding = 2
+		}
+		metaText := guidPart + strings.Repeat(" ", padding) + readToPart
+		meta = lipgloss.NewStyle().Foreground(color).Faint(true).Render(metaText)
+	} else if readToPart != "" {
+		meta = lipgloss.NewStyle().Foreground(color).Faint(true).Render(guidPart + "  " + readToPart)
+	} else {
+		meta = lipgloss.NewStyle().Foreground(color).Faint(true).Render(guidPart)
+	}
 
 	lines := []string{}
 	if msg.ReplyTo != nil {

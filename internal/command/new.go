@@ -217,29 +217,46 @@ func NewNewCmd() *cobra.Command {
 				return writeCommandError(cmd, err)
 			}
 
-			joinMessage := message
-			if joinMessage == "" {
-				if isRejoin {
-					joinMessage = "rejoined"
-				} else {
-					joinMessage = "joined"
-				}
+			// Post event message for join/rejoin
+			eventBody := fmt.Sprintf("@%s joined", agentID)
+			if isRejoin {
+				eventBody = fmt.Sprintf("@%s rejoined", agentID)
 			}
-
-			bases, err := db.GetAgentBases(ctx.DB)
-			if err != nil {
-				return writeCommandError(cmd, err)
-			}
-			mentions := core.ExtractMentions(joinMessage, bases)
-			mentions = core.ExpandAllMention(mentions, bases)
-			posted, err := db.CreateMessage(ctx.DB, types.Message{
+			eventMsg, err := db.CreateMessage(ctx.DB, types.Message{
 				TS:        now,
 				FromAgent: agentID,
-				Body:      joinMessage,
-				Mentions:  mentions,
+				Body:      eventBody,
+				Type:      types.MessageTypeEvent,
 			})
 			if err != nil {
 				return writeCommandError(cmd, err)
+			}
+			if err := db.AppendMessage(ctx.Project.DBPath, eventMsg); err != nil {
+				return writeCommandError(cmd, err)
+			}
+
+			// Post optional user message
+			var posted *types.Message
+			if message != "" {
+				bases, err := db.GetAgentBases(ctx.DB)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				mentions := core.ExtractMentions(message, bases)
+				mentions = core.ExpandAllMention(mentions, bases)
+				userMsg, err := db.CreateMessage(ctx.DB, types.Message{
+					TS:        now,
+					FromAgent: agentID,
+					Body:      message,
+					Mentions:  mentions,
+				})
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				if err := db.AppendMessage(ctx.Project.DBPath, userMsg); err != nil {
+					return writeCommandError(cmd, err)
+				}
+				posted = &userMsg
 			}
 
 			wroteEnv := WriteClaudeEnv(agentID)
@@ -248,8 +265,11 @@ func NewNewCmd() *cobra.Command {
 				payload := map[string]any{
 					"agent_id":   agentID,
 					"rejoin":     isRejoin,
-					"message_id": posted.ID,
+					"event_id":   eventMsg.ID,
 					"claude_env": wroteEnv,
+				}
+				if posted != nil {
+					payload["message_id"] = posted.ID
 				}
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
 			}
@@ -266,7 +286,9 @@ func NewNewCmd() *cobra.Command {
 			if purposeOpt != "" {
 				fmt.Fprintf(out, "  Purpose: %s\n", purposeOpt)
 			}
-			fmt.Fprintf(out, "  Posted: [%s] %s\n", posted.ID, joinMessage)
+			if posted != nil {
+				fmt.Fprintf(out, "  Posted: [%s] %s\n", posted.ID, message)
+			}
 			if wroteEnv {
 				fmt.Fprintln(out, "  Registered with Claude hooks")
 			} else {

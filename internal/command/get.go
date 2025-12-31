@@ -203,11 +203,21 @@ func NewGetCmd() *cobra.Command {
 					}
 				}
 
+				// Set watermark to the latest message viewed
+				if len(roomMessages) > 0 {
+					lastMsg := roomMessages[len(roomMessages)-1]
+					if err := db.SetReadTo(ctx.DB, agentBase, "room", lastMsg.ID, lastMsg.TS); err != nil {
+						return writeCommandError(cmd, err)
+					}
+				}
+
 				if ctx.JSONMode {
+					readTo, _ := db.GetReadToForHome(ctx.DB, "room")
 					payload := map[string]any{
 						"project":       projectName,
 						"room_messages": roomMessages,
 						"mentions":      filtered,
+						"read_to":       readTo,
 					}
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
 				}

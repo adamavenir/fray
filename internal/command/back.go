@@ -40,6 +40,9 @@ func NewBackCmd() *cobra.Command {
 				return writeCommandError(cmd, fmt.Errorf("agent not found: @%s", agentID))
 			}
 
+			// Check if there was a prior bye (left_at was set)
+			hadPriorBye := agent.LeftAt != nil
+
 			now := time.Now().Unix()
 			updates := db.AgentUpdates{
 				LastSeen: types.OptionalInt64{Set: true, Value: &now},
@@ -52,6 +55,24 @@ func NewBackCmd() *cobra.Command {
 				if err := db.AppendAgent(ctx.Project.DBPath, *updated); err != nil {
 					return writeCommandError(cmd, err)
 				}
+			}
+
+			// Post event message for the session change
+			eventBody := fmt.Sprintf("@%s rejoined", agentID)
+			if !hadPriorBye {
+				eventBody = fmt.Sprintf("new @%s session", agentID)
+			}
+			eventMsg, err := db.CreateMessage(ctx.DB, types.Message{
+				TS:        now,
+				FromAgent: agentID,
+				Body:      eventBody,
+				Type:      types.MessageTypeEvent,
+			})
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			if err := db.AppendMessage(ctx.Project.DBPath, eventMsg); err != nil {
+				return writeCommandError(cmd, err)
 			}
 
 			var postedID *string

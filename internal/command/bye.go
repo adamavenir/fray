@@ -70,6 +70,20 @@ func NewByeCmd() *cobra.Command {
 				posted = &created
 			}
 
+			// Post event message for leave
+			eventMsg, err := db.CreateMessage(ctx.DB, types.Message{
+				TS:        now,
+				FromAgent: agentID,
+				Body:      fmt.Sprintf("@%s left", agentID),
+				Type:      types.MessageTypeEvent,
+			})
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			if err := db.AppendMessage(ctx.Project.DBPath, eventMsg); err != nil {
+				return writeCommandError(cmd, err)
+			}
+
 			updates := db.AgentUpdates{
 				LeftAt:   types.OptionalInt64{Set: true, Value: &now},
 				LastSeen: types.OptionalInt64{Set: true, Value: &now},

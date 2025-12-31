@@ -121,6 +121,18 @@ CREATE TABLE IF NOT EXISTS fray_read_receipts (
 CREATE INDEX IF NOT EXISTS idx_fray_read_receipts_msg ON fray_read_receipts(message_guid);
 CREATE INDEX IF NOT EXISTS idx_fray_read_receipts_agent ON fray_read_receipts(agent_prefix);
 
+-- Watermark-based read tracking (replaces per-message receipts)
+CREATE TABLE IF NOT EXISTS fray_read_to (
+  agent_id TEXT NOT NULL,
+  home TEXT NOT NULL,            -- "room" or thread GUID
+  message_guid TEXT NOT NULL,
+  message_ts INTEGER NOT NULL,
+  set_at INTEGER NOT NULL,
+  PRIMARY KEY (agent_id, home)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fray_read_to_home ON fray_read_to(home);
+
 -- Resource claims for collision prevention
 CREATE TABLE IF NOT EXISTS fray_claims (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
