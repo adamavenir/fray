@@ -66,6 +66,15 @@ func NewHookInstallCmd() *cobra.Command {
 							}},
 						},
 					},
+					"PreCompact": []any{
+						map[string]any{
+							"hooks": []any{map[string]any{
+								"type":    "command",
+								"command": "fray hook-precompact",
+								"timeout": 5,
+							}},
+						},
+					},
 				},
 			}
 
@@ -110,6 +119,7 @@ func NewHookInstallCmd() *cobra.Command {
 			fmt.Fprintln(out, "Installed hooks:")
 			fmt.Fprintln(out, "  SessionStart (startup/resume) - prompts agent registration or injects context")
 			fmt.Fprintln(out, "  UserPromptSubmit - injects room messages and @mentions before each prompt")
+			fmt.Fprintln(out, "  PreCompact - reminds to preserve work before context compaction")
 
 			if precommit {
 				installPrecommitHook(projectDir, false, out)

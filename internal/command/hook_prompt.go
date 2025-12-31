@@ -40,11 +40,13 @@ func NewHookPromptCmd() *cobra.Command {
 			}
 
 			roomMessages, mentionMessages, _ := fetchHookMessages(dbConn, agentID, 5, 3)
-			if len(roomMessages) == 0 && len(mentionMessages) == 0 {
+			statusline := buildStatusline(dbConn, agentID)
+
+			if len(roomMessages) == 0 && len(mentionMessages) == 0 && statusline == "" {
 				return writeHookOutput(cmd, output)
 			}
 
-			output.AdditionalContext = buildHookPromptContext(agentID, roomMessages, mentionMessages)
+			output.AdditionalContext = buildHookPromptContextWithStatus(agentID, roomMessages, mentionMessages, statusline)
 			return writeHookOutput(cmd, output)
 		},
 	}
@@ -52,7 +54,28 @@ func NewHookPromptCmd() *cobra.Command {
 	return cmd
 }
 
+func buildHookPromptContextWithStatus(agentID string, roomMessages, mentionMessages []types.Message, statusline string) string {
+	var lines []string
+
+	// Statusline first (compact summary)
+	if statusline != "" {
+		lines = append(lines, statusline)
+	}
+
+	// Message context
+	msgContext := buildHookPromptContext(agentID, roomMessages, mentionMessages)
+	if msgContext != "" {
+		lines = append(lines, msgContext)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 func buildHookPromptContext(agentID string, roomMessages, mentionMessages []types.Message) string {
+	if len(roomMessages) == 0 && len(mentionMessages) == 0 {
+		return ""
+	}
+
 	var parts []string
 
 	if len(roomMessages) > 0 {
