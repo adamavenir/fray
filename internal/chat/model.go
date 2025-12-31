@@ -107,6 +107,9 @@ type Model struct {
 	threadFilter        string
 	threadMatches       []int
 	threadFilterActive  bool
+	threadSearchResults []types.Thread
+	recentThreads       []types.Thread
+	visitedThreads      map[string]types.Thread
 	currentThread       *types.Thread
 	currentPseudo       pseudoThreadKind
 	threadMessages      []types.Message
@@ -258,10 +261,11 @@ func NewModel(opts Options) (*Model, error) {
 		lastLimit:       opts.Last,
 		hasMore:         len(rawMessages) < count,
 		colorMap:        colorMap,
-		threads:         threads,
-		threadIndex:     threadIndex,
+		threads:            threads,
+		threadIndex:        threadIndex,
 		threadPanelOpen: true,
-		sidebarOpen:     true,
+		sidebarOpen:     false,
+		visitedThreads:  make(map[string]types.Thread),
 		channels:        channels,
 		channelIndex:    channelIndex,
 		initialScroll:   true,
@@ -920,10 +924,12 @@ func (m *Model) renderSidebar() string {
 		return ""
 	}
 
-	headerStyle := lipgloss.NewStyle().Foreground(userColor).Bold(true)
-	itemStyle := lipgloss.NewStyle().Foreground(metaColor)
-	activeStyle := lipgloss.NewStyle().Foreground(userColor).Bold(true)
+	// White color scheme for channels
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Bold(true)
+	itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // dim white
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Bold(true)
 	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("236")).Bold(true)
+	sectionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Bold(true)
 
 	header := " Channels "
 	if m.sidebarFilterActive {
@@ -934,7 +940,7 @@ func (m *Model) renderSidebar() string {
 		}
 	}
 
-	lines := []string{headerStyle.Render(header)}
+	lines := []string{headerStyle.Render(header), ""} // space after header
 	if len(m.channels) == 0 {
 		lines = append(lines, itemStyle.Render(" (none)"))
 	} else {
@@ -967,6 +973,24 @@ func (m *Model) renderSidebar() string {
 		}
 	}
 
+	// Recent threads section (up to 3)
+	if len(m.recentThreads) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, sectionStyle.Render(" Recent threads"))
+		limit := 3
+		if len(m.recentThreads) < limit {
+			limit = len(m.recentThreads)
+		}
+		for i := 0; i < limit; i++ {
+			t := m.recentThreads[i]
+			label := t.Name
+			if width > 0 {
+				label = truncateLine(label, width-3)
+			}
+			lines = append(lines, itemStyle.Render("  "+label))
+		}
+	}
+
 	if m.height > 0 {
 		for len(lines) < m.height-1 {
 			lines = append(lines, "")
@@ -975,13 +999,7 @@ func (m *Model) renderSidebar() string {
 	lines = append(lines, itemStyle.Render(" # - filter"))
 
 	content := strings.Join(lines, "\n")
-	return lipgloss.NewStyle().
-		Width(width).
-		Padding(0, 1).
-		BorderRight(true).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(metaColor).
-		Render(content)
+	return lipgloss.NewStyle().Width(width).Render(content)
 }
 
 func (m *Model) threadEntries() []threadEntry {
@@ -1029,13 +1047,47 @@ func (m *Model) threadEntries() []threadEntry {
 		walk(thread, 0)
 	}
 
-	entries = append(entries, threadEntry{Kind: threadEntrySeparator})
+	// Add visited threads (from search) that aren't in subscribed list
+	if len(m.visitedThreads) > 0 {
+		subscribed := make(map[string]struct{})
+		for _, t := range m.threads {
+			subscribed[t.GUID] = struct{}{}
+		}
+		for guid, thread := range m.visitedThreads {
+			if _, ok := subscribed[guid]; ok {
+				continue
+			}
+			t := thread
+			entries = append(entries, threadEntry{
+				Kind:   threadEntryThread,
+				Thread: &t,
+				Label:  thread.Name,
+				Indent: 0,
+			})
+		}
+	}
+
+	// Pseudo-threads always at bottom (no separator)
 	entries = append(entries,
 		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadOpen, Label: string(pseudoThreadOpen)},
 		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadClosed, Label: string(pseudoThreadClosed)},
 		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadWonder, Label: string(pseudoThreadWonder)},
 		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadStale, Label: string(pseudoThreadStale)},
 	)
+
+	// Add search results from database (threads not in subscribed list)
+	if len(m.threadSearchResults) > 0 {
+		entries = append(entries, threadEntry{Kind: threadEntrySeparator, Label: "search"})
+		for _, thread := range m.threadSearchResults {
+			t := thread
+			entries = append(entries, threadEntry{
+				Kind:   threadEntryThread,
+				Thread: &t,
+				Label:  thread.Name,
+				Indent: 0,
+			})
+		}
+	}
 
 	return entries
 }
@@ -1064,10 +1116,11 @@ func (m *Model) renderThreadPanel() string {
 		return ""
 	}
 
-	headerStyle := lipgloss.NewStyle().Foreground(userColor).Bold(true)
-	itemStyle := lipgloss.NewStyle().Foreground(metaColor)
-	activeStyle := lipgloss.NewStyle().Foreground(userColor).Bold(true)
-	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("236")).Bold(true)
+	// Blue color scheme for threads
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)  // bright blue
+	itemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("67"))               // dim blue
+	activeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)  // bright blue
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("24")).Bold(true)
 
 	header := " Threads "
 	if m.threadFilterActive {
@@ -1078,7 +1131,7 @@ func (m *Model) renderThreadPanel() string {
 		}
 	}
 
-	lines := []string{headerStyle.Render(header)}
+	lines := []string{headerStyle.Render(header), ""} // space after header
 	entries := m.threadEntries()
 	indices := m.threadMatches
 	if !m.threadFilterActive {
@@ -1096,7 +1149,11 @@ func (m *Model) renderThreadPanel() string {
 	for _, index := range indices {
 		entry := entries[index]
 		if entry.Kind == threadEntrySeparator {
-			lines = append(lines, strings.Repeat("─", width-1))
+			if entry.Label == "search" {
+				lines = append(lines, itemStyle.Render(" Search results:"))
+			} else {
+				lines = append(lines, strings.Repeat("─", width-1))
+			}
 			continue
 		}
 		label := m.threadEntryLabel(entry)
@@ -1164,48 +1221,14 @@ func (m *Model) sidebarWidth() int {
 	if !m.sidebarOpen {
 		return 0
 	}
-	maxLen := len("Channels")
-	for _, ch := range m.channels {
-		label := formatChannelLabel(ch)
-		if len(label) > maxLen {
-			maxLen = len(label)
-		}
-	}
-	width := maxLen + 4
-	if width < 16 {
-		width = 16
-	}
-	maxWidth := m.width / 2
-	if maxWidth > 0 && width > maxWidth {
-		width = maxWidth
-	}
-	return width
+	return 20
 }
 
 func (m *Model) threadPanelWidth() int {
 	if !m.threadPanelOpen {
 		return 0
 	}
-	entries := m.threadEntries()
-	maxLen := len("Threads")
-	for _, entry := range entries {
-		label := m.threadEntryLabel(entry)
-		if len(label) > maxLen {
-			maxLen = len(label)
-		}
-	}
-	width := maxLen + 4
-	if width < 20 {
-		width = 20
-	}
-	if channelWidth := m.sidebarWidth(); channelWidth > 0 && width <= channelWidth {
-		width = channelWidth + 4
-	}
-	maxWidth := m.width / 2
-	if maxWidth > 0 && width > maxWidth {
-		width = maxWidth
-	}
-	return width
+	return 20
 }
 
 func (m *Model) mainWidth() int {
@@ -1226,41 +1249,24 @@ func (m *Model) mainWidth() int {
 }
 
 func (m *Model) cyclePanelFocus() {
-	if !m.threadPanelOpen && !m.sidebarOpen {
-		return
-	}
-	if m.threadPanelFocus {
-		m.threadPanelFocus = false
-		if m.sidebarOpen {
-			m.sidebarFocus = true
-		} else {
-			m.threadPanelFocus = true
-		}
-		m.resetThreadFilter()
-		m.clearSuggestions()
-		m.resize()
-		return
-	}
-	if m.sidebarFocus {
-		m.sidebarFocus = false
-		if m.threadPanelOpen {
-			m.threadPanelFocus = true
-		} else {
-			m.sidebarFocus = true
-		}
-		m.resetSidebarFilter()
-		m.clearSuggestions()
-		m.resize()
-		return
-	}
+	// Cycle: threads → channels → hidden → threads
+	// Only one panel visible at a time
 	if m.threadPanelOpen {
-		m.threadPanelFocus = true
-		m.sidebarFocus = false
-		m.resetThreadFilter()
-	} else if m.sidebarOpen {
-		m.sidebarFocus = true
+		// threads → channels
+		m.threadPanelOpen = false
 		m.threadPanelFocus = false
+		m.resetThreadFilter()
+		m.sidebarOpen = true
+		m.sidebarFocus = true
+	} else if m.sidebarOpen {
+		// channels → hidden
+		m.sidebarOpen = false
+		m.sidebarFocus = false
 		m.resetSidebarFilter()
+	} else {
+		// hidden → threads
+		m.threadPanelOpen = true
+		m.threadPanelFocus = true
 	}
 	m.clearSuggestions()
 	m.resize()
@@ -1397,15 +1403,40 @@ func (m *Model) resetThreadFilter() {
 	m.threadFilterActive = false
 	m.threadFilter = ""
 	m.threadMatches = nil
+	m.threadSearchResults = nil
 }
 
 func (m *Model) updateThreadMatches() {
 	if !m.threadFilterActive {
 		m.threadMatches = nil
+		m.threadSearchResults = nil
 		return
 	}
 
 	term := strings.ToLower(strings.TrimSpace(m.threadFilter))
+
+	// Search database for threads matching the filter (if we have a term)
+	m.threadSearchResults = nil
+	if term != "" && m.db != nil {
+		allThreads, err := db.GetThreads(m.db, &types.ThreadQueryOptions{})
+		if err == nil {
+			// Build set of subscribed thread GUIDs
+			subscribed := make(map[string]struct{})
+			for _, t := range m.threads {
+				subscribed[t.GUID] = struct{}{}
+			}
+			// Filter to matching threads not already subscribed
+			for _, t := range allThreads {
+				if _, ok := subscribed[t.GUID]; ok {
+					continue
+				}
+				if strings.Contains(strings.ToLower(t.Name), term) {
+					m.threadSearchResults = append(m.threadSearchResults, t)
+				}
+			}
+		}
+	}
+
 	entries := m.threadEntries()
 	matches := make([]int, 0, len(entries))
 	for i, entry := range entries {
@@ -1589,6 +1620,11 @@ func (m *Model) selectThreadEntry() {
 	case threadEntryThread:
 		m.currentThread = entry.Thread
 		m.currentPseudo = ""
+		// Track visited threads for persistence in list
+		if entry.Thread != nil {
+			m.visitedThreads[entry.Thread.GUID] = *entry.Thread
+			m.addRecentThread(*entry.Thread)
+		}
 	case threadEntryPseudo:
 		m.currentPseudo = entry.Pseudo
 	default:
@@ -1598,6 +1634,22 @@ func (m *Model) selectThreadEntry() {
 	m.refreshPseudoQuestions()
 	m.refreshQuestionCounts()
 	m.refreshViewport(true)
+}
+
+func (m *Model) addRecentThread(thread types.Thread) {
+	// Remove if already in list
+	for i, t := range m.recentThreads {
+		if t.GUID == thread.GUID {
+			m.recentThreads = append(m.recentThreads[:i], m.recentThreads[i+1:]...)
+			break
+		}
+	}
+	// Add to front
+	m.recentThreads = append([]types.Thread{thread}, m.recentThreads...)
+	// Keep max 10
+	if len(m.recentThreads) > 10 {
+		m.recentThreads = m.recentThreads[:10]
+	}
 }
 
 func (m *Model) applySuggestion(item suggestionItem) {
@@ -2662,10 +2714,10 @@ func truncateLine(value string, maxLen int) string {
 	if len(runes) <= maxLen {
 		return value
 	}
-	if maxLen <= 3 {
+	if maxLen <= 1 {
 		return string(runes[:maxLen])
 	}
-	return string(runes[:maxLen-3]) + "..."
+	return string(runes[:maxLen-1]) + "…"
 }
 
 func loadChannels(currentRoot string) ([]channelEntry, int) {
