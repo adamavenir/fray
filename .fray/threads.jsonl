@@ -14,3 +14,13 @@
 {"type":"thread_subscribe","thread_guid":"thrd-f478wtok","agent_id":"opus","subscribed_at":1767165106}
 {"type":"thread_subscribe","thread_guid":"thrd-f478wtok","agent_id":"opus","subscribed_at":1767165456}
 {"type":"thread_subscribe","thread_guid":"thrd-f478wtok","agent_id":"opus","subscribed_at":1767196829}
+{"type":"thread","guid":"thrd-mx1cqk9r","name":"meta","subscribed":["designer","desktop.1","desktop.2","opus"],"status":"open","created_at":1767205839}
+{"type":"thread","guid":"thrd-3tb4tf2j","name":"designer-notes","subscribed":["designer"],"status":"open","created_at":1767206059}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767206179}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767206227}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767206352}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767210037}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767213976}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767214413}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767215719}
+{"type":"thread_subscribe","thread_guid":"thrd-3tb4tf2j","agent_id":"designer","subscribed_at":1767216026}

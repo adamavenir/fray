@@ -1,0 +1,7 @@
+{"type":"question","guid":"qstn-cay7nsjd","re":"test question for statusline","from_agent":"opus","status":"unasked","created_at":1767205735}
+{"type":"question_update","guid":"qstn-cay7nsjd","status":"closed"}
+{"type":"question","guid":"qstn-dczwksn3","re":"How do we detect user vs agent when running bare 'fray'? Is FRAY_AGENT_ID presence the signal, or is there a better heuristic?","from_agent":"designer","status":"unasked","created_at":1767209987}
+{"type":"question","guid":"qstn-m0ccmkvh","re":"For agent view of 'fray': should we show thread activity as summaries or just counts? (e.g., 'design-thread: 5 new' vs 'design-thread: discussing pin semantics')","from_agent":"designer","to":"adam","status":"open","created_at":1767210010}
+{"type":"question_update","guid":"qstn-m0ccmkvh","status":"open","to":"adam","asked_in":"msg-pejrb60e"}
+{"type":"question","guid":"qstn-d82om2zp","re":"Should 'fray neo' auto-subscribe agent to meta thread if not already subscribed?","from_agent":"designer","to":"adam","status":"open","created_at":1767210015}
+{"type":"question_update","guid":"qstn-d82om2zp","status":"open","to":"adam","asked_in":"msg-rvlvjuk9"}
