@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray get <agent>`: mentions now include replies to agent's messages and filter to unread-only
 - Deleted messages filtered from `notes`, `thread`, `history`, `between`, `meta` commands
 - Chat sidebar: only shows open-qs and stale-qs (removed closed-qs, wondering)
+- Chat: deleted messages now hidden (not shown as `[deleted]`)
+- Chat: thread view only scrolls to bottom on new messages
+- Chat: scroll-back preloads older messages when near top (smoother history browsing)
+- `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
 - Questions: wonder/ask/list/view/answer/close workflow with JSONL + SQLite support
