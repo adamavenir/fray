@@ -3,6 +3,7 @@ package command
 import (
 	"bufio"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -30,11 +31,18 @@ var (
 // NewAnswerCmd creates the answer command.
 func NewAnswerCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "answer",
-		Short: "Review and answer questions one at a time",
-		Long: `Interactive interface for reviewing and answering questions.
+		Use:   "answer [question-id] [answer-text]",
+		Short: "Answer questions",
+		Long: `Answer questions interactively or directly.
 
-For each question, you can:
+Interactive mode (for humans):
+  fray answer              Review and answer all open questions one at a time
+
+Direct mode (for agents):
+  fray answer <qstn-id> "answer text" --as agent
+                           Answer a specific question directly
+
+In interactive mode:
   - Type a letter (a, b, c) to select a proposed option
   - Type your own answer
   - Press 's' to skip the question for now
@@ -49,29 +57,113 @@ Skipped questions are offered for review at the end of the session.`,
 			defer ctx.DB.Close()
 
 			agentRef, _ := cmd.Flags().GetString("as")
-			if agentRef == "" {
-				return writeCommandError(cmd, fmt.Errorf("--as is required"))
+
+			// Direct mode: answer <qstn-id> "answer" --as agent
+			if len(args) >= 2 {
+				if agentRef == "" {
+					return writeCommandError(cmd, fmt.Errorf("--as is required for direct answer mode"))
+				}
+				return runDirectAnswer(ctx, args[0], args[1], agentRef)
 			}
 
-			agentID, err := resolveAgentRef(ctx, agentRef)
-			if err != nil {
-				return writeCommandError(cmd, err)
+			// Interactive mode: answer (uses username from config)
+			if len(args) == 0 {
+				return runInteractiveAnswer(ctx, agentRef)
 			}
 
-			agent, err := db.GetAgent(ctx.DB, agentID)
-			if err != nil {
-				return writeCommandError(cmd, err)
-			}
-			if agent == nil {
-				return writeCommandError(cmd, fmt.Errorf("agent not found: @%s", agentID))
-			}
-
-			return runAnswerSession(ctx.DB, ctx.Project.DBPath, agentID, ctx.ProjectConfig)
+			// Single arg could be question ID with missing answer
+			return writeCommandError(cmd, fmt.Errorf("usage: fray answer <question-id> \"answer\" --as agent\n       fray answer (interactive mode)"))
 		},
 	}
 
-	cmd.Flags().StringP("as", "", "", "agent identity (required)")
+	cmd.Flags().StringP("as", "", "", "agent identity (required for direct mode)")
 	return cmd
+}
+
+// runDirectAnswer handles: fray answer <qstn-id> "answer" --as agent
+func runDirectAnswer(ctx *CommandContext, questionRef, answerText, agentRef string) error {
+	agentID, err := resolveAgentRef(ctx, agentRef)
+	if err != nil {
+		return err
+	}
+
+	agent, err := db.GetAgent(ctx.DB, agentID)
+	if err != nil {
+		return err
+	}
+	if agent == nil {
+		return fmt.Errorf("agent not found: @%s", agentID)
+	}
+	if agent.LeftAt != nil {
+		return fmt.Errorf("agent @%s has left. Use 'fray back @%s' to resume", agentID, agentID)
+	}
+
+	question, err := resolveQuestionRef(ctx.DB, questionRef)
+	if err != nil {
+		return err
+	}
+
+	if question.Status == types.QuestionStatusClosed {
+		return fmt.Errorf("question %s is already closed", question.GUID)
+	}
+	if question.Status == types.QuestionStatusAnswered {
+		return fmt.Errorf("question %s is already answered", question.GUID)
+	}
+
+	if err := postAnswer(ctx.DB, ctx.Project.DBPath, agentID, *question, answerText, ctx.ProjectConfig); err != nil {
+		return err
+	}
+
+	if ctx.JSONMode {
+		payload := map[string]any{
+			"question_id": question.GUID,
+			"answered_by": agentID,
+			"answer":      answerText,
+		}
+		return json.NewEncoder(os.Stdout).Encode(payload)
+	}
+
+	fmt.Printf("Answered %s\n", question.GUID)
+	return nil
+}
+
+// runInteractiveAnswer handles: fray answer (interactive mode for humans)
+func runInteractiveAnswer(ctx *CommandContext, agentRef string) error {
+	// Determine identity: --as flag or username from config
+	var identity string
+	if agentRef != "" {
+		resolved, err := resolveAgentRef(ctx, agentRef)
+		if err != nil {
+			return err
+		}
+		identity = resolved
+	} else {
+		// Use username from config (human user)
+		username, err := db.GetConfig(ctx.DB, "username")
+		if err != nil {
+			return err
+		}
+		if username == "" {
+			return fmt.Errorf("no username configured. Use 'fray chat' first or specify --as")
+		}
+		identity = username
+	}
+
+	// Get open questions addressed to this identity
+	questions, err := db.GetQuestions(ctx.DB, &types.QuestionQueryOptions{
+		Statuses: []types.QuestionStatus{types.QuestionStatusOpen},
+		ToAgent:  &identity,
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(questions) == 0 {
+		fmt.Printf("No open questions for @%s\n", identity)
+		return nil
+	}
+
+	return runAnswerSession(ctx.DB, ctx.Project.DBPath, identity, ctx.ProjectConfig, questions)
 }
 
 // questionSet groups questions by their source message.
@@ -81,20 +173,7 @@ type questionSet struct {
 	questions []types.Question
 }
 
-func runAnswerSession(database *sql.DB, dbPath string, agentID string, config *db.ProjectConfig) error {
-	questions, err := db.GetQuestions(database, &types.QuestionQueryOptions{
-		Statuses: []types.QuestionStatus{types.QuestionStatusOpen},
-		ToAgent:  &agentID,
-	})
-	if err != nil {
-		return err
-	}
-
-	if len(questions) == 0 {
-		fmt.Println("No open questions for you.")
-		return nil
-	}
-
+func runAnswerSession(database *sql.DB, dbPath string, identity string, config *db.ProjectConfig, questions []types.Question) error {
 	// Group by asked_in message and sort
 	sets := groupQuestionSets(questions)
 
@@ -111,7 +190,7 @@ func runAnswerSession(database *sql.DB, dbPath string, agentID string, config *d
 
 			switch result.action {
 			case actionAnswer:
-				if err := postAnswer(database, dbPath, agentID, q, result.answer, config); err != nil {
+				if err := postAnswer(database, dbPath, identity, q, result.answer, config); err != nil {
 					return err
 				}
 				answered++
@@ -143,7 +222,7 @@ func runAnswerSession(database *sql.DB, dbPath string, agentID string, config *d
 
 				switch result.action {
 				case actionAnswer:
-					if err := postAnswer(database, dbPath, agentID, q, result.answer, config); err != nil {
+					if err := postAnswer(database, dbPath, identity, q, result.answer, config); err != nil {
 						return err
 					}
 					answered++
@@ -307,7 +386,7 @@ func presentQuestion(database *sql.DB, q types.Question, reader *bufio.Reader, s
 	return answerResult{action: actionAnswer, answer: input}, nil
 }
 
-func postAnswer(database *sql.DB, dbPath string, agentID string, q types.Question, answer string, config *db.ProjectConfig) error {
+func postAnswer(database *sql.DB, dbPath string, identity string, q types.Question, answer string, config *db.ProjectConfig) error {
 	now := time.Now().Unix()
 
 	// Create the answer message
@@ -322,7 +401,7 @@ func postAnswer(database *sql.DB, dbPath string, agentID string, q types.Questio
 
 	created, err := db.CreateMessage(database, types.Message{
 		TS:        now,
-		FromAgent: agentID,
+		FromAgent: identity,
 		Body:      answer,
 		Mentions:  mentions,
 		Home:      home,
@@ -335,10 +414,11 @@ func postAnswer(database *sql.DB, dbPath string, agentID string, q types.Questio
 		return err
 	}
 
-	// Update agent last seen
-	updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
-	if err := db.UpdateAgent(database, agentID, updates); err != nil {
-		return err
+	// Update agent last seen (if this is an agent, not a user)
+	agent, _ := db.GetAgent(database, identity)
+	if agent != nil {
+		updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
+		_ = db.UpdateAgent(database, identity, updates)
 	}
 
 	// Update question status
