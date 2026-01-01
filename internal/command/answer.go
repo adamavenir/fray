@@ -1,7 +1,6 @@
 package command
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -171,7 +170,7 @@ func runInteractiveAnswer(ctx *CommandContext, agentRef string) error {
 		return nil
 	}
 
-	return runAnswerSession(ctx.DB, ctx.Project.DBPath, identity, questions)
+	return runAnswerSessionTUI(ctx.DB, ctx.Project.DBPath, identity, questions)
 }
 
 // questionSet groups questions by their source message.
@@ -179,88 +178,6 @@ type questionSet struct {
 	askedIn   *string
 	createdAt int64
 	questions []types.Question
-}
-
-func runAnswerSession(database *sql.DB, dbPath string, identity string, questions []types.Question) error {
-	// Group by asked_in message and sort
-	sets := groupQuestionSets(questions)
-
-	reader := bufio.NewReader(os.Stdin)
-	var skipped []types.Question
-	var answered []qaPair
-
-	for setIdx, set := range sets {
-		for qIdx, q := range set.questions {
-			result, err := presentQuestion(database, q, reader, setIdx+1, qIdx+1, len(sets), len(set.questions))
-			if err != nil {
-				return err
-			}
-
-			switch result.action {
-			case actionAnswer:
-				answered = append(answered, qaPair{question: q, answer: result.answer})
-				fmt.Println(answerMetaStyle.Render("✓ Recorded\n"))
-
-			case actionSkip:
-				skipped = append(skipped, q)
-				fmt.Println(answerSkipStyle.Render("→ Skipped\n"))
-
-			case actionQuit:
-				// Post any answers collected so far
-				if len(answered) > 0 {
-					if err := postAnswerSummary(database, dbPath, identity, answered); err != nil {
-						return err
-					}
-				}
-				printSummary(len(answered), len(skipped))
-				return nil
-			}
-		}
-	}
-
-	// Offer to review skipped questions
-	if len(skipped) > 0 {
-		fmt.Printf("\n%s\n", answerPromptStyle.Render(fmt.Sprintf("You skipped %d question(s). Review them now? [y/n]: ", len(skipped))))
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(strings.ToLower(input))
-
-		if input == "y" || input == "yes" {
-			for i, q := range skipped {
-				result, err := presentQuestion(database, q, reader, 1, i+1, 1, len(skipped))
-				if err != nil {
-					return err
-				}
-
-				switch result.action {
-				case actionAnswer:
-					answered = append(answered, qaPair{question: q, answer: result.answer})
-					fmt.Println(answerMetaStyle.Render("✓ Recorded\n"))
-
-				case actionSkip:
-					fmt.Println(answerSkipStyle.Render("→ Skipped again\n"))
-
-				case actionQuit:
-					if len(answered) > 0 {
-						if err := postAnswerSummary(database, dbPath, identity, answered); err != nil {
-							return err
-						}
-					}
-					printSummary(len(answered), len(skipped)-i-1)
-					return nil
-				}
-			}
-		}
-	}
-
-	// Post all answers as a single summary message
-	if len(answered) > 0 {
-		if err := postAnswerSummary(database, dbPath, identity, answered); err != nil {
-			return err
-		}
-	}
-
-	printSummary(len(answered), 0)
-	return nil
 }
 
 func groupQuestionSets(questions []types.Question) []questionSet {
@@ -301,109 +218,6 @@ func groupQuestionSets(questions []types.Question) []questionSet {
 	})
 
 	return sets
-}
-
-type answerAction int
-
-const (
-	actionAnswer answerAction = iota
-	actionSkip
-	actionQuit
-)
-
-type answerResult struct {
-	action answerAction
-	answer string
-}
-
-func presentQuestion(database *sql.DB, q types.Question, reader *bufio.Reader, setNum, qNum, totalSets, totalInSet int) (answerResult, error) {
-	fmt.Print("\033[H\033[2J") // Clear screen
-
-	// Header
-	progress := fmt.Sprintf("Question %d/%d", qNum, totalInSet)
-	if totalSets > 1 {
-		progress = fmt.Sprintf("Set %d/%d, Question %d/%d", setNum, totalSets, qNum, totalInSet)
-	}
-	fmt.Println(answerHeaderStyle.Render(progress))
-	fmt.Println()
-
-	// Question metadata
-	fromTo := fmt.Sprintf("From @%s", q.FromAgent)
-	if q.ToAgent != nil {
-		fromTo += fmt.Sprintf(" → @%s", *q.ToAgent)
-	}
-	fmt.Println(answerMetaStyle.Render(fromTo))
-
-	if q.ThreadGUID != nil {
-		thread, _ := db.GetThread(database, *q.ThreadGUID)
-		if thread != nil {
-			fmt.Println(answerMetaStyle.Render(fmt.Sprintf("Thread: %s", thread.Name)))
-		}
-	}
-	fmt.Println()
-
-	// Question text
-	fmt.Println(answerQuestionStyle.Render(q.Re))
-	fmt.Println()
-
-	// Options with pros/cons
-	optionLabels := []string{}
-	if len(q.Options) > 0 {
-		for i, opt := range q.Options {
-			letter := string(rune('a' + i))
-			optionLabels = append(optionLabels, letter)
-			fmt.Printf("  %s. %s\n", answerOptionStyle.Render(letter), opt.Label)
-
-			for _, pro := range opt.Pros {
-				fmt.Printf("     %s %s\n", answerProStyle.Render("+ Pro:"), pro)
-			}
-			for _, con := range opt.Cons {
-				fmt.Printf("     %s %s\n", answerConStyle.Render("- Con:"), con)
-			}
-			if len(opt.Pros) > 0 || len(opt.Cons) > 0 {
-				fmt.Println()
-			}
-		}
-		fmt.Println()
-	}
-
-	// Prompt
-	if len(optionLabels) > 0 {
-		fmt.Printf("%s ", answerPromptStyle.Render(fmt.Sprintf("[%s] select, [s]kip, [q]uit, or type answer:", strings.Join(optionLabels, "/"))))
-	} else {
-		fmt.Printf("%s ", answerPromptStyle.Render("[s]kip, [q]uit, or type answer:"))
-	}
-
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return answerResult{action: actionQuit}, nil
-	}
-	input = strings.TrimSpace(input)
-
-	if input == "" {
-		return answerResult{action: actionSkip}, nil
-	}
-
-	inputLower := strings.ToLower(input)
-
-	if inputLower == "s" || inputLower == "skip" {
-		return answerResult{action: actionSkip}, nil
-	}
-
-	if inputLower == "q" || inputLower == "quit" {
-		return answerResult{action: actionQuit}, nil
-	}
-
-	// Check if it's an option selection
-	if len(inputLower) == 1 && len(q.Options) > 0 {
-		idx := int(inputLower[0] - 'a')
-		if idx >= 0 && idx < len(q.Options) {
-			return answerResult{action: actionAnswer, answer: q.Options[idx].Label}, nil
-		}
-	}
-
-	// Custom answer
-	return answerResult{action: actionAnswer, answer: input}, nil
 }
 
 // postAnswerSummary posts a single message with all Q&A pairs formatted nicely.

@@ -358,7 +358,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
-			if (msg.Type == tea.KeyPgUp || msg.Type == tea.KeyHome) && m.viewport.AtTop() {
+			if (msg.Type == tea.KeyPgUp || msg.Type == tea.KeyHome) && m.nearTop() {
 				m.loadOlderMessages()
 			}
 			return m, cmd
@@ -381,7 +381,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
-		if msg.Button == tea.MouseButtonWheelUp && m.viewport.AtTop() {
+		if msg.Button == tea.MouseButtonWheelUp && m.nearTop() {
 			m.loadOlderMessages()
 		}
 		return m, cmd
@@ -406,9 +406,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.threadID != "" && m.currentThread != nil && m.currentThread.GUID == msg.threadID {
+			prevCount := len(m.threadMessages)
 			m.threadMessages = msg.threadMessages
+			hasNewMessages := len(m.threadMessages) > prevCount
 			if m.currentPseudo == "" {
-				m.refreshViewport(true)
+				m.refreshViewport(hasNewMessages)
 			}
 		}
 
@@ -2063,6 +2065,10 @@ func (m *Model) refreshViewport(scrollToBottom bool) {
 	}
 }
 
+func (m *Model) nearTop() bool {
+	return m.viewport.YOffset <= 5
+}
+
 func (m *Model) loadOlderMessages() {
 	if m.currentThread != nil || m.currentPseudo != "" {
 		return
@@ -2135,10 +2141,24 @@ func (m *Model) renderMessages() string {
 }
 
 func (m *Model) currentMessages() []types.Message {
+	var messages []types.Message
 	if m.currentThread != nil {
-		return m.threadMessages
+		messages = m.threadMessages
+	} else {
+		messages = m.messages
 	}
-	return m.messages
+	return filterDeletedMessages(messages)
+}
+
+func filterDeletedMessages(messages []types.Message) []types.Message {
+	filtered := make([]types.Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg.ArchivedAt != nil && msg.Body == "[deleted]" {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	return filtered
 }
 
 func (m *Model) renderQuestions() string {
