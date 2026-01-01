@@ -28,6 +28,12 @@ var (
 	answerSkipStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 )
 
+// qaPair tracks a question and its answer during the session.
+type qaPair struct {
+	question types.Question
+	answer   string
+}
+
 // NewAnswerCmd creates the answer command.
 func NewAnswerCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -110,7 +116,9 @@ func runDirectAnswer(ctx *CommandContext, questionRef, answerText, agentRef stri
 		return fmt.Errorf("question %s is already answered", question.GUID)
 	}
 
-	if err := postAnswer(ctx.DB, ctx.Project.DBPath, agentID, *question, answerText, ctx.ProjectConfig); err != nil {
+	// For direct mode, post single Q&A formatted message
+	pairs := []qaPair{{question: *question, answer: answerText}}
+	if err := postAnswerSummary(ctx.DB, ctx.Project.DBPath, agentID, pairs); err != nil {
 		return err
 	}
 
@@ -163,7 +171,7 @@ func runInteractiveAnswer(ctx *CommandContext, agentRef string) error {
 		return nil
 	}
 
-	return runAnswerSession(ctx.DB, ctx.Project.DBPath, identity, ctx.ProjectConfig, questions)
+	return runAnswerSession(ctx.DB, ctx.Project.DBPath, identity, questions)
 }
 
 // questionSet groups questions by their source message.
@@ -173,13 +181,13 @@ type questionSet struct {
 	questions []types.Question
 }
 
-func runAnswerSession(database *sql.DB, dbPath string, identity string, config *db.ProjectConfig, questions []types.Question) error {
+func runAnswerSession(database *sql.DB, dbPath string, identity string, questions []types.Question) error {
 	// Group by asked_in message and sort
 	sets := groupQuestionSets(questions)
 
 	reader := bufio.NewReader(os.Stdin)
 	var skipped []types.Question
-	answered := 0
+	var answered []qaPair
 
 	for setIdx, set := range sets {
 		for qIdx, q := range set.questions {
@@ -190,18 +198,21 @@ func runAnswerSession(database *sql.DB, dbPath string, identity string, config *
 
 			switch result.action {
 			case actionAnswer:
-				if err := postAnswer(database, dbPath, identity, q, result.answer, config); err != nil {
-					return err
-				}
-				answered++
-				fmt.Println(answerMetaStyle.Render("✓ Answer posted\n"))
+				answered = append(answered, qaPair{question: q, answer: result.answer})
+				fmt.Println(answerMetaStyle.Render("✓ Recorded\n"))
 
 			case actionSkip:
 				skipped = append(skipped, q)
 				fmt.Println(answerSkipStyle.Render("→ Skipped\n"))
 
 			case actionQuit:
-				printSummary(answered, len(skipped))
+				// Post any answers collected so far
+				if len(answered) > 0 {
+					if err := postAnswerSummary(database, dbPath, identity, answered); err != nil {
+						return err
+					}
+				}
+				printSummary(len(answered), len(skipped))
 				return nil
 			}
 		}
@@ -222,24 +233,33 @@ func runAnswerSession(database *sql.DB, dbPath string, identity string, config *
 
 				switch result.action {
 				case actionAnswer:
-					if err := postAnswer(database, dbPath, identity, q, result.answer, config); err != nil {
-						return err
-					}
-					answered++
-					fmt.Println(answerMetaStyle.Render("✓ Answer posted\n"))
+					answered = append(answered, qaPair{question: q, answer: result.answer})
+					fmt.Println(answerMetaStyle.Render("✓ Recorded\n"))
 
 				case actionSkip:
 					fmt.Println(answerSkipStyle.Render("→ Skipped again\n"))
 
 				case actionQuit:
-					printSummary(answered, len(skipped)-i-1)
+					if len(answered) > 0 {
+						if err := postAnswerSummary(database, dbPath, identity, answered); err != nil {
+							return err
+						}
+					}
+					printSummary(len(answered), len(skipped)-i-1)
 					return nil
 				}
 			}
 		}
 	}
 
-	printSummary(answered, 0)
+	// Post all answers as a single summary message
+	if len(answered) > 0 {
+		if err := postAnswerSummary(database, dbPath, identity, answered); err != nil {
+			return err
+		}
+	}
+
+	printSummary(len(answered), 0)
 	return nil
 }
 
@@ -386,23 +406,55 @@ func presentQuestion(database *sql.DB, q types.Question, reader *bufio.Reader, s
 	return answerResult{action: actionAnswer, answer: input}, nil
 }
 
-func postAnswer(database *sql.DB, dbPath string, identity string, q types.Question, answer string, config *db.ProjectConfig) error {
+// postAnswerSummary posts a single message with all Q&A pairs formatted nicely.
+func postAnswerSummary(database *sql.DB, dbPath string, identity string, pairs []qaPair) error {
 	now := time.Now().Unix()
 
-	// Create the answer message
-	bases, _ := db.GetAgentBases(database)
-	mentions := core.ExtractMentions(answer, bases)
-	mentions = core.ExpandAllMention(mentions, bases)
-
-	home := ""
-	if q.ThreadGUID != nil {
-		home = *q.ThreadGUID
+	// Collect unique askers
+	askers := make(map[string]struct{})
+	for _, pair := range pairs {
+		askers[pair.question.FromAgent] = struct{}{}
+	}
+	askerList := make([]string, 0, len(askers))
+	for asker := range askers {
+		askerList = append(askerList, "@"+asker)
 	}
 
+	// Build the summary message body in parseable format
+	var body strings.Builder
+	body.WriteString(fmt.Sprintf("answered %s\n\n", strings.Join(askerList, " ")))
+
+	for _, pair := range pairs {
+		// Question
+		body.WriteString(fmt.Sprintf("Q: %s\n", pair.question.Re))
+
+		// Answer with indented multi-line support
+		answerLines := strings.Split(pair.answer, "\n")
+		body.WriteString(fmt.Sprintf("A: %s\n", answerLines[0]))
+		for _, line := range answerLines[1:] {
+			body.WriteString(fmt.Sprintf("   %s\n", line))
+		}
+		body.WriteString("\n")
+	}
+
+	bodyStr := strings.TrimSpace(body.String())
+
+	// Extract mentions from all answers
+	bases, _ := db.GetAgentBases(database)
+	mentions := core.ExtractMentions(bodyStr, bases)
+	mentions = core.ExpandAllMention(mentions, bases)
+
+	// Determine home (use first question's thread if any)
+	home := ""
+	if len(pairs) > 0 && pairs[0].question.ThreadGUID != nil {
+		home = *pairs[0].question.ThreadGUID
+	}
+
+	// Create the summary message
 	created, err := db.CreateMessage(database, types.Message{
 		TS:        now,
 		FromAgent: identity,
-		Body:      answer,
+		Body:      bodyStr,
 		Mentions:  mentions,
 		Home:      home,
 	})
@@ -421,22 +473,24 @@ func postAnswer(database *sql.DB, dbPath string, identity string, q types.Questi
 		_ = db.UpdateAgent(database, identity, updates)
 	}
 
-	// Update question status
+	// Update all questions to point to this summary message
 	statusValue := string(types.QuestionStatusAnswered)
-	updated, err := db.UpdateQuestion(database, q.GUID, db.QuestionUpdates{
-		Status:     types.OptionalString{Set: true, Value: &statusValue},
-		AnsweredIn: types.OptionalString{Set: true, Value: &created.ID},
-	})
-	if err != nil {
-		return err
-	}
+	for _, pair := range pairs {
+		updated, err := db.UpdateQuestion(database, pair.question.GUID, db.QuestionUpdates{
+			Status:     types.OptionalString{Set: true, Value: &statusValue},
+			AnsweredIn: types.OptionalString{Set: true, Value: &created.ID},
+		})
+		if err != nil {
+			return err
+		}
 
-	if err := db.AppendQuestionUpdate(dbPath, db.QuestionUpdateJSONLRecord{
-		GUID:       updated.GUID,
-		Status:     &statusValue,
-		AnsweredIn: &created.ID,
-	}); err != nil {
-		return err
+		if err := db.AppendQuestionUpdate(dbPath, db.QuestionUpdateJSONLRecord{
+			GUID:       updated.GUID,
+			Status:     &statusValue,
+			AnsweredIn: &created.ID,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

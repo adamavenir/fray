@@ -57,6 +57,11 @@ func FormatMessage(msg types.Message, projectName string, agentBases map[string]
 	}
 	idBlock := fmt.Sprintf("%s[%s#%s%s %s]%s", dim, bold, projectName, reset, dim+msg.ID+editedSuffix, reset)
 
+	// Check for answer message format
+	if strings.HasPrefix(msg.Body, "answered @") {
+		return formatAnswerMessage(msg, projectName, idBlock, agentBases)
+	}
+
 	color := getAgentColor(msg.FromAgent, msg.Type, nil)
 	// Strip question sections from display
 	strippedBody := core.StripQuestionSections(msg.Body)
@@ -70,6 +75,66 @@ func FormatMessage(msg types.Message, projectName string, agentBases map[string]
 
 	highlightedBody := highlightIssueIDs(highlightMentions(truncated), "")
 	return fmt.Sprintf("%s @%s: \"%s\"", idBlock, msg.FromAgent, highlightedBody)
+}
+
+// formatAnswerMessage renders answer messages with Q&A colorization.
+func formatAnswerMessage(msg types.Message, projectName, idBlock string, agentBases map[string]struct{}) string {
+	lines := strings.Split(msg.Body, "\n")
+	if len(lines) == 0 {
+		return idBlock + " " + msg.Body
+	}
+
+	// Parse header: "answered @opus @designer"
+	header := lines[0]
+	askerPart := strings.TrimPrefix(header, "answered ")
+
+	// Get colors
+	answererColor := getAgentColor(msg.FromAgent, msg.Type, nil)
+	if answererColor == "" {
+		answererColor = reset
+	}
+
+	// Extract first asker for question color
+	askerColor := gray
+	if matches := mentionRe.FindStringSubmatch(askerPart); len(matches) > 1 {
+		askerColor = getAgentColor(matches[1], types.MessageTypeAgent, nil)
+		if askerColor == "" {
+			askerColor = gray
+		}
+	}
+
+	// Build formatted output
+	var out strings.Builder
+
+	// Header: @answerer answered @asker:
+	out.WriteString(fmt.Sprintf("%s %s@%s%s answered %s:\n", idBlock, answererColor, msg.FromAgent, reset, askerPart))
+
+	// Parse Q&A blocks
+	inAnswer := false
+	boldWhite := ansiCode("\x1b[1;37m")
+
+	for i := 1; i < len(lines); i++ {
+		line := lines[i]
+
+		if strings.HasPrefix(line, "Q: ") {
+			inAnswer = false
+			questionText := strings.TrimPrefix(line, "Q: ")
+			out.WriteString(fmt.Sprintf("%sQ:%s %s%s%s\n", boldWhite, reset, askerColor, questionText, reset))
+		} else if strings.HasPrefix(line, "A: ") {
+			inAnswer = true
+			answerText := strings.TrimPrefix(line, "A: ")
+			out.WriteString(fmt.Sprintf("%sA:%s %s%s%s\n", boldWhite, reset, answererColor, answerText, reset))
+		} else if strings.TrimSpace(line) == "" {
+			out.WriteString("\n")
+		} else if inAnswer && strings.HasPrefix(line, "   ") {
+			// Continuation of answer
+			out.WriteString(fmt.Sprintf("%s%s%s\n", answererColor, line, reset))
+		} else {
+			out.WriteString(line + "\n")
+		}
+	}
+
+	return strings.TrimRight(out.String(), "\n")
 }
 
 func ansiCode(code string) string {
