@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adamavenir/fray/internal/command/hooks"
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
 	"github.com/adamavenir/fray/internal/types"
@@ -259,7 +260,7 @@ func NewNewCmd() *cobra.Command {
 				posted = &userMsg
 			}
 
-			wroteEnv := WriteClaudeEnv(agentID)
+			wroteEnv := hooks.WriteClaudeEnv(agentID)
 
 			if ctx.JSONMode {
 				payload := map[string]any{

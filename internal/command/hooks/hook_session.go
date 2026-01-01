@@ -1,8 +1,7 @@
-package command
+package hooks
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -12,11 +11,6 @@ import (
 	"github.com/adamavenir/fray/internal/types"
 	"github.com/spf13/cobra"
 )
-
-type hookOutput struct {
-	AdditionalContext string `json:"additionalContext,omitempty"`
-	Continue          *bool  `json:"continue,omitempty"`
-}
 
 // NewHookSessionCmd handles Claude SessionStart hooks.
 func NewHookSessionCmd() *cobra.Command {
@@ -156,9 +150,4 @@ func buildHookSessionContext(event, agentID, agentBase string, roomMessages, men
 
 	builder.WriteString(fmt.Sprintf("\nPost: fray post --as %s \"message\"", agentID))
 	return builder.String()
-}
-
-func writeHookOutput(cmd *cobra.Command, output hookOutput) error {
-	encoder := json.NewEncoder(cmd.OutOrStdout())
-	return encoder.Encode(output)
 }

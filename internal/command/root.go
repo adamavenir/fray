@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/adamavenir/fray/internal/command/hooks"
 	"github.com/spf13/cobra"
 )
 
@@ -84,12 +85,12 @@ func NewRootCmd(version string) *cobra.Command {
 		NewFilterCmd(),
 		NewLsCmd(),
 		NewMigrateCmd(),
-		NewHookInstallCmd(),
-		NewHookSessionCmd(),
-		NewHookPromptCmd(),
-		NewHookPrecommitCmd(),
-		NewHookPrecompactCmd(),
-		NewHookStatuslineCmd(),
+		hooks.NewHookInstallCmd(),
+		hooks.NewHookSessionCmd(),
+		hooks.NewHookPromptCmd(),
+		hooks.NewHookPrecommitCmd(),
+		hooks.NewHookPrecompactCmd(),
+		hooks.NewHookStatuslineCmd(),
 	)
 
 	return cmd
