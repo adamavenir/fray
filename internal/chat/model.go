@@ -1068,11 +1068,9 @@ func (m *Model) threadEntries() []threadEntry {
 		}
 	}
 
-	// Pseudo-threads always at bottom (no separator)
+	// Pseudo-threads always at bottom (no separator) - only show actionable: open and stale
 	entries = append(entries,
 		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadOpen, Label: string(pseudoThreadOpen)},
-		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadClosed, Label: string(pseudoThreadClosed)},
-		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadWonder, Label: string(pseudoThreadWonder)},
 		threadEntry{Kind: threadEntryPseudo, Pseudo: pseudoThreadStale, Label: string(pseudoThreadStale)},
 	)
 
