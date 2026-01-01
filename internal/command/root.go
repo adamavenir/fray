@@ -65,6 +65,7 @@ func NewRootCmd(version string) *cobra.Command {
 		NewAskCmd(),
 		NewQuestionsCmd(),
 		NewQuestionCmd(),
+		NewAnswerCmd(),
 		NewSurfaceCmd(),
 		NewNoteCmd(),
 		NewNotesCmd(),
