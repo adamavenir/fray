@@ -76,7 +76,7 @@ func NewRootCmd(version string) *cobra.Command {
 		NewNoteCmd(),
 		NewNotesCmd(),
 		NewMetaCmd(),
-		NewUnreactCmd(),
+		NewReactCmd(),
 		NewChatCmd(),
 		NewWatchCmd(),
 		NewPruneCmd(),
