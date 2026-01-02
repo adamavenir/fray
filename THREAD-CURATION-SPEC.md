@@ -372,10 +372,10 @@ fray threads --all              # Everything
 ```bash
 fray thread thrd-xyz --pinned      # Only pinned messages
 fray thread thrd-xyz --by alice    # By agent
+fray thread thrd-xyz --unread      # Uses read_to watermark (fray-vfv)
 fray thread thrd-xyz --reactions   # Messages with reactions
 fray thread thrd-xyz --with "keyword"  # Contains text
 fray thread thrd-xyz --anchors     # Show anchors of sub-threads
-# --unread deferred to v2 (requires read tracking)
 ```
 
 ### Cross-Thread Queries (fray-n28i)
@@ -536,7 +536,8 @@ fray view delete hot-threads --as alice
 ## Deferred to v2
 
 - **fray-cfxv (saved views)**: Named query presets - good idea but not essential for MVP
-- **Read/unread tracking**: Per-agent position tracking - significant complexity, separate epic
+
+Note: Read/unread tracking is available via the `read_to` watermark system (fray-vfv). The `--unread` flag in fray-mgiz uses this existing infrastructure.
 
 ## Dependencies
 
