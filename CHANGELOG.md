@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray answer`: interactive Q&A review for humans, direct mode for agents (`fray answer <qstn-id> "text" --as agent`); batched Q&A summaries in chat
 - MCP: configurable agent name via second argument (default: `desktop`)
 - Threads as playlists with message home + curation, subscriptions, and surfacing/backlinks
+- Thread pins: `fray thread pin/unpin <thread>` for public thread highlighting; `fray threads --pinned`
+- Thread mutes: `fray thread mute/unmute <thread>` with optional `--ttl`; muted threads excluded from default listing
+- Implicit subscription: posting to a thread auto-subscribes the poster and @mentioned agents
 - `fray reply` for reply chains (renamed from `fray thread`)
 - Thread/Question CLI commands (`thread`, `threads`, `surface`, `note`, `notes`, `meta`)
 - Chat TUI thread panel with filtering and pseudo-thread question views
