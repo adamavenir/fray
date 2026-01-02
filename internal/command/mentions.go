@@ -33,7 +33,9 @@ func NewMentionsCmd() *cobra.Command {
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
-			options := &types.MessageQueryOptions{IncludeArchived: includeArchived, AgentPrefix: prefix}
+			// Include mentions from all locations (room + threads)
+			allHomes := ""
+			options := &types.MessageQueryOptions{IncludeArchived: includeArchived, AgentPrefix: prefix, Home: &allHomes}
 
 			unreadOnly := true
 			if showAll {

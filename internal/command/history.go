@@ -14,8 +14,8 @@ import (
 // NewHistoryCmd creates the history command.
 func NewHistoryCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "history <agent>",
-		Short: "Show message history for an agent",
+		Use:   "history <agent|user>",
+		Short: "Show message history for an agent or user",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := GetContext(cmd)
@@ -24,9 +24,11 @@ func NewHistoryCmd() *cobra.Command {
 			}
 			defer ctx.DB.Close()
 
+			// Try to resolve as agent first, fall back to username for users
 			agent, err := resolveAgentByRef(ctx, args[0])
 			if err != nil {
-				return writeCommandError(cmd, err)
+				// Not found as agent - treat as user (e.g., "adam")
+				agent = &types.Agent{AgentID: args[0]}
 			}
 
 			sinceValue, beforeValue, err := parseTimeRangeFlags(cmd)

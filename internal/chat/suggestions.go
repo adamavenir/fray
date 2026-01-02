@@ -53,11 +53,17 @@ func (m *Model) handleSuggestionKeys(msg tea.KeyMsg) (bool, tea.Cmd) {
 			m.suggestionIndex = 0
 		}
 		return true, nil
-	case tea.KeyTab, tea.KeyEnter:
+	case tea.KeyTab:
 		if m.suggestionIndex >= 0 && m.suggestionIndex < len(m.suggestions) {
 			m.applySuggestion(m.suggestions[m.suggestionIndex])
 		}
 		return true, nil
+	case tea.KeyEnter:
+		// Apply suggestion but don't consume Enter - let main handler submit
+		if m.suggestionIndex >= 0 && m.suggestionIndex < len(m.suggestions) {
+			m.applySuggestion(m.suggestions[m.suggestionIndex])
+		}
+		return false, nil
 	}
 	return false, nil
 }
