@@ -188,6 +188,22 @@ func NewPostCmd() *cobra.Command {
 				return writeCommandError(cmd, err)
 			}
 
+			// Implicit subscription: posting to a thread subscribes the poster
+			if thread != nil {
+				if err := subscribeAgentToThread(ctx, thread.GUID, agentID, now, "post"); err != nil {
+					return writeCommandError(cmd, err)
+				}
+				// Also subscribe mentioned agents
+				for _, mention := range mentions {
+					if mention != agentID {
+						if err := subscribeAgentToThread(ctx, thread.GUID, mention, now, "mention"); err != nil {
+							// Non-fatal: agent may not exist
+							continue
+						}
+					}
+				}
+			}
+
 			updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
 			if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
 				return writeCommandError(cmd, err)

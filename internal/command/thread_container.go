@@ -130,6 +130,10 @@ func NewThreadCmd() *cobra.Command {
 		NewThreadRestoreCmd(),
 		NewThreadRenameCmd(),
 		NewThreadAnchorCmd(),
+		NewThreadPinCmd(),
+		NewThreadUnpinCmd(),
+		NewThreadMuteCmd(),
+		NewThreadUnmuteCmd(),
 	)
 
 	return cmd
@@ -148,13 +152,38 @@ func NewThreadsCmd() *cobra.Command {
 			defer ctx.DB.Close()
 
 			all, _ := cmd.Flags().GetBool("all")
+			pinnedOnly, _ := cmd.Flags().GetBool("pinned")
+			mutedOnly, _ := cmd.Flags().GetBool("muted")
 			asRef, _ := cmd.Flags().GetString("as")
 
+			// Handle --pinned filter
+			if pinnedOnly {
+				threads, err := db.GetPinnedThreads(ctx.DB)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				return outputThreads(cmd, ctx, threads, "Pinned threads:")
+			}
+
+			// Handle --muted filter
+			if mutedOnly {
+				agentID, err := resolveSubscriptionAgent(ctx, asRef)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				threads, err := db.GetMutedThreads(ctx.DB, agentID)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				return outputThreads(cmd, ctx, threads, "Muted threads:")
+			}
+
 			var options types.ThreadQueryOptions
+			var agentID string
 			if all {
 				options.IncludeArchived = true
 			} else {
-				agentID, err := resolveSubscriptionAgent(ctx, asRef)
+				agentID, err = resolveSubscriptionAgent(ctx, asRef)
 				if err != nil {
 					return writeCommandError(cmd, err)
 				}
@@ -166,31 +195,60 @@ func NewThreadsCmd() *cobra.Command {
 				return writeCommandError(cmd, err)
 			}
 
-			if ctx.JSONMode {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(threads)
-			}
-
-			out := cmd.OutOrStdout()
-			if len(threads) == 0 {
-				fmt.Fprintln(out, "No threads found")
-				return nil
-			}
-			fmt.Fprintln(out, "Threads:")
-			for _, thread := range threads {
-				path, err := buildThreadPath(ctx.DB, &thread)
+			// Exclude muted threads by default (unless --all or --muted)
+			if !all && agentID != "" {
+				mutedGUIDs, err := db.GetMutedThreadGUIDs(ctx.DB, agentID)
 				if err != nil {
 					return writeCommandError(cmd, err)
 				}
-				fmt.Fprintf(out, "  %s (%s) [%s]\n", path, thread.GUID, thread.Status)
+				if len(mutedGUIDs) > 0 {
+					filtered := make([]types.Thread, 0, len(threads))
+					for _, t := range threads {
+						if !mutedGUIDs[t.GUID] {
+							filtered = append(filtered, t)
+						}
+					}
+					threads = filtered
+				}
 			}
-			return nil
+
+			return outputThreads(cmd, ctx, threads, "Threads:")
 		},
 	}
 
-	cmd.Flags().Bool("all", false, "list all threads")
+	cmd.Flags().Bool("all", false, "list all threads (includes muted)")
+	cmd.Flags().Bool("pinned", false, "list only pinned threads")
+	cmd.Flags().Bool("muted", false, "list only muted threads")
 	cmd.Flags().String("as", "", "agent or user to list subscriptions for")
 
 	return cmd
+}
+
+func outputThreads(cmd *cobra.Command, ctx *CommandContext, threads []types.Thread, header string) error {
+	if ctx.JSONMode {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(threads)
+	}
+
+	out := cmd.OutOrStdout()
+	if len(threads) == 0 {
+		fmt.Fprintln(out, "No threads found")
+		return nil
+	}
+	fmt.Fprintln(out, header)
+	for _, thread := range threads {
+		path, err := buildThreadPath(ctx.DB, &thread)
+		if err != nil {
+			return writeCommandError(cmd, err)
+		}
+		// Check if thread is pinned for display
+		pinned, _ := db.IsThreadPinned(ctx.DB, thread.GUID)
+		indicator := ""
+		if pinned {
+			indicator = " [pinned]"
+		}
+		fmt.Fprintf(out, "  %s (%s) [%s]%s\n", path, thread.GUID, thread.Status, indicator)
+	}
+	return nil
 }
 
 func resolveSubscriptionAgent(ctx *CommandContext, ref string) (string, error) {

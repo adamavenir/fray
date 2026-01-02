@@ -146,6 +146,14 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	if err != nil {
 		return err
 	}
+	threadPinEvents, err := ReadThreadPins(projectPath)
+	if err != nil {
+		return err
+	}
+	threadMuteEvents, err := ReadThreadMutes(projectPath)
+	if err != nil {
+		return err
+	}
 	questions, err := ReadQuestions(projectPath)
 	if err != nil {
 		return err
@@ -185,6 +193,12 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS fray_threads"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS fray_thread_pins"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS fray_thread_mutes"); err != nil {
 		return err
 	}
 	if err := initSchemaWith(db); err != nil {
@@ -463,6 +477,57 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 				INSERT OR REPLACE INTO fray_message_pins (message_guid, thread_guid, pinned_by, pinned_at)
 				VALUES (?, ?, ?, ?)
 			`, pin.MessageGUID, pin.ThreadGUID, pin.PinnedBy, pin.PinnedAt); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Rebuild thread pins
+	if len(threadPinEvents) > 0 {
+		threadPins := make(map[string]threadPinEvent)
+
+		for _, event := range threadPinEvents {
+			switch event.Type {
+			case "thread_pin":
+				threadPins[event.ThreadGUID] = event
+			case "thread_unpin":
+				delete(threadPins, event.ThreadGUID)
+			}
+		}
+
+		for _, pin := range threadPins {
+			if _, err := db.Exec(`
+				INSERT OR REPLACE INTO fray_thread_pins (thread_guid, pinned_by, pinned_at)
+				VALUES (?, ?, ?)
+			`, pin.ThreadGUID, pin.PinnedBy, pin.PinnedAt); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Rebuild thread mutes
+	if len(threadMuteEvents) > 0 {
+		type muteKey struct {
+			threadGUID string
+			agentID    string
+		}
+		mutes := make(map[muteKey]threadMuteEvent)
+
+		for _, event := range threadMuteEvents {
+			key := muteKey{threadGUID: event.ThreadGUID, agentID: event.AgentID}
+			switch event.Type {
+			case "thread_mute":
+				mutes[key] = event
+			case "thread_unmute":
+				delete(mutes, key)
+			}
+		}
+
+		for _, mute := range mutes {
+			if _, err := db.Exec(`
+				INSERT OR REPLACE INTO fray_thread_mutes (thread_guid, agent_id, muted_at, expires_at)
+				VALUES (?, ?, ?, ?)
+			`, mute.ThreadGUID, mute.AgentID, mute.MutedAt, mute.ExpiresAt); err != nil {
 				return err
 			}
 		}

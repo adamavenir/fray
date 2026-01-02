@@ -747,3 +747,116 @@ type threadMessageEvent struct {
 	RemovedBy   string
 	RemovedAt   int64
 }
+
+// threadPinEvent represents a pin or unpin event for threads.
+type threadPinEvent struct {
+	Type       string
+	ThreadGUID string
+	PinnedBy   string
+	PinnedAt   int64
+	UnpinnedAt int64
+}
+
+// threadMuteEvent represents a mute or unmute event for threads.
+type threadMuteEvent struct {
+	Type       string
+	ThreadGUID string
+	AgentID    string
+	MutedAt    int64
+	ExpiresAt  *int64
+	UnmutedAt  int64
+}
+
+// ReadThreadPins reads thread pin events from JSONL for rebuilding the database.
+func ReadThreadPins(projectPath string) ([]threadPinEvent, error) {
+	frayDir := resolveFrayDir(projectPath)
+	lines, err := readJSONLLines(filepath.Join(frayDir, threadsFile))
+	if err != nil {
+		return nil, err
+	}
+
+	var events []threadPinEvent
+
+	for _, line := range lines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+
+		switch envelope.Type {
+		case "thread_pin":
+			var pin ThreadPinJSONLRecord
+			if err := json.Unmarshal([]byte(line), &pin); err != nil {
+				continue
+			}
+			events = append(events, threadPinEvent{
+				Type:       pin.Type,
+				ThreadGUID: pin.ThreadGUID,
+				PinnedBy:   pin.PinnedBy,
+				PinnedAt:   pin.PinnedAt,
+			})
+		case "thread_unpin":
+			var unpin ThreadUnpinJSONLRecord
+			if err := json.Unmarshal([]byte(line), &unpin); err != nil {
+				continue
+			}
+			events = append(events, threadPinEvent{
+				Type:       unpin.Type,
+				ThreadGUID: unpin.ThreadGUID,
+				UnpinnedAt: unpin.UnpinnedAt,
+			})
+		}
+	}
+
+	return events, nil
+}
+
+// ReadThreadMutes reads thread mute events from JSONL for rebuilding the database.
+func ReadThreadMutes(projectPath string) ([]threadMuteEvent, error) {
+	frayDir := resolveFrayDir(projectPath)
+	lines, err := readJSONLLines(filepath.Join(frayDir, threadsFile))
+	if err != nil {
+		return nil, err
+	}
+
+	var events []threadMuteEvent
+
+	for _, line := range lines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+
+		switch envelope.Type {
+		case "thread_mute":
+			var mute ThreadMuteJSONLRecord
+			if err := json.Unmarshal([]byte(line), &mute); err != nil {
+				continue
+			}
+			events = append(events, threadMuteEvent{
+				Type:       mute.Type,
+				ThreadGUID: mute.ThreadGUID,
+				AgentID:    mute.AgentID,
+				MutedAt:    mute.MutedAt,
+				ExpiresAt:  mute.ExpiresAt,
+			})
+		case "thread_unmute":
+			var unmute ThreadUnmuteJSONLRecord
+			if err := json.Unmarshal([]byte(line), &unmute); err != nil {
+				continue
+			}
+			events = append(events, threadMuteEvent{
+				Type:       unmute.Type,
+				ThreadGUID: unmute.ThreadGUID,
+				AgentID:    unmute.AgentID,
+				UnmutedAt:  unmute.UnmutedAt,
+			})
+		}
+	}
+
+	return events, nil
+}

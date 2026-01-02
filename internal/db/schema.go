@@ -128,6 +128,25 @@ CREATE TABLE IF NOT EXISTS fray_message_pins (
 
 CREATE INDEX IF NOT EXISTS idx_fray_message_pins_thread ON fray_message_pins(thread_guid);
 
+-- Thread pins (public, any agent can pin/unpin)
+CREATE TABLE IF NOT EXISTS fray_thread_pins (
+  thread_guid TEXT PRIMARY KEY,
+  pinned_by TEXT NOT NULL,
+  pinned_at INTEGER NOT NULL
+);
+
+-- Thread mutes (per-agent, with optional expiry)
+CREATE TABLE IF NOT EXISTS fray_thread_mutes (
+  thread_guid TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  muted_at INTEGER NOT NULL,
+  expires_at INTEGER,
+  PRIMARY KEY (thread_guid, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fray_thread_mutes_agent ON fray_thread_mutes(agent_id);
+CREATE INDEX IF NOT EXISTS idx_fray_thread_mutes_expires ON fray_thread_mutes(expires_at);
+
 -- Linked projects for cross-project messaging
 CREATE TABLE IF NOT EXISTS fray_linked_projects (
   alias TEXT PRIMARY KEY,

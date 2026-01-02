@@ -341,3 +341,47 @@ func AppendMessageMove(projectPath string, event MessageMoveJSONLRecord) error {
 	touchDatabaseFile(projectPath)
 	return nil
 }
+
+// AppendThreadPin appends a thread pin event to JSONL.
+func AppendThreadPin(projectPath string, event ThreadPinJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "thread_pin"
+	if err := appendJSONLine(filepath.Join(frayDir, threadsFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendThreadUnpin appends a thread unpin event to JSONL.
+func AppendThreadUnpin(projectPath string, event ThreadUnpinJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "thread_unpin"
+	if err := appendJSONLine(filepath.Join(frayDir, threadsFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendThreadMute appends a thread mute event to JSONL.
+func AppendThreadMute(projectPath string, event ThreadMuteJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "thread_mute"
+	if err := appendJSONLine(filepath.Join(frayDir, threadsFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendThreadUnmute appends a thread unmute event to JSONL.
+func AppendThreadUnmute(projectPath string, event ThreadUnmuteJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "thread_unmute"
+	if err := appendJSONLine(filepath.Join(frayDir, threadsFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}

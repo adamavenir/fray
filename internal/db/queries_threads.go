@@ -425,3 +425,138 @@ func GetPinnedMessageCount(db *sql.DB, threadGUID string) (int64, error) {
 	}
 	return count, nil
 }
+
+// PinThread pins a thread (public, visible to all).
+func PinThread(db *sql.DB, threadGUID, pinnedBy string, pinnedAt int64) error {
+	if pinnedAt == 0 {
+		pinnedAt = time.Now().Unix()
+	}
+	_, err := db.Exec(`
+		INSERT OR REPLACE INTO fray_thread_pins (thread_guid, pinned_by, pinned_at)
+		VALUES (?, ?, ?)
+	`, threadGUID, pinnedBy, pinnedAt)
+	return err
+}
+
+// UnpinThread unpins a thread.
+func UnpinThread(db *sql.DB, threadGUID string) error {
+	_, err := db.Exec(`
+		DELETE FROM fray_thread_pins WHERE thread_guid = ?
+	`, threadGUID)
+	return err
+}
+
+// IsThreadPinned checks if a thread is pinned.
+func IsThreadPinned(db *sql.DB, threadGUID string) (bool, error) {
+	row := db.QueryRow(`
+		SELECT 1 FROM fray_thread_pins WHERE thread_guid = ?
+	`, threadGUID)
+	var value int
+	if err := row.Scan(&value); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// GetPinnedThreads returns all pinned threads.
+func GetPinnedThreads(db *sql.DB) ([]types.Thread, error) {
+	rows, err := db.Query(`
+		SELECT t.guid, t.name, t.parent_thread, t.status, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
+		FROM fray_threads t
+		INNER JOIN fray_thread_pins p ON p.thread_guid = t.guid
+		ORDER BY p.pinned_at ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThreads(rows)
+}
+
+// MuteThread mutes a thread for an agent.
+func MuteThread(db *sql.DB, threadGUID, agentID string, mutedAt int64, expiresAt *int64) error {
+	if mutedAt == 0 {
+		mutedAt = time.Now().Unix()
+	}
+	_, err := db.Exec(`
+		INSERT OR REPLACE INTO fray_thread_mutes (thread_guid, agent_id, muted_at, expires_at)
+		VALUES (?, ?, ?, ?)
+	`, threadGUID, agentID, mutedAt, expiresAt)
+	return err
+}
+
+// UnmuteThread unmutes a thread for an agent.
+func UnmuteThread(db *sql.DB, threadGUID, agentID string) error {
+	_, err := db.Exec(`
+		DELETE FROM fray_thread_mutes WHERE thread_guid = ? AND agent_id = ?
+	`, threadGUID, agentID)
+	return err
+}
+
+// IsThreadMuted checks if a thread is muted for an agent (respects expiry).
+func IsThreadMuted(db *sql.DB, threadGUID, agentID string) (bool, error) {
+	now := time.Now().Unix()
+	row := db.QueryRow(`
+		SELECT 1 FROM fray_thread_mutes
+		WHERE thread_guid = ? AND agent_id = ?
+		AND (expires_at IS NULL OR expires_at > ?)
+	`, threadGUID, agentID, now)
+	var value int
+	if err := row.Scan(&value); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// GetMutedThreads returns threads muted by an agent (respects expiry).
+func GetMutedThreads(db *sql.DB, agentID string) ([]types.Thread, error) {
+	now := time.Now().Unix()
+	rows, err := db.Query(`
+		SELECT t.guid, t.name, t.parent_thread, t.status, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
+		FROM fray_threads t
+		INNER JOIN fray_thread_mutes m ON m.thread_guid = t.guid
+		WHERE m.agent_id = ?
+		AND (m.expires_at IS NULL OR m.expires_at > ?)
+		ORDER BY m.muted_at DESC
+	`, agentID, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanThreads(rows)
+}
+
+// GetMutedThreadGUIDs returns GUIDs of threads muted by an agent (respects expiry).
+func GetMutedThreadGUIDs(db *sql.DB, agentID string) (map[string]bool, error) {
+	now := time.Now().Unix()
+	rows, err := db.Query(`
+		SELECT thread_guid FROM fray_thread_mutes
+		WHERE agent_id = ?
+		AND (expires_at IS NULL OR expires_at > ?)
+	`, agentID, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	muted := make(map[string]bool)
+	for rows.Next() {
+		var guid string
+		if err := rows.Scan(&guid); err != nil {
+			return nil, err
+		}
+		muted[guid] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return muted, nil
+}

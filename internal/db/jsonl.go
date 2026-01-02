@@ -154,6 +154,39 @@ type MessageMoveJSONLRecord struct {
 	MovedAt     int64  `json:"moved_at"`
 }
 
+// ThreadPinJSONLRecord represents a thread pin event.
+type ThreadPinJSONLRecord struct {
+	Type       string `json:"type"`
+	ThreadGUID string `json:"thread_guid"`
+	PinnedBy   string `json:"pinned_by"`
+	PinnedAt   int64  `json:"pinned_at"`
+}
+
+// ThreadUnpinJSONLRecord represents a thread unpin event.
+type ThreadUnpinJSONLRecord struct {
+	Type        string `json:"type"`
+	ThreadGUID  string `json:"thread_guid"`
+	UnpinnedBy  string `json:"unpinned_by"`
+	UnpinnedAt  int64  `json:"unpinned_at"`
+}
+
+// ThreadMuteJSONLRecord represents a thread mute event.
+type ThreadMuteJSONLRecord struct {
+	Type       string `json:"type"`
+	ThreadGUID string `json:"thread_guid"`
+	AgentID    string `json:"agent_id"`
+	MutedAt    int64  `json:"muted_at"`
+	ExpiresAt  *int64 `json:"expires_at,omitempty"`
+}
+
+// ThreadUnmuteJSONLRecord represents a thread unmute event.
+type ThreadUnmuteJSONLRecord struct {
+	Type       string `json:"type"`
+	ThreadGUID string `json:"thread_guid"`
+	AgentID    string `json:"agent_id"`
+	UnmutedAt  int64  `json:"unmuted_at"`
+}
+
 // AgentJSONLRecord represents an agent entry in JSONL.
 type AgentJSONLRecord struct {
 	Type             string              `json:"type"`
