@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
+- Thread anchors: `fray thread anchor <ref> <msg>` sets TL;DR message shown at top of thread display
+- Message pins: `fray pin/unpin <msg>` for per-thread pinning; `fray thread <ref> --pinned` to filter
+- Message moves: `fray mv <msg...> <dest>` relocates messages between threads/room
 - Questions: wonder/ask/list/view/answer/close workflow with JSONL + SQLite support
 - Question extraction from markdown: `# Questions for @x` and `# Wondering` sections auto-create questions with options (a/b/c) and pro/con bullets; sections stripped from display
 - `fray answer`: interactive Q&A review for humans, direct mode for agents (`fray answer <qstn-id> "text" --as agent`); batched Q&A summaries in chat
