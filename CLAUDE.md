@@ -64,6 +64,12 @@ internal/types/   # Go types
 
 **Threading**: Messages can reply to other messages via `reply_to` field (GUID). Use `--reply-to <guid>` when posting. In chat, prefix matching is supported: type `#abc hello` to reply (resolves to full GUID). View reply chains with `fray reply <guid>`. Container threads are playlists: messages have a `home` (room or thread) and can be curated into multiple threads.
 
+**Thread Curation**: Threads support:
+- **Anchors**: A designated message serving as TL;DR, shown at top of thread display
+- **Pins**: Messages can be pinned within threads for easy reference (per-thread, not global)
+- **Moving**: Use `fray mv` to change a message's home (unlike `thread add` which only references)
+- **Activity tracking**: `last_activity_at` tracks when messages are added/moved
+
 **Message types**: Messages have a `type` field: `'agent'`, `'user'`, `'event'`, or `'surface'`. Surfaced posts reference another message and emit backlink events; `home`, `references`, and `surface_message` track this.
 
 **Database**: Uses `modernc.org/sqlite` (pure Go). Tables are prefixed `fray_`. Primary keys are GUIDs (`guid TEXT PRIMARY KEY`).
@@ -196,7 +202,14 @@ fray @alice                    # Check mentions for alice
 fray reply <guid>              # View reply chain
 fray versions <guid>           # Show message edit history
 fray thread <ref>              # View thread messages
+fray thread <ref> --pinned     # View only pinned messages
 fray threads                   # List threads
+fray thread anchor <ref> <msg> # Set anchor message for thread
+fray thread anchor <ref> --hide # Hide anchor from parent
+fray pin <msg> [--thread <ref>]  # Pin message in thread
+fray unpin <msg> [--thread <ref>] # Unpin message from thread
+fray mv <msg...> <dest>        # Move messages to thread/room
+fray mv <msg> room             # Move message back to room
 fray wonder "..." --as alice   # Create unasked question
 fray ask "..." --to bob --as alice # Ask question
 fray questions                 # List questions

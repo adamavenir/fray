@@ -32,7 +32,14 @@ func NewThreadCmd() *cobra.Command {
 				return writeCommandError(cmd, err)
 			}
 
-			messages, err := db.GetThreadMessages(ctx.DB, thread.GUID)
+			pinnedOnly, _ := cmd.Flags().GetBool("pinned")
+
+			var messages []types.Message
+			if pinnedOnly {
+				messages, err = db.GetPinnedMessages(ctx.DB, thread.GUID)
+			} else {
+				messages, err = db.GetThreadMessages(ctx.DB, thread.GUID)
+			}
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
@@ -47,17 +54,41 @@ func NewThreadCmd() *cobra.Command {
 				return writeCommandError(cmd, err)
 			}
 
+			// Get anchor message if set
+			var anchorMsg *types.Message
+			if thread.AnchorMessageGUID != nil {
+				anchorMsg, err = db.GetMessage(ctx.DB, *thread.AnchorMessageGUID)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+			}
+
 			if ctx.JSONMode {
 				payload := map[string]any{
 					"thread":   thread,
 					"path":     path,
 					"messages": messages,
+					"anchor":   anchorMsg,
 				}
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Thread %s (%s) [%s]\n\n", path, thread.GUID, thread.Status)
+			fmt.Fprintf(out, "Thread %s (%s) [%s]\n", path, thread.GUID, thread.Status)
+
+			// Display anchor at top
+			if anchorMsg != nil {
+				bases, err := db.GetAgentBases(ctx.DB)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				fmt.Fprintln(out, "📌 ANCHOR:")
+				projectName := GetProjectName(ctx.Project.Root)
+				fmt.Fprintln(out, FormatMessage(*anchorMsg, projectName, bases))
+				fmt.Fprintln(out, "---")
+			}
+			fmt.Fprintln(out)
+
 			if len(messages) == 0 {
 				fmt.Fprintln(out, "No messages in thread")
 				return nil
@@ -75,6 +106,8 @@ func NewThreadCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().Bool("pinned", false, "show only pinned messages")
+
 	cmd.AddCommand(
 		NewThreadNewCmd(),
 		NewThreadAddCmd(),
@@ -84,6 +117,7 @@ func NewThreadCmd() *cobra.Command {
 		NewThreadArchiveCmd(),
 		NewThreadRestoreCmd(),
 		NewThreadRenameCmd(),
+		NewThreadAnchorCmd(),
 	)
 
 	return cmd

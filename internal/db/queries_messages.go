@@ -629,6 +629,21 @@ func GetReplyCount(db *sql.DB, messageID string) (int64, error) {
 	return count, nil
 }
 
+// GetReplies returns all direct replies to a message.
+func GetReplies(db *sql.DB, messageID string) ([]types.Message, error) {
+	rows, err := db.Query(`
+		SELECT * FROM fray_messages
+		WHERE reply_to = ?
+		ORDER BY ts ASC, guid ASC
+	`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanMessages(rows)
+}
+
 type messageRow struct {
 	GUID           string
 	TS             int64

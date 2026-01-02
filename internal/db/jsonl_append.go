@@ -236,13 +236,16 @@ func AppendQuestionUpdate(projectPath string, update QuestionUpdateJSONLRecord) 
 func AppendThread(projectPath string, thread types.Thread, subscribed []string) error {
 	frayDir := resolveFrayDir(projectPath)
 	record := ThreadJSONLRecord{
-		Type:         "thread",
-		GUID:         thread.GUID,
-		Name:         thread.Name,
-		ParentThread: thread.ParentThread,
-		Subscribed:   subscribed,
-		Status:       string(thread.Status),
-		CreatedAt:    thread.CreatedAt,
+		Type:              "thread",
+		GUID:              thread.GUID,
+		Name:              thread.Name,
+		ParentThread:      thread.ParentThread,
+		Subscribed:        subscribed,
+		Status:            string(thread.Status),
+		CreatedAt:         thread.CreatedAt,
+		AnchorMessageGUID: thread.AnchorMessageGUID,
+		AnchorHidden:      thread.AnchorHidden,
+		LastActivityAt:    thread.LastActivityAt,
 	}
 	if err := appendJSONLine(filepath.Join(frayDir, threadsFile), record); err != nil {
 		return err
@@ -300,6 +303,39 @@ func AppendThreadMessageRemove(projectPath string, event ThreadMessageRemoveJSON
 	frayDir := resolveFrayDir(projectPath)
 	event.Type = "thread_message_remove"
 	if err := appendJSONLine(filepath.Join(frayDir, threadsFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendMessagePin appends a message pin event to JSONL.
+func AppendMessagePin(projectPath string, event MessagePinJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "message_pin"
+	if err := appendJSONLine(filepath.Join(frayDir, messagesFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendMessageUnpin appends a message unpin event to JSONL.
+func AppendMessageUnpin(projectPath string, event MessageUnpinJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "message_unpin"
+	if err := appendJSONLine(filepath.Join(frayDir, messagesFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendMessageMove appends a message move event to JSONL.
+func AppendMessageMove(projectPath string, event MessageMoveJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "message_move"
+	if err := appendJSONLine(filepath.Join(frayDir, messagesFile), event); err != nil {
 		return err
 	}
 	touchDatabaseFile(projectPath)

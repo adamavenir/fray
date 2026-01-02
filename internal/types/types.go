@@ -142,6 +142,12 @@ type OptionalInt64 struct {
 	Value *int64
 }
 
+// OptionalBool represents a nullable bool update.
+type OptionalBool struct {
+	Set   bool
+	Value bool
+}
+
 // MessageQueryOptions controls message queries.
 type MessageQueryOptions struct {
 	Limit                 int
@@ -240,11 +246,14 @@ const (
 
 // Thread represents a container thread.
 type Thread struct {
-	GUID         string       `json:"guid"`
-	Name         string       `json:"name"`
-	ParentThread *string      `json:"parent_thread,omitempty"`
-	Status       ThreadStatus `json:"status"`
-	CreatedAt    int64        `json:"created_at"`
+	GUID              string       `json:"guid"`
+	Name              string       `json:"name"`
+	ParentThread      *string      `json:"parent_thread,omitempty"`
+	Status            ThreadStatus `json:"status"`
+	CreatedAt         int64        `json:"created_at"`
+	AnchorMessageGUID *string      `json:"anchor_message_guid,omitempty"`
+	AnchorHidden      bool         `json:"anchor_hidden,omitempty"`
+	LastActivityAt    *int64       `json:"last_activity_at,omitempty"`
 }
 
 // ThreadSubscription records a thread subscription.

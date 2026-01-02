@@ -140,6 +140,17 @@ func ReadMessages(projectPath string) ([]MessageJSONLRecord, error) {
 				}
 			}
 			messageMap[update.ID] = existing
+		case "message_move":
+			var move MessageMoveJSONLRecord
+			if err := json.Unmarshal([]byte(line), &move); err != nil {
+				continue
+			}
+			existing, ok := messageMap[move.MessageGUID]
+			if !ok {
+				continue
+			}
+			existing.Home = move.NewHome
+			messageMap[move.MessageGUID] = existing
 		}
 	}
 
@@ -152,6 +163,64 @@ func ReadMessages(projectPath string) ([]MessageJSONLRecord, error) {
 		messages = append(messages, record)
 	}
 	return messages, nil
+}
+
+// messagePinEvent represents a pin or unpin event for rebuild.
+type messagePinEvent struct {
+	Type        string
+	MessageGUID string
+	ThreadGUID  string
+	PinnedBy    string
+	PinnedAt    int64
+	UnpinnedAt  int64
+}
+
+// ReadMessagePins reads message pin events from JSONL for rebuilding the database.
+func ReadMessagePins(projectPath string) ([]messagePinEvent, error) {
+	frayDir := resolveFrayDir(projectPath)
+	lines, err := readJSONLLines(filepath.Join(frayDir, messagesFile))
+	if err != nil {
+		return nil, err
+	}
+
+	var events []messagePinEvent
+
+	for _, line := range lines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+
+		switch envelope.Type {
+		case "message_pin":
+			var pin MessagePinJSONLRecord
+			if err := json.Unmarshal([]byte(line), &pin); err != nil {
+				continue
+			}
+			events = append(events, messagePinEvent{
+				Type:        pin.Type,
+				MessageGUID: pin.MessageGUID,
+				ThreadGUID:  pin.ThreadGUID,
+				PinnedBy:    pin.PinnedBy,
+				PinnedAt:    pin.PinnedAt,
+			})
+		case "message_unpin":
+			var unpin MessageUnpinJSONLRecord
+			if err := json.Unmarshal([]byte(line), &unpin); err != nil {
+				continue
+			}
+			events = append(events, messagePinEvent{
+				Type:        unpin.Type,
+				MessageGUID: unpin.MessageGUID,
+				ThreadGUID:  unpin.ThreadGUID,
+				UnpinnedAt:  unpin.UnpinnedAt,
+			})
+		}
+	}
+
+	return events, nil
 }
 
 // GetMessageVersions returns the full version history for a single message.
@@ -509,6 +578,15 @@ func ReadThreads(projectPath string) ([]ThreadJSONLRecord, []threadSubscriptionE
 			}
 			if update.ParentThread != nil {
 				existing.ParentThread = update.ParentThread
+			}
+			if update.AnchorMessageGUID != nil {
+				existing.AnchorMessageGUID = update.AnchorMessageGUID
+			}
+			if update.AnchorHidden != nil {
+				existing.AnchorHidden = *update.AnchorHidden
+			}
+			if update.LastActivityAt != nil {
+				existing.LastActivityAt = update.LastActivityAt
 			}
 			threadMap[update.GUID] = existing
 		case "thread_subscribe":

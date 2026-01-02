@@ -142,6 +142,10 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	if err != nil {
 		return err
 	}
+	pinEvents, err := ReadMessagePins(projectPath)
+	if err != nil {
+		return err
+	}
 	questions, err := ReadQuestions(projectPath)
 	if err != nil {
 		return err
@@ -335,13 +339,17 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	if len(threads) > 0 {
 		insertThread := `
 			INSERT OR REPLACE INTO fray_threads (
-				guid, name, parent_thread, status, created_at
-			) VALUES (?, ?, ?, ?, ?)
+				guid, name, parent_thread, status, created_at, anchor_message_guid, anchor_hidden, last_activity_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`
 		for _, thread := range threads {
 			status := thread.Status
 			if status == "" {
 				status = string(types.ThreadStatusOpen)
+			}
+			anchorHidden := 0
+			if thread.AnchorHidden {
+				anchorHidden = 1
 			}
 			if _, err := db.Exec(insertThread,
 				thread.GUID,
@@ -349,6 +357,9 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 				thread.ParentThread,
 				status,
 				thread.CreatedAt,
+				thread.AnchorMessageGUID,
+				anchorHidden,
+				thread.LastActivityAt,
 			); err != nil {
 				return err
 			}
@@ -424,6 +435,35 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 				`, entry.ThreadGUID, entry.MessageGUID, entry.AddedBy, entry.AddedAt); err != nil {
 					return err
 				}
+			}
+		}
+	}
+
+	// Rebuild message pins
+	if len(pinEvents) > 0 {
+		// Track current pin state per (message, thread) pair
+		type pinKey struct {
+			messageGUID string
+			threadGUID  string
+		}
+		pins := make(map[pinKey]messagePinEvent)
+
+		for _, event := range pinEvents {
+			key := pinKey{messageGUID: event.MessageGUID, threadGUID: event.ThreadGUID}
+			switch event.Type {
+			case "message_pin":
+				pins[key] = event
+			case "message_unpin":
+				delete(pins, key)
+			}
+		}
+
+		for _, pin := range pins {
+			if _, err := db.Exec(`
+				INSERT OR REPLACE INTO fray_message_pins (message_guid, thread_guid, pinned_by, pinned_at)
+				VALUES (?, ?, ?, ?)
+			`, pin.MessageGUID, pin.ThreadGUID, pin.PinnedBy, pin.PinnedAt); err != nil {
+				return err
 			}
 		}
 	}

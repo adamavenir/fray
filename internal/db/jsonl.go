@@ -68,22 +68,28 @@ type QuestionUpdateJSONLRecord struct {
 
 // ThreadJSONLRecord represents a thread entry in JSONL.
 type ThreadJSONLRecord struct {
-	Type         string   `json:"type"`
-	GUID         string   `json:"guid"`
-	Name         string   `json:"name"`
-	ParentThread *string  `json:"parent_thread,omitempty"`
-	Subscribed   []string `json:"subscribed,omitempty"`
-	Status       string   `json:"status"`
-	CreatedAt    int64    `json:"created_at"`
+	Type              string   `json:"type"`
+	GUID              string   `json:"guid"`
+	Name              string   `json:"name"`
+	ParentThread      *string  `json:"parent_thread,omitempty"`
+	Subscribed        []string `json:"subscribed,omitempty"`
+	Status            string   `json:"status"`
+	CreatedAt         int64    `json:"created_at"`
+	AnchorMessageGUID *string  `json:"anchor_message_guid,omitempty"`
+	AnchorHidden      bool     `json:"anchor_hidden,omitempty"`
+	LastActivityAt    *int64   `json:"last_activity_at,omitempty"`
 }
 
 // ThreadUpdateJSONLRecord represents a thread update entry in JSONL.
 type ThreadUpdateJSONLRecord struct {
-	Type         string  `json:"type"`
-	GUID         string  `json:"guid"`
-	Name         *string `json:"name,omitempty"`
-	Status       *string `json:"status,omitempty"`
-	ParentThread *string `json:"parent_thread,omitempty"`
+	Type              string  `json:"type"`
+	GUID              string  `json:"guid"`
+	Name              *string `json:"name,omitempty"`
+	Status            *string `json:"status,omitempty"`
+	ParentThread      *string `json:"parent_thread,omitempty"`
+	AnchorMessageGUID *string `json:"anchor_message_guid,omitempty"`
+	AnchorHidden      *bool   `json:"anchor_hidden,omitempty"`
+	LastActivityAt    *int64  `json:"last_activity_at,omitempty"`
 }
 
 // ThreadSubscribeJSONLRecord represents a subscription event.
@@ -118,6 +124,34 @@ type ThreadMessageRemoveJSONLRecord struct {
 	MessageGUID string `json:"message_guid"`
 	RemovedBy   string `json:"removed_by"`
 	RemovedAt   int64  `json:"removed_at"`
+}
+
+// MessagePinJSONLRecord represents a message pin event.
+type MessagePinJSONLRecord struct {
+	Type        string `json:"type"`
+	MessageGUID string `json:"message_guid"`
+	ThreadGUID  string `json:"thread_guid"`
+	PinnedBy    string `json:"pinned_by"`
+	PinnedAt    int64  `json:"pinned_at"`
+}
+
+// MessageUnpinJSONLRecord represents a message unpin event.
+type MessageUnpinJSONLRecord struct {
+	Type         string `json:"type"`
+	MessageGUID  string `json:"message_guid"`
+	ThreadGUID   string `json:"thread_guid"`
+	UnpinnedBy   string `json:"unpinned_by"`
+	UnpinnedAt   int64  `json:"unpinned_at"`
+}
+
+// MessageMoveJSONLRecord represents a message move event.
+type MessageMoveJSONLRecord struct {
+	Type        string `json:"type"`
+	MessageGUID string `json:"message_guid"`
+	OldHome     string `json:"old_home"`
+	NewHome     string `json:"new_home"`
+	MovedBy     string `json:"moved_by"`
+	MovedAt     int64  `json:"moved_at"`
 }
 
 // AgentJSONLRecord represents an agent entry in JSONL.

@@ -86,11 +86,15 @@ CREATE TABLE IF NOT EXISTS fray_threads (
   parent_thread TEXT,
   status TEXT DEFAULT 'open',
   created_at INTEGER NOT NULL,
+  anchor_message_guid TEXT,
+  anchor_hidden INTEGER NOT NULL DEFAULT 0,
+  last_activity_at INTEGER,
   FOREIGN KEY (parent_thread) REFERENCES fray_threads(guid)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fray_threads_parent ON fray_threads(parent_thread);
 CREATE INDEX IF NOT EXISTS idx_fray_threads_status ON fray_threads(status);
+CREATE INDEX IF NOT EXISTS idx_fray_threads_activity ON fray_threads(last_activity_at);
 
 -- Thread subscriptions
 CREATE TABLE IF NOT EXISTS fray_thread_subscriptions (
@@ -112,6 +116,17 @@ CREATE TABLE IF NOT EXISTS fray_thread_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_fray_thread_messages_message ON fray_thread_messages(message_guid);
+
+-- Message pins (per-thread)
+CREATE TABLE IF NOT EXISTS fray_message_pins (
+  message_guid TEXT NOT NULL,
+  thread_guid TEXT NOT NULL,
+  pinned_by TEXT NOT NULL,
+  pinned_at INTEGER NOT NULL,
+  PRIMARY KEY (message_guid, thread_guid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fray_message_pins_thread ON fray_message_pins(thread_guid);
 
 -- Linked projects for cross-project messaging
 CREATE TABLE IF NOT EXISTS fray_linked_projects (
@@ -643,6 +658,29 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(agentColumns, "mention_watermark") {
 			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN mention_watermark TEXT"); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Add thread anchor and activity columns if missing
+	threadColumns, err := getTableInfo(db, "fray_threads")
+	if err != nil {
+		return err
+	}
+	if len(threadColumns) > 0 {
+		if !hasColumn(threadColumns, "anchor_message_guid") {
+			if _, err := db.Exec("ALTER TABLE fray_threads ADD COLUMN anchor_message_guid TEXT"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(threadColumns, "anchor_hidden") {
+			if _, err := db.Exec("ALTER TABLE fray_threads ADD COLUMN anchor_hidden INTEGER NOT NULL DEFAULT 0"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(threadColumns, "last_activity_at") {
+			if _, err := db.Exec("ALTER TABLE fray_threads ADD COLUMN last_activity_at INTEGER"); err != nil {
 				return err
 			}
 		}
