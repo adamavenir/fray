@@ -89,11 +89,11 @@ func NewThreadCmd() *cobra.Command {
 
 				// Build thread metadata tree
 				participants := collectParticipants(messages)
-				pinnedCount, _ := db.GetPinnedMessageCount(ctx.DB, thread.GUID)
+				pinnedCount, err := db.GetPinnedMessageCount(ctx.DB, thread.GUID)
 				lastActivity := formatLastActivity(thread.LastActivityAt)
 
 				fmt.Fprintf(out, "  └── %s\n", strings.Join(participants, ", "))
-				if pinnedCount > 0 {
+				if err == nil && pinnedCount > 0 {
 					fmt.Fprintf(out, "  └── %d messages (%d pinned)\n", len(messages), pinnedCount)
 				} else {
 					fmt.Fprintf(out, "  └── %d messages\n", len(messages))
