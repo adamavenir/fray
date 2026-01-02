@@ -76,16 +76,33 @@ func NewThreadCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "Thread %s (%s) [%s]\n", path, thread.GUID, thread.Status)
 
-			// Display anchor at top
+			bases, err := db.GetAgentBases(ctx.DB)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			projectName := GetProjectName(ctx.Project.Root)
+
+			// Display anchor at top with thread metadata tree
 			if anchorMsg != nil {
-				bases, err := db.GetAgentBases(ctx.DB)
-				if err != nil {
-					return writeCommandError(cmd, err)
-				}
-				fmt.Fprintln(out, "📌 ANCHOR:")
-				projectName := GetProjectName(ctx.Project.Root)
+				fmt.Fprintln(out)
 				fmt.Fprintln(out, FormatMessage(*anchorMsg, projectName, bases))
-				fmt.Fprintln(out, "---")
+
+				// Build thread metadata tree
+				participants := collectParticipants(messages)
+				pinnedCount, _ := db.GetPinnedMessageCount(ctx.DB, thread.GUID)
+				lastActivity := formatLastActivity(thread.LastActivityAt)
+
+				fmt.Fprintf(out, "  └── %s\n", strings.Join(participants, ", "))
+				if pinnedCount > 0 {
+					fmt.Fprintf(out, "  └── %d messages (%d pinned)\n", len(messages), pinnedCount)
+				} else {
+					fmt.Fprintf(out, "  └── %d messages\n", len(messages))
+				}
+				fmt.Fprintf(out, "  └── last: %s\n", lastActivity)
+				fmt.Fprintln(out)
+
+				// Filter anchor from messages to avoid duplication
+				messages = filterMessage(messages, anchorMsg.ID)
 			}
 			fmt.Fprintln(out)
 
@@ -94,11 +111,6 @@ func NewThreadCmd() *cobra.Command {
 				return nil
 			}
 
-			bases, err := db.GetAgentBases(ctx.DB)
-			if err != nil {
-				return writeCommandError(cmd, err)
-			}
-			projectName := GetProjectName(ctx.Project.Root)
 			for _, msg := range messages {
 				fmt.Fprintln(out, FormatMessage(msg, projectName, bases))
 			}

@@ -107,3 +107,32 @@ func validateThreadName(name string) error {
 	}
 	return nil
 }
+
+func collectParticipants(messages []types.Message) []string {
+	seen := make(map[string]struct{})
+	var participants []string
+	for _, msg := range messages {
+		if _, ok := seen[msg.FromAgent]; !ok {
+			seen[msg.FromAgent] = struct{}{}
+			participants = append(participants, msg.FromAgent)
+		}
+	}
+	return participants
+}
+
+func filterMessage(messages []types.Message, excludeID string) []types.Message {
+	result := make([]types.Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg.ID != excludeID {
+			result = append(result, msg)
+		}
+	}
+	return result
+}
+
+func formatLastActivity(ts *int64) string {
+	if ts == nil {
+		return "unknown"
+	}
+	return formatRelative(*ts)
+}

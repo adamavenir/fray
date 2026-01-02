@@ -413,3 +413,15 @@ func UpdateThreadActivity(db *sql.DB, threadGUID string, activityAt int64) error
 	`, activityAt, threadGUID)
 	return err
 }
+
+// GetPinnedMessageCount returns the number of pinned messages in a thread.
+func GetPinnedMessageCount(db *sql.DB, threadGUID string) (int64, error) {
+	row := db.QueryRow(`
+		SELECT COUNT(*) FROM fray_message_pins WHERE thread_guid = ?
+	`, threadGUID)
+	var count int64
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}

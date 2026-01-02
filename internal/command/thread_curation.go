@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
 	"github.com/adamavenir/fray/internal/types"
 	"github.com/spf13/cobra"
@@ -97,12 +98,19 @@ Examples:
 				}
 
 				now := time.Now().Unix()
+				bases, err := db.GetAgentBases(ctx.DB)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				mentions := core.ExtractMentions(messageOrText, bases)
+				mentions = core.ExpandAllMention(mentions, bases)
+
 				newMsg := types.Message{
 					TS:        now,
 					Home:      thread.GUID,
 					FromAgent: agentID,
 					Body:      messageOrText,
-					Mentions:  []string{},
+					Mentions:  mentions,
 					Type:      types.MessageTypeAgent,
 				}
 
@@ -455,6 +463,16 @@ Examples:
 
 // getAllReplies recursively gets all replies to a message.
 func getAllReplies(database *sql.DB, messageGUID string) ([]types.Message, error) {
+	seen := make(map[string]struct{})
+	return getAllRepliesWithGuard(database, messageGUID, seen)
+}
+
+func getAllRepliesWithGuard(database *sql.DB, messageGUID string, seen map[string]struct{}) ([]types.Message, error) {
+	if _, ok := seen[messageGUID]; ok {
+		return nil, nil // already visited, break cycle
+	}
+	seen[messageGUID] = struct{}{}
+
 	var result []types.Message
 
 	replies, err := db.GetReplies(database, messageGUID)
@@ -463,8 +481,11 @@ func getAllReplies(database *sql.DB, messageGUID string) ([]types.Message, error
 	}
 
 	for _, reply := range replies {
+		if _, ok := seen[reply.ID]; ok {
+			continue // skip already visited
+		}
 		result = append(result, reply)
-		nested, err := getAllReplies(database, reply.ID)
+		nested, err := getAllRepliesWithGuard(database, reply.ID, seen)
 		if err != nil {
 			return nil, err
 		}
