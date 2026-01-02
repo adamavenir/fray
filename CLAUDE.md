@@ -76,6 +76,30 @@ internal/types/   # Go types
 
 **Project discovery**: `DiscoverProject()` walks up from cwd looking for `.fray/` directory. Initialize with `fray init`. Running `fray chat` in an uninitialized directory prompts to init.
 
+## Managed Agents (Daemon Support)
+
+Agents can be daemon-managed, enabling automatic spawning on @mentions.
+
+**Agent fields:**
+- `managed: bool` - whether daemon controls this agent
+- `invoke.driver` - CLI driver: `claude`, `codex`, `opencode`
+- `invoke.prompt_delivery` - how prompts are passed: `args`, `stdin`, `tempfile`
+- `invoke.spawn_timeout_ms` - max time in 'spawning' state (default: 30000)
+- `invoke.idle_after_ms` - time since activity before 'idle' (default: 5000)
+- `invoke.max_runtime_ms` - forced termination timeout (default: 600000)
+- `presence` - daemon-tracked state: `active`, `spawning`, `idle`, `error`, `offline`
+- `mention_watermark` - last processed msg_id for debouncing
+
+**Session events** (stored in `agents.jsonl`):
+- `session_start`: agent spawned (includes `triggered_by` msg_id)
+- `session_end`: session completed (includes `exit_code`, `duration_ms`)
+- `session_heartbeat`: periodic health updates
+
+**JSONL record types:**
+- `agent` - agent registration
+- `agent_update` - partial updates (status, presence, watermark)
+- `session_start`, `session_end`, `session_heartbeat` - session lifecycle
+
 ## Claims System
 
 Claims prevent agents from accidentally working on the same files, issues, or beads tickets. When an agent claims a resource, other agents see a warning if they try to commit files matching those patterns.
