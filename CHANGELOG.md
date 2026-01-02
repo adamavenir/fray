@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat TUI thread panel with filtering and pseudo-thread question views
 - `fray versions` to show message edit history with optional diffs
 - Edit events with required reasons plus edited metadata in message output
+- Agent orchestration daemon: `fray daemon` watches @mentions, spawns managed agents
+- Managed agent commands: `fray agent create/start/end/refresh/list/check`
+- Driver support for claude, codex, opencode CLIs with configurable prompt delivery
+- Presence tracking: active, spawning, idle, error, offline states
+- Session lifecycle events in agents.jsonl (session_start, session_end)
 
 ### Changed
 - Messages now include `home`, `references`, and `surface_message` fields

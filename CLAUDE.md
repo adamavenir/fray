@@ -249,6 +249,21 @@ fray claims @alice                 # List agent's claims
 fray clear @alice                  # Clear all claims
 fray clear @alice --file path      # Clear specific claim
 
+# Managed agents (daemon-controlled)
+fray agent create <name> --driver claude  # Create managed agent config
+fray agent list                    # Show agents with presence/driver
+fray agent list --managed          # Show only managed agents
+fray agent start <name>            # Start fresh session (/fly prompt)
+fray agent start <name> --prompt "..." # Start with custom prompt
+fray agent refresh <name>          # End current + start new session
+fray agent end <name>              # Graceful session end
+fray agent check <name>            # Daemon-less poll (for CI/cron)
+
+# Daemon
+fray daemon                        # Start daemon (watches @mentions)
+fray daemon --poll-interval 2s     # Custom poll interval
+fray daemon status                 # Check if daemon is running
+
 # For humans
 fray chat                      # Interactive chat mode
 fray watch                     # Tail messages
