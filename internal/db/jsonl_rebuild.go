@@ -461,7 +461,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 			messageGUID string
 			threadGUID  string
 		}
-		pins := make(map[pinKey]messagePinEvent)
+		pins := make(map[pinKey]MessagePinEvent)
 
 		for _, event := range pinEvents {
 			key := pinKey{messageGUID: event.MessageGUID, threadGUID: event.ThreadGUID}

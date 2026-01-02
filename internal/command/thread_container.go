@@ -3,9 +3,11 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
 	"github.com/adamavenir/fray/internal/types"
 	"github.com/spf13/cobra"
@@ -59,9 +61,9 @@ func NewThreadCmd() *cobra.Command {
 				}
 				var filtered []types.Message
 				for _, msg := range messages {
-					if cursor.ID != "" && msg.ID > cursor.ID {
+					if cursor.GUID != "" && msg.ID > cursor.GUID {
 						filtered = append(filtered, msg)
-					} else if cursor.Timestamp != nil && msg.Timestamp > *cursor.Timestamp {
+					} else if cursor.GUID == "" && msg.TS > cursor.TS {
 						filtered = append(filtered, msg)
 					}
 				}
