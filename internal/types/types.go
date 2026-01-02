@@ -32,12 +32,13 @@ const (
 
 // InvokeConfig holds driver-specific configuration for spawning agents.
 type InvokeConfig struct {
-	Driver         string         `json:"driver,omitempty"`          // claude, codex, opencode
-	Config         map[string]any `json:"config,omitempty"`          // driver-specific config
-	PromptDelivery PromptDelivery `json:"prompt_delivery,omitempty"` // args, stdin, tempfile
+	Driver         string         `json:"driver,omitempty"`           // claude, codex, opencode
+	Config         map[string]any `json:"config,omitempty"`           // driver-specific config
+	PromptDelivery PromptDelivery `json:"prompt_delivery,omitempty"`  // args, stdin, tempfile
 	SpawnTimeoutMs int64          `json:"spawn_timeout_ms,omitempty"` // max time in 'spawning' before 'error' (default: 30000)
 	IdleAfterMs    int64          `json:"idle_after_ms,omitempty"`    // time since activity before 'idle' (default: 5000)
-	MaxRuntimeMs   int64          `json:"max_runtime_ms,omitempty"`   // forced termination timeout (default: 600000)
+	MinCheckinMs   int64          `json:"min_checkin_ms,omitempty"`   // done-detection: idle + no fray posts for this duration = kill (default: 600000)
+	MaxRuntimeMs   int64          `json:"max_runtime_ms,omitempty"`   // zombie safety net: forced termination (default: 7200000)
 }
 
 // Agent represents agent identity and presence.
@@ -53,6 +54,7 @@ type Agent struct {
 	Invoke           *InvokeConfig  `json:"invoke,omitempty"`            // daemon invocation config
 	Presence         PresenceState  `json:"presence,omitempty"`          // daemon-tracked presence state
 	MentionWatermark *string        `json:"mention_watermark,omitempty"` // last processed mention msg_id
+	LastHeartbeat    *int64         `json:"last_heartbeat,omitempty"`    // last silent checkin timestamp (ms)
 }
 
 // Message represents a room message.

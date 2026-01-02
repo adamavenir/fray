@@ -4,12 +4,45 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/types"
 )
+
+// resolveClaudePath finds the claude executable, checking common install locations.
+func resolveClaudePath() (string, error) {
+	// First try PATH
+	if path, err := exec.LookPath("claude"); err == nil {
+		return path, nil
+	}
+
+	// Check common install locations
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home directory: %w", err)
+	}
+
+	commonPaths := []string{
+		filepath.Join(home, ".claude", "local", "claude"),
+		filepath.Join(home, ".claude", "claude"),
+		filepath.Join(home, ".local", "bin", "claude"),
+		filepath.Join(home, "bin", "claude"),
+		"/opt/homebrew/bin/claude",
+		"/usr/local/bin/claude",
+	}
+
+	for _, p := range commonPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+
+	return "", fmt.Errorf("claude executable not found in PATH or common locations")
+}
 
 // ClaudeDriver implements the Driver interface for Claude Code CLI.
 type ClaudeDriver struct{}
@@ -27,15 +60,21 @@ func (d *ClaudeDriver) Spawn(ctx context.Context, agent types.Agent, prompt stri
 		delivery = agent.Invoke.PromptDelivery
 	}
 
+	// Resolve claude executable path
+	claudePath, err := resolveClaudePath()
+	if err != nil {
+		return nil, err
+	}
+
 	var cmd *exec.Cmd
 	sessionID, _ := core.GenerateGUID("sess")
 
 	switch delivery {
 	case types.PromptDeliveryArgs:
-		cmd = exec.CommandContext(ctx, "claude", "-p", prompt)
+		cmd = exec.CommandContext(ctx, claudePath, "-p", prompt)
 
 	case types.PromptDeliveryStdin:
-		cmd = exec.CommandContext(ctx, "claude", "-p", "-")
+		cmd = exec.CommandContext(ctx, claudePath, "-p", "-")
 
 	case types.PromptDeliveryTempfile:
 		// Write prompt to temp file and pass path

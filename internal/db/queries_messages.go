@@ -372,6 +372,25 @@ func GetLastMessageCursor(db *sql.DB) (*types.MessageCursor, error) {
 	return &cursor, nil
 }
 
+// GetAgentLastPostTime returns the timestamp of the agent's most recent post.
+// Returns 0 if the agent has never posted.
+func GetAgentLastPostTime(database *sql.DB, agentID string) (int64, error) {
+	var ts int64
+	err := database.QueryRow(`
+		SELECT ts FROM fray_messages
+		WHERE from_agent = ?
+		ORDER BY ts DESC
+		LIMIT 1
+	`, agentID).Scan(&ts)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return ts, nil
+}
+
 // GetMessage returns a message by GUID.
 func GetMessage(db *sql.DB, messageID string) (*types.Message, error) {
 	row := db.QueryRow("SELECT * FROM fray_messages WHERE guid = ?", messageID)

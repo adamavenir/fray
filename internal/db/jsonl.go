@@ -208,6 +208,7 @@ type AgentJSONLRecord struct {
 	Invoke           *types.InvokeConfig `json:"invoke,omitempty"`
 	Presence         string              `json:"presence,omitempty"`
 	MentionWatermark *string             `json:"mention_watermark,omitempty"`
+	LastHeartbeat    *int64              `json:"last_heartbeat,omitempty"`
 }
 
 // AgentUpdateJSONLRecord represents an agent update entry in JSONL.
@@ -222,6 +223,7 @@ type AgentUpdateJSONLRecord struct {
 	Invoke           *types.InvokeConfig `json:"invoke,omitempty"`
 	Presence         *string             `json:"presence,omitempty"`
 	MentionWatermark *string             `json:"mention_watermark,omitempty"`
+	LastHeartbeat    *int64              `json:"last_heartbeat,omitempty"`
 }
 
 // SessionStartJSONLRecord represents a session start event in JSONL.

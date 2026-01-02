@@ -79,6 +79,7 @@ func NewAgentCreateCmd() *cobra.Command {
 
 			spawnTimeout, _ := cmd.Flags().GetInt64("spawn-timeout")
 			idleAfter, _ := cmd.Flags().GetInt64("idle-after")
+			minCheckin, _ := cmd.Flags().GetInt64("min-checkin")
 			maxRuntime, _ := cmd.Flags().GetInt64("max-runtime")
 
 			existing, err := db.GetAgent(ctx.DB, agentID)
@@ -92,6 +93,7 @@ func NewAgentCreateCmd() *cobra.Command {
 				PromptDelivery: types.PromptDelivery(promptDelivery),
 				SpawnTimeoutMs: spawnTimeout,
 				IdleAfterMs:    idleAfter,
+				MinCheckinMs:   minCheckin,
 				MaxRuntimeMs:   maxRuntime,
 			}
 
@@ -146,7 +148,8 @@ func NewAgentCreateCmd() *cobra.Command {
 	cmd.Flags().String("prompt-delivery", "", "how prompts are passed (args, stdin, tempfile)")
 	cmd.Flags().Int64("spawn-timeout", 30000, "max time in 'spawning' state (ms)")
 	cmd.Flags().Int64("idle-after", 5000, "time since activity before 'idle' (ms)")
-	cmd.Flags().Int64("max-runtime", 600000, "forced termination timeout (ms)")
+	cmd.Flags().Int64("min-checkin", 600000, "done-detection: idle + no fray posts = kill (ms, default 10m)")
+	cmd.Flags().Int64("max-runtime", 0, "zombie safety net: forced termination (ms, 0 = unlimited)")
 
 	return cmd
 }

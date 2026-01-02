@@ -90,6 +90,7 @@ func NewRootCmd(version string) *cobra.Command {
 		NewFilterCmd(),
 		NewLsCmd(),
 		NewMigrateCmd(),
+		NewHeartbeatCmd(),
 		hooks.NewHookInstallCmd(),
 		hooks.NewHookSessionCmd(),
 		hooks.NewHookPromptCmd(),

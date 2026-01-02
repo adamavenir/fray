@@ -49,16 +49,21 @@ func GetDriver(name string) Driver {
 }
 
 // DefaultTimeouts returns default timeout values in milliseconds.
-func DefaultTimeouts() (spawnTimeout, idleAfter, maxRuntime int64) {
-	return 30000, 5000, 600000
+// spawnTimeout: max time in 'spawning' state (30s)
+// idleAfter: time since activity before 'idle' presence (5s)
+// minCheckin: done-detection threshold - idle + no fray posts = kill (10m)
+// maxRuntime: zombie safety net - forced termination (0 = unlimited)
+func DefaultTimeouts() (spawnTimeout, idleAfter, minCheckin, maxRuntime int64) {
+	return 30000, 5000, 600000, 0
 }
 
 // GetTimeouts extracts timeout values from InvokeConfig, using defaults for zero values.
-func GetTimeouts(cfg *types.InvokeConfig) (spawnTimeout, idleAfter, maxRuntime int64) {
-	defSpawn, defIdle, defMax := DefaultTimeouts()
+func GetTimeouts(cfg *types.InvokeConfig) (spawnTimeout, idleAfter, minCheckin, maxRuntime int64) {
+	defSpawn, defIdle, defCheckin, defMax := DefaultTimeouts()
 
 	spawnTimeout = defSpawn
 	idleAfter = defIdle
+	minCheckin = defCheckin
 	maxRuntime = defMax
 
 	if cfg != nil {
@@ -67,6 +72,9 @@ func GetTimeouts(cfg *types.InvokeConfig) (spawnTimeout, idleAfter, maxRuntime i
 		}
 		if cfg.IdleAfterMs > 0 {
 			idleAfter = cfg.IdleAfterMs
+		}
+		if cfg.MinCheckinMs > 0 {
+			minCheckin = cfg.MinCheckinMs
 		}
 		if cfg.MaxRuntimeMs > 0 {
 			maxRuntime = cfg.MaxRuntimeMs

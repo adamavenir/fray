@@ -418,14 +418,26 @@ func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string
 	pending := d.debouncer.FlushPending(agent.AgentID)
 	allMentions := append([]string{triggerMsgID}, pending...)
 
-	// Simple wake prompt
-	prompt := fmt.Sprintf("You've been @mentioned. Check fray for context.\n\nTrigger messages: %v\n\nRun: fray get %s",
-		allMentions, agent.AgentID)
+	// Get min_checkin for the prompt
+	_, _, minCheckin, _ := GetTimeouts(agent.Invoke)
+	minCheckinMins := minCheckin / 60000
+
+	// Wake prompt with checkin explanation
+	prompt := fmt.Sprintf(`You've been @mentioned. Check fray for context.
+
+Trigger messages: %v
+
+Run: fray get %s
+
+---
+Checkin: Posting to fray resets a %dm timer. Silence = session recycled (resumable on @mention).`,
+		allMentions, agent.AgentID, minCheckinMins)
 
 	return prompt, allMentions
 }
 
 // updatePresence checks running processes and updates their presence.
+// Implements done-detection: idle presence + no fray posts for min_checkin = kill session.
 func (d *Daemon) updatePresence() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -444,8 +456,14 @@ func (d *Daemon) updatePresence() {
 			// Check timeouts
 			agent, _ := db.GetAgent(d.database, agentID)
 			if agent != nil && agent.Invoke != nil {
-				spawnTimeout, idleAfter, _ := GetTimeouts(agent.Invoke)
+				spawnTimeout, idleAfter, minCheckin, maxRuntime := GetTimeouts(agent.Invoke)
 				elapsed := time.Since(proc.StartedAt).Milliseconds()
+
+				// Zombie safety net: kill after max_runtime regardless of state (0 = unlimited)
+				if maxRuntime > 0 && elapsed > maxRuntime {
+					d.killProcess(agentID, proc, "max_runtime exceeded")
+					continue
+				}
 
 				if agent.Presence == types.PresenceSpawning && elapsed > spawnTimeout {
 					// Spawning timeout - mark as error
@@ -455,10 +473,39 @@ func (d *Daemon) updatePresence() {
 					if time.Since(lastActivity).Milliseconds() > idleAfter {
 						db.UpdateAgentPresence(d.database, agentID, types.PresenceIdle)
 					}
+				} else if agent.Presence == types.PresenceIdle {
+					// Done-detection: if idle AND no fray activity (posts or heartbeat) for min_checkin, kill session
+					lastPostTs, _ := db.GetAgentLastPostTime(d.database, agentID)
+					lastHeartbeatTs := int64(0)
+					if agent.LastHeartbeat != nil {
+						lastHeartbeatTs = *agent.LastHeartbeat
+					}
+
+					// Use the most recent of: last post, last heartbeat, or spawn time
+					lastActivity := proc.StartedAt.UnixMilli()
+					if lastPostTs > lastActivity {
+						lastActivity = lastPostTs
+					}
+					if lastHeartbeatTs > lastActivity {
+						lastActivity = lastHeartbeatTs
+					}
+
+					msSinceActivity := time.Now().UnixMilli() - lastActivity
+					if msSinceActivity > minCheckin {
+						d.killProcess(agentID, proc, "done-detection: idle + no fray activity")
+					}
 				}
 			}
 		}
 	}
+}
+
+// killProcess terminates a process and records the reason.
+func (d *Daemon) killProcess(agentID string, proc *Process, reason string) {
+	if proc.Cmd.Process != nil {
+		proc.Cmd.Process.Kill()
+	}
+	// handleProcessExit will be called by monitorProcess when it detects the exit
 }
 
 // handleProcessExit cleans up after a process exits.

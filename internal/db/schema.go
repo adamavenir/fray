@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   managed INTEGER NOT NULL DEFAULT 0,  -- whether daemon controls this agent
   invoke TEXT,                         -- JSON: driver config for spawning
   presence TEXT DEFAULT 'offline',     -- active, spawning, idle, error, offline
-  mention_watermark TEXT               -- last processed mention msg_id
+  mention_watermark TEXT,              -- last processed mention msg_id
+  last_heartbeat INTEGER               -- last silent checkin timestamp (ms)
 );
 
 -- Agent sessions (daemon-managed)
@@ -677,6 +678,11 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(agentColumns, "mention_watermark") {
 			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN mention_watermark TEXT"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "last_heartbeat") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN last_heartbeat INTEGER"); err != nil {
 				return err
 			}
 		}

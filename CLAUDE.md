@@ -92,9 +92,16 @@ Agents can be daemon-managed, enabling automatic spawning on @mentions.
 - `invoke.prompt_delivery` - how prompts are passed: `args`, `stdin`, `tempfile`
 - `invoke.spawn_timeout_ms` - max time in 'spawning' state (default: 30000)
 - `invoke.idle_after_ms` - time since activity before 'idle' (default: 5000)
-- `invoke.max_runtime_ms` - forced termination timeout (default: 600000)
+- `invoke.min_checkin_ms` - done-detection: idle + no fray posts = kill (default: 600000 / 10m)
+- `invoke.max_runtime_ms` - zombie safety net: forced termination (default: 0 = unlimited)
 - `presence` - daemon-tracked state: `active`, `spawning`, `idle`, `error`, `offline`
 - `mention_watermark` - last processed msg_id for debouncing
+
+**Done-detection:** Daemon detects "probably done" agents via checkin mechanism:
+- Any fray activity (posts, replies, threads) resets the checkin timer
+- If agent is idle AND no fray posts for `min_checkin_ms` → session killed (resumable on next @mention)
+- Natural communication = checkin; silence = probably done
+- For long-running work without posts: use `fray heartbeat --as <agent>` for silent checkin
 
 **Session events** (stored in `agents.jsonl`):
 - `session_start`: agent spawned (includes `triggered_by` msg_id)
@@ -258,6 +265,7 @@ fray agent start <name> --prompt "..." # Start with custom prompt
 fray agent refresh <name>          # End current + start new session
 fray agent end <name>              # Graceful session end
 fray agent check <name>            # Daemon-less poll (for CI/cron)
+fray heartbeat --as <name>         # Silent checkin (resets done-detection timer)
 
 # Daemon
 fray daemon                        # Start daemon (watches @mentions)
