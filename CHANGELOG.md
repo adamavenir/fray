@@ -48,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Done-detection via checkin: `min_checkin` (10m) recycles idle sessions with no fray activity; `max_runtime` (unlimited) removed hard timeout
 - `fray heartbeat`: silent checkin for long-running work without posting
 - Claude path resolution: daemon finds claude at `~/.claude/local/claude` and other common locations
+- Daemon sets `FRAY_AGENT_ID` env var on spawn: agents can use fray commands without `--as` flag
+- Daemon direct-address filter: only @mentions at message start trigger spawns (mid-sentence, FYI, CC ignored)
+- Thread ownership: human owns room, thread creator owns thread; only owner/human can trigger daemon
+- Session resume: daemon stores Claude Code session ID after spawn, uses `--resume` on next @mention
 
 ### Removed
 - `fray unreact`: reactions are permanent (no removal)
