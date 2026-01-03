@@ -170,8 +170,8 @@ func matchesMention(mention, agentID string) bool {
 // - In thread with owner: human OR owner can trigger
 // - In thread without owner (user-started): only human can trigger
 func CanTriggerSpawn(msg types.Message, thread *types.Thread) bool {
-	// Check if author is human (not an agent)
-	isHuman := msg.FromAgent == "" || msg.FromAgent == "human"
+	// Check if author is human (message type "user" vs "agent")
+	isHuman := msg.Type == types.MessageTypeUser
 
 	if isHuman {
 		return true

@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/adamavenir/fray/internal/db"
@@ -29,7 +30,10 @@ Any fray activity (posts, replies, threads) also resets the timer automatically.
 
 			agentID, _ := cmd.Flags().GetString("as")
 			if agentID == "" {
-				return writeCommandError(cmd, fmt.Errorf("--as flag is required"))
+				agentID = os.Getenv("FRAY_AGENT_ID")
+			}
+			if agentID == "" {
+				return writeCommandError(cmd, fmt.Errorf("--as flag or FRAY_AGENT_ID env var required"))
 			}
 
 			agent, err := db.GetAgent(ctx.DB, agentID)
@@ -67,8 +71,7 @@ Any fray activity (posts, replies, threads) also resets the timer automatically.
 		},
 	}
 
-	cmd.Flags().String("as", "", "agent sending the heartbeat (required)")
-	cmd.MarkFlagRequired("as")
+	cmd.Flags().String("as", "", "agent sending the heartbeat (uses FRAY_AGENT_ID if not set)")
 
 	return cmd
 }

@@ -39,9 +39,11 @@ Use Ctrl+C or SIGTERM to gracefully shut down.`,
 			if pollInterval == 0 {
 				pollInterval = 1 * time.Second
 			}
+			debug, _ := cmd.Flags().GetBool("debug")
 
 			cfg := daemon.Config{
 				PollInterval: pollInterval,
+				Debug:        debug,
 			}
 
 			d := daemon.New(cmdCtx.Project, cmdCtx.DB, cfg)
@@ -97,6 +99,7 @@ Use Ctrl+C or SIGTERM to gracefully shut down.`,
 	}
 
 	cmd.Flags().Duration("poll-interval", 1*time.Second, "how often to poll for mentions")
+	cmd.Flags().Bool("debug", false, "enable debug logging")
 
 	cmd.AddCommand(NewDaemonStatusCmd())
 

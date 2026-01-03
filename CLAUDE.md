@@ -101,7 +101,8 @@ Agents can be daemon-managed, enabling automatic spawning on @mentions.
 - Any fray activity (posts, replies, threads) resets the checkin timer
 - If agent is idle AND no fray posts for `min_checkin_ms` → session killed (resumable on next @mention)
 - Natural communication = checkin; silence = probably done
-- For long-running work without posts: use `fray heartbeat --as <agent>` for silent checkin
+- For long-running work without posts: use `fray heartbeat` for silent checkin
+- Use `fray clock` to see timer countdown + pending notification counts
 
 **Session events** (stored in `agents.jsonl`):
 - `session_start`: agent spawned (includes `triggered_by` msg_id)
@@ -266,20 +267,24 @@ fray agent refresh <name>          # End current + start new session
 fray agent end <name>              # Graceful session end
 fray agent check <name>            # Daemon-less poll (for CI/cron)
 fray heartbeat --as <name>         # Silent checkin (resets done-detection timer)
+fray heartbeat                     # Uses FRAY_AGENT_ID env var
+fray clock                         # Ambient status: timer + notification counts
 
 # Daemon
 fray daemon                        # Start daemon (watches @mentions)
+fray daemon --debug                # Enable debug logging
 fray daemon --poll-interval 2s     # Custom poll interval
 fray daemon status                 # Check if daemon is running
 
 # For humans
 fray chat                      # Interactive chat mode
-fray watch                     # Tail messages
+fray watch                     # Tail messages (shows heartbeat timer if FRAY_AGENT_ID set)
 fray prune                     # Archive old messages
 
 # JSON output
 fray get --last 10 --json      # Most read commands support --json (chat does not)
 
-# Migration
+# Maintenance
+fray rebuild                   # Rebuild database from JSONL (fixes schema errors)
 fray migrate                   # Migrate from v0.1.0 to v0.2.0
 ```

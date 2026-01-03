@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ type Daemon struct {
 	wg           sync.WaitGroup
 	lockPath     string
 	pollInterval time.Duration
+	debug        bool
 }
 
 // LockInfo represents the daemon lock file contents.
@@ -41,6 +43,7 @@ type LockInfo struct {
 // Config holds daemon configuration options.
 type Config struct {
 	PollInterval time.Duration
+	Debug        bool
 }
 
 // DefaultConfig returns default daemon configuration.
@@ -67,6 +70,7 @@ func New(project core.Project, database *sql.DB, cfg Config) *Daemon {
 		stopCh:       make(chan struct{}),
 		lockPath:     filepath.Join(filepath.Dir(project.DBPath), "daemon.lock"),
 		pollInterval: cfg.PollInterval,
+		debug:        cfg.Debug,
 	}
 
 	// Register drivers
@@ -163,6 +167,32 @@ func (d *Daemon) releaseLock() error {
 	return os.Remove(d.lockPath)
 }
 
+// debugf logs a debug message if debug mode is enabled.
+func (d *Daemon) debugf(format string, args ...any) {
+	if d.debug {
+		fmt.Fprintf(os.Stderr, "[daemon] "+format+"\n", args...)
+	}
+}
+
+// truncate shortens a string for debug output.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+// isSchemaError checks if an error is a SQLite schema mismatch.
+func isSchemaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no such column") ||
+		strings.Contains(msg, "no such table") ||
+		strings.Contains(msg, "has no column")
+}
+
 // IsLocked returns true if a daemon is currently running.
 func IsLocked(frayDir string) bool {
 	lockPath := filepath.Join(frayDir, "daemon.lock")
@@ -207,8 +237,23 @@ func (d *Daemon) poll(ctx context.Context) {
 	// Get managed agents
 	agents, err := d.getManagedAgents()
 	if err != nil {
+		d.debugf("poll: error getting managed agents: %v", err)
+		// Check for schema errors
+		if isSchemaError(err) {
+			fmt.Fprintf(os.Stderr, "Error: database schema mismatch. Run 'fray rebuild' to fix.\n")
+			fmt.Fprintf(os.Stderr, "Details: %v\n", err)
+			// Signal stop - can't continue with schema errors
+			close(d.stopCh)
+		}
 		return
 	}
+
+	if len(agents) == 0 {
+		d.debugf("poll: no managed agents found")
+		return
+	}
+
+	d.debugf("poll: checking %d managed agents", len(agents))
 
 	// Check for new mentions for each managed agent
 	for _, agent := range agents {
@@ -240,9 +285,15 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 	// Get messages mentioning this agent since watermark
 	watermark := d.debouncer.GetWatermark(agent.AgentID)
 	messages, err := d.getMessagesAfter(watermark, agent.AgentID)
-	if err != nil || len(messages) == 0 {
+	if err != nil {
+		d.debugf("  @%s: error getting messages: %v", agent.AgentID, err)
 		return
 	}
+	if len(messages) == 0 {
+		return
+	}
+
+	d.debugf("  @%s: found %d messages since watermark %s (presence: %s)", agent.AgentID, len(messages), watermark, agent.Presence)
 
 	spawned := false
 	hasQueued := false
@@ -252,6 +303,7 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 		// Skip self-mentions - only advance watermark if we haven't queued anything.
 		// Once we queue, we can't advance past queued messages (they'd be lost on restart).
 		if IsSelfMention(msg, agent.AgentID) {
+			d.debugf("    %s: skip (self-mention)", msg.ID)
 			if !hasQueued && !spawned {
 				lastProcessedID = msg.ID
 			}
@@ -261,6 +313,7 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 		// Skip non-direct mentions (mid-sentence, FYI, CC patterns)
 		// These will show up in agent's mentions but don't trigger spawn
 		if !IsDirectAddress(msg, agent.AgentID) {
+			d.debugf("    %s: skip (not direct address) - body: %q", msg.ID, truncate(msg.Body, 50))
 			if !hasQueued && !spawned {
 				lastProcessedID = msg.ID
 			}
@@ -273,6 +326,8 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			thread, _ = db.GetThread(d.database, msg.Home)
 		}
 		if !CanTriggerSpawn(msg, thread) {
+			isHuman := msg.Type == types.MessageTypeUser
+			d.debugf("    %s: skip (ownership check failed) - from: %s, type: %s, isHuman: %v", msg.ID, msg.FromAgent, msg.Type, isHuman)
 			if !hasQueued && !spawned {
 				lastProcessedID = msg.ID
 			}
@@ -283,14 +338,18 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 		// Note: Don't advance watermark for queued messages - pending is in-memory,
 		// so on restart we need to re-query and re-queue them
 		if spawned || agent.Presence == types.PresenceSpawning || agent.Presence == types.PresenceActive {
+			d.debugf("    %s: queued (agent busy or already spawned)", msg.ID)
 			d.debouncer.QueueMention(agent.AgentID, msg.ID)
 			hasQueued = true
 			continue
 		}
 
+		d.debugf("    %s: triggering spawn", msg.ID)
+
 		// Try to spawn - spawnAgent returns the last msgID included in wake prompt
 		lastIncluded, err := d.spawnAgent(ctx, agent, msg.ID)
 		if err != nil {
+			d.debugf("    %s: spawn failed: %v", msg.ID, err)
 			continue
 		}
 
@@ -332,6 +391,8 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 		return "", fmt.Errorf("unknown driver: %s", agent.Invoke.Driver)
 	}
 
+	d.debugf("  spawning @%s with driver %s", agent.AgentID, agent.Invoke.Driver)
+
 	// Update presence to spawning
 	if err := db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceSpawning); err != nil {
 		return "", err
@@ -339,13 +400,17 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 
 	// Build wake prompt and get all included mentions
 	prompt, allMentions := d.buildWakePrompt(agent, triggerMsgID)
+	d.debugf("  wake prompt includes %d mentions", len(allMentions))
 
 	// Spawn process
 	proc, err := driver.Spawn(ctx, agent, prompt)
 	if err != nil {
+		d.debugf("  spawn error: %v", err)
 		db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceError)
 		return "", err
 	}
+
+	d.debugf("  spawned pid %d, session %s", proc.Cmd.Process.Pid, proc.SessionID)
 
 	// Track process
 	d.mu.Lock()
