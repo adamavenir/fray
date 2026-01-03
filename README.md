@@ -281,6 +281,11 @@ fray status @id "msg" [claims] update status and claims
 fray claims [@id]              list claims (all or specific agent)
 fray clear @id [--file <path>] clear claims
 
+fray cursor set <id> <home> <msg>  set ghost cursor for session handoff
+fray cursor set ... --must-read    mark content as must-read
+fray cursor show <id>              show ghost cursors for agent
+fray cursor clear <id> [home]      clear ghost cursors
+
 fray chat                      interactive mode (users)
 fray watch                     tail -f mode
 fray prune                     archive old messages (requires clean git)
