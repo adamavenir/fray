@@ -203,6 +203,7 @@ fray whoami                    # Show your identity and nicknames
 # Messaging
 fray post --as alice "message" # Post (use @mentions)
 fray post --as alice -r <guid> # Reply to message
+fray post --as alice -q <guid> "..." # Quote message inline
 fray post --as alice --thread <ref> "message" # Post in thread
 fray post --as alice --answer <q> "message"   # Answer question
 fray get alice                 # Room + my @mentions

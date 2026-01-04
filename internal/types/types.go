@@ -66,22 +66,23 @@ type ReactionEntry struct {
 
 // Message represents a room message.
 type Message struct {
-	ID             string                     `json:"id"`
-	TS             int64                      `json:"ts"`
-	ChannelID      *string                    `json:"channel_id,omitempty"`
-	Home           string                     `json:"home,omitempty"`
-	FromAgent      string                     `json:"from_agent"`
-	Body           string                     `json:"body"`
-	Mentions       []string                   `json:"mentions"`
-	Reactions      map[string][]ReactionEntry `json:"reactions"`
-	Type           MessageType                `json:"type"`
-	References     *string                    `json:"references,omitempty"`
-	SurfaceMessage *string                    `json:"surface_message,omitempty"`
-	ReplyTo        *string                    `json:"reply_to,omitempty"`
-	EditedAt       *int64                     `json:"edited_at,omitempty"`
-	Edited         bool                       `json:"edited,omitempty"`
-	EditCount      int                        `json:"edit_count,omitempty"`
-	ArchivedAt     *int64                     `json:"archived_at,omitempty"`
+	ID               string                     `json:"id"`
+	TS               int64                      `json:"ts"`
+	ChannelID        *string                    `json:"channel_id,omitempty"`
+	Home             string                     `json:"home,omitempty"`
+	FromAgent        string                     `json:"from_agent"`
+	Body             string                     `json:"body"`
+	Mentions         []string                   `json:"mentions"`
+	Reactions        map[string][]ReactionEntry `json:"reactions"`
+	Type             MessageType                `json:"type"`
+	References       *string                    `json:"references,omitempty"`
+	SurfaceMessage   *string                    `json:"surface_message,omitempty"`
+	ReplyTo          *string                    `json:"reply_to,omitempty"`
+	QuoteMessageGUID *string                    `json:"quote_message_guid,omitempty"`
+	EditedAt         *int64                     `json:"edited_at,omitempty"`
+	Edited           bool                       `json:"edited,omitempty"`
+	EditCount        int                        `json:"edit_count,omitempty"`
+	ArchivedAt       *int64                     `json:"archived_at,omitempty"`
 }
 
 // MessageVersion represents a version of a message body.
@@ -104,20 +105,21 @@ type MessageVersionHistory struct {
 
 // MessageRow is a raw database row representation of a message.
 type MessageRow struct {
-	GUID           string
-	TS             int64
-	ChannelID      *string
-	Home           string
-	FromAgent      string
-	Body           string
-	Mentions       string
-	Reactions      string
-	Type           MessageType
-	References     *string
-	SurfaceMessage *string
-	ReplyTo        *string
-	EditedAt       *int64
-	ArchivedAt     *int64
+	GUID             string
+	TS               int64
+	ChannelID        *string
+	Home             string
+	FromAgent        string
+	Body             string
+	Mentions         string
+	Reactions        string
+	Type             MessageType
+	References       *string
+	SurfaceMessage   *string
+	ReplyTo          *string
+	QuoteMessageGUID *string
+	EditedAt         *int64
+	ArchivedAt       *int64
 }
 
 // LinkedProject represents a cross-project link.

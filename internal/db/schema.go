@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS fray_messages (
   "references" TEXT,                   -- referenced message guid (surface)
   surface_message TEXT,                -- surface message guid (backlink event)
   reply_to TEXT,                       -- parent message guid for threading
+  quote_message_guid TEXT,             -- quoted message guid for inline quotes
   edited_at INTEGER,                   -- unix timestamp of last edit
   archived_at INTEGER,                 -- unix timestamp of archival
   reactions TEXT NOT NULL DEFAULT '{}' -- JSON object of reactions
@@ -601,6 +602,11 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(messageColumns, "surface_message") {
 			if _, err := db.Exec("ALTER TABLE fray_messages ADD COLUMN surface_message TEXT"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(messageColumns, "quote_message_guid") {
+			if _, err := db.Exec("ALTER TABLE fray_messages ADD COLUMN quote_message_guid TEXT"); err != nil {
 				return err
 			}
 		}

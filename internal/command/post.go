@@ -29,6 +29,7 @@ func NewPostCmd() *cobra.Command {
 			replyTo, _ := cmd.Flags().GetString("reply-to")
 			threadRef, _ := cmd.Flags().GetString("thread")
 			answerRef, _ := cmd.Flags().GetString("answer")
+			quoteRef, _ := cmd.Flags().GetString("quote")
 			silent, _ := cmd.Flags().GetBool("silent")
 
 			if agentRef == "" {
@@ -113,6 +114,15 @@ func NewPostCmd() *cobra.Command {
 				replyID = &msg.ID
 			}
 
+			var quoteID *string
+			if quoteRef != "" {
+				msg, err := resolveMessageRef(ctx.DB, quoteRef)
+				if err != nil {
+					return writeCommandError(cmd, err)
+				}
+				quoteID = &msg.ID
+			}
+
 			reactionText := ""
 			if replyID != nil && answerRef == "" {
 				if reaction, ok := core.NormalizeReactionText(args[0]); ok {
@@ -168,12 +178,13 @@ func NewPostCmd() *cobra.Command {
 				home = thread.GUID
 			}
 			created, err := db.CreateMessage(ctx.DB, types.Message{
-				TS:        now,
-				FromAgent: agentID,
-				Body:      args[0],
-				Mentions:  mentions,
-				Home:      home,
-				ReplyTo:   replyID,
+				TS:               now,
+				FromAgent:        agentID,
+				Body:             args[0],
+				Mentions:         mentions,
+				Home:             home,
+				ReplyTo:          replyID,
+				QuoteMessageGUID: quoteID,
 			})
 			if err != nil {
 				return writeCommandError(cmd, err)
@@ -429,6 +440,7 @@ func NewPostCmd() *cobra.Command {
 	cmd.Flags().StringP("reply-to", "r", "", "reply to message GUID (threading)")
 	cmd.Flags().String("thread", "", "post in thread (guid, name, or path)")
 	cmd.Flags().String("answer", "", "answer a question by guid or text")
+	cmd.Flags().StringP("quote", "q", "", "quote message GUID (inline quote)")
 	cmd.Flags().BoolP("silent", "s", false, "suppress output including unread mentions")
 
 	_ = cmd.MarkFlagRequired("as")

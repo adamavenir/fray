@@ -52,9 +52,9 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 	}
 
 	_, err = db.Exec(`
-		INSERT INTO fray_messages (guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, edited_at, archived_at, reactions)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
-	`, guid, ts, channelID, home, message.FromAgent, message.Body, string(mentionsJSON), msgType, message.References, message.SurfaceMessage, message.ReplyTo, string(reactionsJSON))
+		INSERT INTO fray_messages (guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+	`, guid, ts, channelID, home, message.FromAgent, message.Body, string(mentionsJSON), msgType, message.References, message.SurfaceMessage, message.ReplyTo, message.QuoteMessageGUID, string(reactionsJSON))
 	if err != nil {
 		return types.Message{}, err
 	}
@@ -63,20 +63,21 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 	reactions := make(map[string][]types.ReactionEntry)
 
 	return types.Message{
-		ID:             guid,
-		TS:             ts,
-		ChannelID:      channelID,
-		Home:           home,
-		FromAgent:      message.FromAgent,
-		Body:           message.Body,
-		Mentions:       message.Mentions,
-		Reactions:      reactions,
-		Type:           msgType,
-		References:     message.References,
-		SurfaceMessage: message.SurfaceMessage,
-		ReplyTo:        message.ReplyTo,
-		EditedAt:       nil,
-		ArchivedAt:     nil,
+		ID:               guid,
+		TS:               ts,
+		ChannelID:        channelID,
+		Home:             home,
+		FromAgent:        message.FromAgent,
+		Body:             message.Body,
+		Mentions:         message.Mentions,
+		Reactions:        reactions,
+		Type:             msgType,
+		References:       message.References,
+		SurfaceMessage:   message.SurfaceMessage,
+		ReplyTo:          message.ReplyTo,
+		QuoteMessageGUID: message.QuoteMessageGUID,
+		EditedAt:         nil,
+		ArchivedAt:       nil,
 	}, nil
 }
 
@@ -620,20 +621,21 @@ func GetReplies(db *sql.DB, messageID string) ([]types.Message, error) {
 }
 
 type messageRow struct {
-	GUID           string
-	TS             int64
-	ChannelID      sql.NullString
-	Home           sql.NullString
-	FromAgent      string
-	Body           string
-	Mentions       string
-	Reactions      string
-	MsgType        sql.NullString
-	References     sql.NullString
-	SurfaceMessage sql.NullString
-	ReplyTo        sql.NullString
-	EditedAt       sql.NullInt64
-	ArchivedAt     sql.NullInt64
+	GUID             string
+	TS               int64
+	ChannelID        sql.NullString
+	Home             sql.NullString
+	FromAgent        string
+	Body             string
+	Mentions         string
+	Reactions        string
+	MsgType          sql.NullString
+	References       sql.NullString
+	SurfaceMessage   sql.NullString
+	ReplyTo          sql.NullString
+	QuoteMessageGUID sql.NullString
+	EditedAt         sql.NullInt64
+	ArchivedAt       sql.NullInt64
 }
 
 func (row messageRow) toMessage() (types.Message, error) {
@@ -663,20 +665,21 @@ func (row messageRow) toMessage() (types.Message, error) {
 	}
 
 	return types.Message{
-		ID:             row.GUID,
-		TS:             row.TS,
-		ChannelID:      nullStringPtr(row.ChannelID),
-		Home:           home,
-		FromAgent:      row.FromAgent,
-		Body:           row.Body,
-		Mentions:       mentions,
-		Reactions:      reactions,
-		Type:           msgType,
-		References:     nullStringPtr(row.References),
-		SurfaceMessage: nullStringPtr(row.SurfaceMessage),
-		ReplyTo:        nullStringPtr(row.ReplyTo),
-		EditedAt:       nullIntPtr(row.EditedAt),
-		ArchivedAt:     nullIntPtr(row.ArchivedAt),
+		ID:               row.GUID,
+		TS:               row.TS,
+		ChannelID:        nullStringPtr(row.ChannelID),
+		Home:             home,
+		FromAgent:        row.FromAgent,
+		Body:             row.Body,
+		Mentions:         mentions,
+		Reactions:        reactions,
+		Type:             msgType,
+		References:       nullStringPtr(row.References),
+		SurfaceMessage:   nullStringPtr(row.SurfaceMessage),
+		ReplyTo:          nullStringPtr(row.ReplyTo),
+		QuoteMessageGUID: nullStringPtr(row.QuoteMessageGUID),
+		EditedAt:         nullIntPtr(row.EditedAt),
+		ArchivedAt:       nullIntPtr(row.ArchivedAt),
 	}, nil
 }
 
@@ -729,7 +732,7 @@ func scanMessages(rows *sql.Rows) ([]types.Message, error) {
 
 func scanMessage(scanner interface{ Scan(dest ...any) error }) (types.Message, error) {
 	var row messageRow
-	if err := scanner.Scan(&row.GUID, &row.TS, &row.ChannelID, &row.Home, &row.FromAgent, &row.Body, &row.Mentions, &row.MsgType, &row.References, &row.SurfaceMessage, &row.ReplyTo, &row.EditedAt, &row.ArchivedAt, &row.Reactions); err != nil {
+	if err := scanner.Scan(&row.GUID, &row.TS, &row.ChannelID, &row.Home, &row.FromAgent, &row.Body, &row.Mentions, &row.MsgType, &row.References, &row.SurfaceMessage, &row.ReplyTo, &row.QuoteMessageGUID, &row.EditedAt, &row.ArchivedAt, &row.Reactions); err != nil {
 		return types.Message{}, err
 	}
 	return row.toMessage()

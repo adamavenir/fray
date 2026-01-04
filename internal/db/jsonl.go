@@ -12,21 +12,22 @@ const (
 
 // MessageJSONLRecord represents a message entry in JSONL.
 type MessageJSONLRecord struct {
-	Type           string              `json:"type"`
-	ID             string              `json:"id"`
-	ChannelID      *string             `json:"channel_id"`
-	Home           string              `json:"home,omitempty"`
-	FromAgent      string              `json:"from_agent"`
-	Body           string              `json:"body"`
-	Mentions       []string            `json:"mentions"`
-	Reactions      map[string][]string `json:"reactions,omitempty"`
-	MsgType        types.MessageType   `json:"message_type"`
-	References     *string             `json:"references,omitempty"`
-	SurfaceMessage *string             `json:"surface_message,omitempty"`
-	ReplyTo        *string             `json:"reply_to"`
-	TS             int64               `json:"ts"`
-	EditedAt       *int64              `json:"edited_at"`
-	ArchivedAt     *int64              `json:"archived_at"`
+	Type             string              `json:"type"`
+	ID               string              `json:"id"`
+	ChannelID        *string             `json:"channel_id"`
+	Home             string              `json:"home,omitempty"`
+	FromAgent        string              `json:"from_agent"`
+	Body             string              `json:"body"`
+	Mentions         []string            `json:"mentions"`
+	Reactions        map[string][]string `json:"reactions,omitempty"`
+	MsgType          types.MessageType   `json:"message_type"`
+	References       *string             `json:"references,omitempty"`
+	SurfaceMessage   *string             `json:"surface_message,omitempty"`
+	ReplyTo          *string             `json:"reply_to"`
+	QuoteMessageGUID *string             `json:"quote_message_guid,omitempty"`
+	TS               int64               `json:"ts"`
+	EditedAt         *int64              `json:"edited_at"`
+	ArchivedAt       *int64              `json:"archived_at"`
 }
 
 // MessageUpdateJSONLRecord represents a message update entry in JSONL.

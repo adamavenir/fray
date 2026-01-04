@@ -286,8 +286,8 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 
 	insertMessage := `
 		INSERT OR REPLACE INTO fray_messages (
-			guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, edited_at, archived_at, reactions
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, message := range messages {
@@ -321,6 +321,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 			message.References,
 			message.SurfaceMessage,
 			message.ReplyTo,
+			message.QuoteMessageGUID,
 			message.EditedAt,
 			message.ArchivedAt,
 			string(reactionsJSON),

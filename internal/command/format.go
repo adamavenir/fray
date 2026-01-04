@@ -59,15 +59,20 @@ func GetProjectName(projectRoot string) string {
 
 // FormatMessage formats a message for display.
 func FormatMessage(msg types.Message, projectName string, agentBases map[string]struct{}) string {
-	return formatMessageWithOptions(msg, projectName, agentBases, true)
+	return formatMessageWithOptions(msg, projectName, agentBases, true, nil)
 }
 
 // FormatMessageFull formats a message without truncation (for anchors).
 func FormatMessageFull(msg types.Message, projectName string, agentBases map[string]struct{}) string {
-	return formatMessageWithOptions(msg, projectName, agentBases, false)
+	return formatMessageWithOptions(msg, projectName, agentBases, false, nil)
 }
 
-func formatMessageWithOptions(msg types.Message, projectName string, agentBases map[string]struct{}, truncate bool) string {
+// FormatMessageWithQuote formats a message with an optional quoted message for inline display.
+func FormatMessageWithQuote(msg types.Message, projectName string, agentBases map[string]struct{}, quotedMsg *types.Message) string {
+	return formatMessageWithOptions(msg, projectName, agentBases, true, quotedMsg)
+}
+
+func formatMessageWithOptions(msg types.Message, projectName string, agentBases map[string]struct{}, truncate bool, quotedMsg *types.Message) string {
 	editedSuffix := ""
 	if msg.Edited || msg.EditCount > 0 || msg.EditedAt != nil {
 		editedSuffix = " (edited)"
@@ -87,6 +92,12 @@ func formatMessageWithOptions(msg types.Message, projectName string, agentBases 
 		displayBody = truncateForDisplay(strippedBody, msg.ID)
 	}
 
+	// Format quote block if present
+	quoteBlock := ""
+	if quotedMsg != nil {
+		quoteBlock = formatQuoteBlock(quotedMsg, agentBases)
+	}
+
 	// Format reactions if present
 	reactionSuffix := formatReactionSummary(msg.Reactions)
 	if reactionSuffix != "" {
@@ -96,11 +107,47 @@ func formatMessageWithOptions(msg types.Message, projectName string, agentBases 
 	if color != "" {
 		coloredBody := colorizeBody(displayBody, color, agentBases)
 		coloredBody = highlightIssueIDs(coloredBody, color)
+		if quoteBlock != "" {
+			return fmt.Sprintf("%s %s@%s:%s\n%s\n\"%s\"%s%s", idBlock, color, msg.FromAgent, reset, quoteBlock, color+coloredBody, reset, reactionSuffix)
+		}
 		return fmt.Sprintf("%s %s@%s: \"%s\"%s%s", idBlock, color, msg.FromAgent, coloredBody, reset, reactionSuffix)
 	}
 
 	highlightedBody := highlightIssueIDs(highlightMentions(displayBody), "")
+	if quoteBlock != "" {
+		return fmt.Sprintf("%s @%s:\n%s\n\"%s\"%s", idBlock, msg.FromAgent, quoteBlock, highlightedBody, reactionSuffix)
+	}
 	return fmt.Sprintf("%s @%s: \"%s\"%s", idBlock, msg.FromAgent, highlightedBody, reactionSuffix)
+}
+
+// formatQuoteBlock formats the quoted message for inline display.
+func formatQuoteBlock(quotedMsg *types.Message, _ map[string]struct{}) string {
+	// Get first few lines of quoted message, truncated
+	body := core.StripQuestionSections(quotedMsg.Body)
+	lines := strings.Split(body, "\n")
+
+	// Take at most 3 lines, truncate each
+	maxLines := 3
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+
+	var quotedLines []string
+	for _, line := range lines {
+		if len(line) > 80 {
+			line = line[:77] + "..."
+		}
+		quotedLines = append(quotedLines, gray+"> "+line+reset)
+	}
+
+	// Add source info
+	shortID := quotedMsg.ID
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
+	}
+	quotedLines = append(quotedLines, fmt.Sprintf("%s> [%s @%s]%s", gray, shortID, quotedMsg.FromAgent, reset))
+
+	return strings.Join(quotedLines, "\n")
 }
 
 // formatAnswerMessage renders answer messages with Q&A colorization.
@@ -359,12 +406,13 @@ func FormatMessagePreview(msg types.Message, projectName string) string {
 
 // AccordionOptions configures accordion behavior.
 type AccordionOptions struct {
-	Threshold   int  // Show accordion if more than this many messages (0 = use default)
-	HeadCount   int  // Messages to show at start (0 = use default)
-	TailCount   int  // Messages to show at end (0 = use default)
-	ShowAll     bool // If true, disable accordion and show all messages
-	ProjectName string
-	AgentBases  map[string]struct{}
+	Threshold    int  // Show accordion if more than this many messages (0 = use default)
+	HeadCount    int  // Messages to show at start (0 = use default)
+	TailCount    int  // Messages to show at end (0 = use default)
+	ShowAll      bool // If true, disable accordion and show all messages
+	ProjectName  string
+	AgentBases   map[string]struct{}
+	QuotedMsgs   map[string]*types.Message // Map of message ID -> quoted message for inline display
 }
 
 // FormatMessageListAccordion formats a list of messages with accordion collapsing.
@@ -387,11 +435,20 @@ func FormatMessageListAccordion(messages []types.Message, opts AccordionOptions)
 		tailCount = AccordionTailCount
 	}
 
+	// Helper to format a message with its quote if available
+	formatMsg := func(msg types.Message) string {
+		var quotedMsg *types.Message
+		if msg.QuoteMessageGUID != nil && opts.QuotedMsgs != nil {
+			quotedMsg = opts.QuotedMsgs[*msg.QuoteMessageGUID]
+		}
+		return formatMessageWithOptions(msg, opts.ProjectName, opts.AgentBases, true, quotedMsg)
+	}
+
 	// If ShowAll or under threshold, format all messages normally
 	if opts.ShowAll || len(messages) <= threshold {
 		lines := make([]string, len(messages))
 		for i, msg := range messages {
-			lines[i] = FormatMessage(msg, opts.ProjectName, opts.AgentBases)
+			lines[i] = formatMsg(msg)
 		}
 		return lines
 	}
@@ -401,7 +458,7 @@ func FormatMessageListAccordion(messages []types.Message, opts AccordionOptions)
 
 	// Head messages (full format)
 	for i := 0; i < headCount && i < len(messages); i++ {
-		lines = append(lines, FormatMessage(messages[i], opts.ProjectName, opts.AgentBases))
+		lines = append(lines, formatMsg(messages[i]))
 	}
 
 	// Middle messages (preview format)
@@ -419,7 +476,7 @@ func FormatMessageListAccordion(messages []types.Message, opts AccordionOptions)
 	// Tail messages (full format)
 	for i := middleEnd; i < len(messages); i++ {
 		if i >= headCount { // Avoid duplicates if list is small
-			lines = append(lines, FormatMessage(messages[i], opts.ProjectName, opts.AgentBases))
+			lines = append(lines, formatMsg(messages[i]))
 		}
 	}
 

@@ -145,10 +145,12 @@ func NewThreadCmd() *cobra.Command {
 				return nil
 			}
 
+			quotedMsgs := CollectQuotedMessages(ctx.DB, messages)
 			lines := FormatMessageListAccordion(messages, AccordionOptions{
 				ShowAll:     showAllMessages,
 				ProjectName: projectName,
 				AgentBases:  bases,
+				QuotedMsgs:  quotedMsgs,
 			})
 			for _, line := range lines {
 				fmt.Fprintln(out, line)

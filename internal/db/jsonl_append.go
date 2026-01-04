@@ -44,21 +44,22 @@ func AppendMessage(projectPath string, message types.Message) error {
 	// Reactions are now stored in separate reaction records, so this is usually empty.
 	legacyReactions := ConvertToLegacyReactions(message.Reactions)
 	record := MessageJSONLRecord{
-		Type:           "message",
-		ID:             message.ID,
-		ChannelID:      message.ChannelID,
-		Home:           home,
-		FromAgent:      message.FromAgent,
-		Body:           message.Body,
-		Mentions:       message.Mentions,
-		Reactions:      legacyReactions,
-		MsgType:        message.Type,
-		References:     message.References,
-		SurfaceMessage: message.SurfaceMessage,
-		ReplyTo:        message.ReplyTo,
-		TS:             message.TS,
-		EditedAt:       message.EditedAt,
-		ArchivedAt:     message.ArchivedAt,
+		Type:             "message",
+		ID:               message.ID,
+		ChannelID:        message.ChannelID,
+		Home:             home,
+		FromAgent:        message.FromAgent,
+		Body:             message.Body,
+		Mentions:         message.Mentions,
+		Reactions:        legacyReactions,
+		MsgType:          message.Type,
+		References:       message.References,
+		SurfaceMessage:   message.SurfaceMessage,
+		ReplyTo:          message.ReplyTo,
+		QuoteMessageGUID: message.QuoteMessageGUID,
+		TS:               message.TS,
+		EditedAt:         message.EditedAt,
+		ArchivedAt:       message.ArchivedAt,
 	}
 
 	if err := appendJSONLine(filepath.Join(frayDir, messagesFile), record); err != nil {

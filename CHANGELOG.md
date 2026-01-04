@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
+- Quote messages: `fray post --quote/-q <guid>` embeds quoted content inline with `>` prefix and source attribution
 - Multi-react support: same agent can react multiple times (each session); display shows `👍x3` for multiple, `👍 alice` for single
 - Ghost cursors for session handoffs: `fray cursor set/show/clear` marks where next agent should start reading; `--must-read` flag for critical threads; session-aware acknowledgment resets on each new session
 - Thread activity hints in `fray get <agent>`: shows unread counts for subscribed threads with last message context
