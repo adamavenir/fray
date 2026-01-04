@@ -174,6 +174,10 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	if err != nil {
 		return err
 	}
+	faveEvents, err := ReadFaves(projectPath)
+	if err != nil {
+		return err
+	}
 	config, err := ReadProjectConfig(projectPath)
 	if err != nil {
 		return err
@@ -213,6 +217,9 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS fray_ghost_cursors"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS fray_faves"); err != nil {
 		return err
 	}
 	if err := initSchemaWith(db); err != nil {
@@ -572,6 +579,35 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 				INSERT INTO fray_reactions (message_guid, agent_id, emoji, reacted_at)
 				VALUES (?, ?, ?, ?)
 			`, r.MessageGUID, r.AgentID, r.Emoji, r.ReactedAt); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Rebuild faves from fave events
+	if len(faveEvents) > 0 {
+		type faveKey struct {
+			agentID  string
+			itemType string
+			itemGUID string
+		}
+		faves := make(map[faveKey]faveEvent)
+
+		for _, event := range faveEvents {
+			key := faveKey{agentID: event.AgentID, itemType: event.ItemType, itemGUID: event.ItemGUID}
+			switch event.Type {
+			case "agent_fave":
+				faves[key] = event
+			case "agent_unfave":
+				delete(faves, key)
+			}
+		}
+
+		for _, fave := range faves {
+			if _, err := db.Exec(`
+				INSERT OR REPLACE INTO fray_faves (agent_id, item_type, item_guid, faved_at)
+				VALUES (?, ?, ?, ?)
+			`, fave.AgentID, fave.ItemType, fave.ItemGUID, fave.FavedAt); err != nil {
 				return err
 			}
 		}

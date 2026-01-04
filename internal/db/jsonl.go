@@ -275,6 +275,24 @@ type ReactionJSONLRecord struct {
 	ReactedAt   int64  `json:"reacted_at"`
 }
 
+// AgentFaveJSONLRecord represents a fave event in JSONL.
+type AgentFaveJSONLRecord struct {
+	Type     string `json:"type"` // "agent_fave"
+	AgentID  string `json:"agent_id"`
+	ItemType string `json:"item_type"` // "thread" | "message"
+	ItemGUID string `json:"item_guid"`
+	FavedAt  int64  `json:"faved_at"`
+}
+
+// AgentUnfaveJSONLRecord represents an unfave event in JSONL.
+type AgentUnfaveJSONLRecord struct {
+	Type      string `json:"type"` // "agent_unfave"
+	AgentID   string `json:"agent_id"`
+	ItemType  string `json:"item_type"` // "thread" | "message"
+	ItemGUID  string `json:"item_guid"`
+	UnfavedAt int64  `json:"unfaved_at"`
+}
+
 // ProjectKnownAgent stores per-project known-agent data.
 type ProjectKnownAgent struct {
 	Name        *string  `json:"name,omitempty"`

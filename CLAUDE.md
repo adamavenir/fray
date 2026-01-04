@@ -246,6 +246,13 @@ fray --in <channel> ...        # Operate in another channel
 fray nick @alice --as helper   # Add nickname
 fray nicks @alice              # Show nicknames
 
+# Faves (personal collections)
+fray fave <item> --as alice    # Fave thread or message (also subscribes to threads)
+fray unfave <item> --as alice  # Remove from faves (does NOT unsubscribe)
+fray faves --as alice          # List all faves
+fray faves --as alice --threads   # List only faved threads
+fray faves --as alice --messages  # List only faved messages
+
 # Claims (collision prevention)
 fray claim @alice --file path      # Claim a file
 fray claim @alice --file "*.ts"    # Claim glob pattern

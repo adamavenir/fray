@@ -424,3 +424,37 @@ func AppendReaction(projectPath, messageGUID, agentID, emoji string, reactedAt i
 	touchDatabaseFile(projectPath)
 	return nil
 }
+
+// AppendAgentFave appends a fave record to JSONL.
+func AppendAgentFave(projectPath, agentID, itemType, itemGUID string, favedAt int64) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := AgentFaveJSONLRecord{
+		Type:     "agent_fave",
+		AgentID:  agentID,
+		ItemType: itemType,
+		ItemGUID: itemGUID,
+		FavedAt:  favedAt,
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendAgentUnfave appends an unfave record to JSONL.
+func AppendAgentUnfave(projectPath, agentID, itemType, itemGUID string, unfavedAt int64) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := AgentUnfaveJSONLRecord{
+		Type:      "agent_unfave",
+		AgentID:   agentID,
+		ItemType:  itemType,
+		ItemGUID:  itemGUID,
+		UnfavedAt: unfavedAt,
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
