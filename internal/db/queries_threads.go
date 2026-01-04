@@ -257,12 +257,12 @@ func RemoveMessageFromThread(db *sql.DB, threadGUID, messageGUID string) error {
 
 // GetThreadMessages returns messages in a thread (home or membership).
 func GetThreadMessages(db *sql.DB, threadGUID string) ([]types.Message, error) {
-	rows, err := db.Query(`
-		SELECT DISTINCT m.* FROM fray_messages m
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT DISTINCT %s FROM fray_messages m
 		LEFT JOIN fray_thread_messages tm ON tm.message_guid = m.guid AND tm.thread_guid = ?
 		WHERE m.home = ? OR tm.thread_guid = ?
 		ORDER BY m.ts ASC, m.guid ASC
-	`, threadGUID, threadGUID, threadGUID)
+	`, messageColumnsAliased), threadGUID, threadGUID, threadGUID)
 	if err != nil {
 		return nil, err
 	}
@@ -384,12 +384,12 @@ func IsMessagePinned(db *sql.DB, messageGUID, threadGUID string) (bool, error) {
 
 // GetPinnedMessages returns messages pinned in a thread.
 func GetPinnedMessages(db *sql.DB, threadGUID string) ([]types.Message, error) {
-	rows, err := db.Query(`
-		SELECT m.* FROM fray_messages m
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT %s FROM fray_messages m
 		INNER JOIN fray_message_pins p ON p.message_guid = m.guid
 		WHERE p.thread_guid = ?
 		ORDER BY p.pinned_at ASC
-	`, threadGUID)
+	`, messageColumnsAliased), threadGUID)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,13 @@ import (
 	"github.com/adamavenir/fray/internal/types"
 )
 
+// messageColumns is the explicit column list for SELECT queries.
+// This prevents column order issues when migrations add columns via ALTER TABLE.
+const messageColumns = `guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions`
+
+// messageColumnsAliased is the same but with m. prefix for JOINs.
+const messageColumnsAliased = `m.guid, m.ts, m.channel_id, m.home, m.from_agent, m.body, m.mentions, m.type, m."references", m.surface_message, m.reply_to, m.quote_message_guid, m.edited_at, m.archived_at, m.reactions`
+
 // CreateMessage inserts a new message.
 func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 	ts := message.TS
@@ -178,12 +185,12 @@ func GetMessages(db *sql.DB, options *types.MessageQueryOptions) ([]types.Messag
 		}
 
 		query := fmt.Sprintf(`
-			SELECT * FROM (
-				SELECT * FROM fray_messages%s
+			SELECT %s FROM (
+				SELECT %s FROM fray_messages%s
 				ORDER BY ts DESC, guid DESC
 				LIMIT ?
 			) ORDER BY ts ASC, guid ASC
-		`, whereClause)
+		`, messageColumns, messageColumns, whereClause)
 		params = append(params, limit)
 
 		rows, err := db.Query(query, params...)
@@ -195,7 +202,7 @@ func GetMessages(db *sql.DB, options *types.MessageQueryOptions) ([]types.Messag
 		return scanMessagesWithReactions(db, rows)
 	}
 
-	query := "SELECT * FROM fray_messages"
+	query := "SELECT " + messageColumns + " FROM fray_messages"
 	var conditions []string
 	var params []any
 
@@ -322,7 +329,7 @@ func GetMessagesWithMention(db *sql.DB, mentionPrefix string, options *types.Mes
 	if includeReplies != "" {
 		// Use EXISTS for mentions + OR for replies to avoid cross-join issues
 		query = `
-		SELECT m.* FROM fray_messages m
+		SELECT ` + messageColumnsAliased + ` FROM fray_messages m
 		`
 		if filterUnread {
 			query += `
@@ -354,7 +361,7 @@ func GetMessagesWithMention(db *sql.DB, mentionPrefix string, options *types.Mes
 	} else {
 		// Original query for mentions only
 		query = `
-		SELECT DISTINCT m.* FROM fray_messages m, json_each(m.mentions) j
+		SELECT DISTINCT ` + messageColumnsAliased + ` FROM fray_messages m, json_each(m.mentions) j
 		`
 		if filterUnread {
 			query += `
@@ -429,7 +436,7 @@ func GetAgentLastPostTime(database *sql.DB, agentID string) (int64, error) {
 
 // GetMessage returns a message by GUID.
 func GetMessage(db *sql.DB, messageID string) (*types.Message, error) {
-	row := db.QueryRow("SELECT * FROM fray_messages WHERE guid = ?", messageID)
+	row := db.QueryRow("SELECT "+messageColumns+" FROM fray_messages WHERE guid = ?", messageID)
 	message, err := scanMessage(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -454,12 +461,12 @@ func GetMessageByPrefix(db *sql.DB, prefix string) (*types.Message, error) {
 		normalized = normalized[4:]
 	}
 
-	rows, err := db.Query(`
-		SELECT * FROM fray_messages
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT %s FROM fray_messages
 		WHERE guid LIKE ?
 		ORDER BY ts DESC
 		LIMIT 2
-	`, fmt.Sprintf("msg-%s%%", normalized))
+	`, messageColumns), fmt.Sprintf("msg-%s%%", normalized))
 	if err != nil {
 		return nil, err
 	}
@@ -582,11 +589,11 @@ func ArchiveMessages(db *sql.DB, before *types.MessageCursor, beforeID string) (
 
 // GetReplyChain returns parent + replies.
 func GetReplyChain(db *sql.DB, messageID string) ([]types.Message, error) {
-	rows, err := db.Query(`
-		SELECT * FROM fray_messages
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT %s FROM fray_messages
 		WHERE guid = ? OR reply_to = ?
 		ORDER BY CASE WHEN guid = ? THEN 0 ELSE 1 END, ts ASC, guid ASC
-	`, messageID, messageID, messageID)
+	`, messageColumns), messageID, messageID, messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -607,11 +614,11 @@ func GetReplyCount(db *sql.DB, messageID string) (int64, error) {
 
 // GetReplies returns all direct replies to a message.
 func GetReplies(db *sql.DB, messageID string) ([]types.Message, error) {
-	rows, err := db.Query(`
-		SELECT * FROM fray_messages
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT %s FROM fray_messages
 		WHERE reply_to = ?
 		ORDER BY ts ASC, guid ASC
-	`, messageID)
+	`, messageColumns), messageID)
 	if err != nil {
 		return nil, err
 	}
