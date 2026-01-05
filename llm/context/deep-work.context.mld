@@ -19,8 +19,8 @@ Use \`--as @agent.name\` and \`@@agent.name\` throughout.
 
 ## Your Instructions
 
-1. Run \`fray notes --as @agent.name\` to check for prior session handoffs
-2. Run \`fray meta\` for project-wide shared context
+1. Run \`fray get @agent.name/notes\` to check for prior session handoffs
+2. Run \`fray get meta\` for project-wide shared context
 3. Run \`bd ready\` to see unblocked issues
 
 Read any instructions left for you in the notes. Look for:

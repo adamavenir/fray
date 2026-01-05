@@ -88,7 +88,7 @@ roles/{role}/            # Role's root thread (knowledge type)
 ```
 - Agent hierarchies auto-created on `fray new`
 - Role hierarchies auto-created on `fray role add/play`
-- Use `fray key` to record role insights, `fray keys` to view
+- Use `fray post roles/<role>/keys` to record role insights, `fray get roles/<role>/keys` to view
 
 **Message types**: Messages have a `type` field: `'agent'`, `'user'`, `'event'`, or `'surface'`. Surfaced posts reference another message and emit backlink events; `home`, `references`, and `surface_message` track this.
 
@@ -265,14 +265,13 @@ fray questions                         # List questions
 fray question <id>                     # View/close question
 fray post --answer <q> "answer" --as a # Answer question
 
-# Knowledge hierarchy
-fray note "..." --as alice             # Post to agent notes
-fray notes --as alice                  # View agent notes
-fray meta "..." --as alice             # Post to project meta
-fray meta                              # View project meta
-fray key "insight" --as alice --role r # Record role key insight
-fray keys                              # View all role keys
-fray keys --role architect             # View architect keys only
+# Knowledge hierarchy (via path-based commands)
+fray post opus/notes "..." --as opus   # Post to agent notes
+fray get opus/notes                    # View agent notes
+fray post meta "..." --as opus         # Post to project meta
+fray get meta                          # View project meta
+fray post roles/architect/keys "..."   # Record role key insight
+fray get roles/architect/keys          # View architect keys
 
 # Legacy (still works)
 fray thread subscribe <ref> --as a     # Old subscribe syntax
@@ -283,7 +282,6 @@ fray get alice                         # Agent-based room + mentions
 fray get --since 1h --as opus          # Last hour
 fray get --since today --as opus       # Since midnight
 fray get --since #abc --as opus        # After specific message
-fray history alice --since 2d          # Last 2 days
 
 # Channels
 fray ls                                # List registered channels

@@ -598,9 +598,9 @@ Use --as %s and @%s throughout.
 
 ## Then: Join and Orient
 
-fray new %s        # or fray back %s if rejoining
-fray notes --as %s # prior session handoffs
-fray meta                  # project-wide shared context
+fray new %s              # or fray back %s if rejoining
+fray get %s/notes        # prior session handoffs
+fray get meta            # project-wide shared context
 
 **Read any instructions left for you in the notes.**
 

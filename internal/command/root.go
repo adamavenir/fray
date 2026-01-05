@@ -57,10 +57,7 @@ func NewRootCmd(version string) *cobra.Command {
 		NewClearCmd(),
 		NewStatusCmd(),
 		NewGetCmd(),
-		NewMentionsCmd(),
 		NewQuickstartCmd(),
-		NewHistoryCmd(),
-		NewBetweenCmd(),
 		NewReplyCmd(),
 		NewThreadCmd(),
 		NewThreadsCmd(),
@@ -82,11 +79,6 @@ func NewRootCmd(version string) *cobra.Command {
 		NewQuestionCmd(),
 		NewAnswerCmd(),
 		NewSurfaceCmd(),
-		NewNoteCmd(),
-		NewNotesCmd(),
-		NewKeyCmd(),
-		NewKeysCmd(),
-		NewMetaCmd(),
 		NewReactCmd(),
 		NewFaveCmd(),
 		NewUnfaveCmd(),
@@ -99,7 +91,6 @@ func NewRootCmd(version string) *cobra.Command {
 		NewInfoCmd(),
 		NewRenameCmd(),
 		NewMergeCmd(),
-		NewViewCmd(),
 		NewVersionsCmd(),
 		NewFilterCmd(),
 		NewLsCmd(),
@@ -167,10 +158,12 @@ func rewriteMentionArgs(args []string) []string {
 	if !strings.HasPrefix(args[fullIdx], "@") {
 		return args
 	}
-	updated := make([]string, 0, len(args)+1)
+	// Rewrite "@agent" to "get notifs --as agent"
+	agent := strings.TrimPrefix(args[fullIdx], "@")
+	updated := make([]string, 0, len(args)+3)
 	updated = append(updated, args[:fullIdx]...)
-	updated = append(updated, "mentions")
-	updated = append(updated, args[fullIdx:]...)
+	updated = append(updated, "get", "notifs", "--as", agent)
+	updated = append(updated, args[fullIdx+1:]...)
 	return updated
 }
 

@@ -30,9 +30,9 @@ func NewHookPrecompactCmd() *cobra.Command {
 
 func buildPrecompactContext(agentID string) string {
 	return fmt.Sprintf(`[fray] Context compacting. Preserve your work:
-1. fray note "# Handoff ..." --as %s
+1. fray post %s/notes "# Handoff ..." --as %s
 2. bd close <completed-issues>
 3. fray bye %s
 
-Or run /land for full checklist.`, agentID, agentID)
+Or run /land for full checklist.`, agentID, agentID, agentID)
 }
