@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray @agent`: includes mentions from thread messages, not just room
 - Chat: Enter key now submits message immediately (was requiring double-enter when suggestions shown)
 
+### Removed
+- Deprecated shorthand commands: `fray meta`, `fray note`, `fray key`, `fray mentions`, `fray view`, `fray history`, `fray between` (use path-based `fray get/post` instead)
+- Wasteful "More:" suggestions in `fray get` output
+
 ### Changed
 - `fray get <agent>`: defaults to unread room messages (since watermark); use `--last N` for explicit last N
 - `fray get <agent>`: mentions now include replies to agent's messages and filter to unread-only
@@ -24,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
+- Path-based addressing: `fray get/post meta`, `fray get opus/notes`, `fray get design-thread` for unified command interface
+- Thread listing filters: `--following`, `--activity`, `--tree` with nested display and indicators (★ followed, 📌 pinned, (muted))
+- Within-thread filters: `--pinned`, `--by @agent`, `--with "text"`, `--reactions` for `fray get <path>`
+- Cross-thread queries: `fray reactions --by/--to` for reaction-based discovery
+- Mention hierarchy in agent views: direct (@agent at start) vs FYI (mid-message) vs stale (>2h just count)
 - Roles: `fray role add/drop/play/stop <agent> <role>` for persistent and session-scoped role assignment; `fray roles` lists all; `fray here` shows roles; `fray bye` clears session roles
 - Faves: `fray fave/unfave <item>` for personal collections; faving threads auto-subscribes; `fray faves` to list with `--threads`/`--messages` filters
 - Quote messages: `fray post --quote/-q <guid>` embeds quoted content inline with `>` prefix and source attribution
