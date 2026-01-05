@@ -103,6 +103,24 @@ Reply to specific messages:
   fray post --as alice -r msg-abc "Good point"
   fray reply msg-abc            View message and its reply chain
 
+FILTERS
+-------
+Thread listing:
+  fray threads --as <a>         List threads you follow
+  fray threads --tree --as <a>  Tree view with indicators
+  fray threads --activity       Sort by recent activity
+
+Within-thread:
+  fray get design --pinned      Show pinned messages only
+  fray get design --by @alice   Messages from agent
+  fray get design --with "text" Search by content
+  fray get design --reactions   Messages with reactions
+
+Cross-thread:
+  fray faves --as <a>           List faved items
+  fray reactions --by @alice    Messages alice reacted to
+  fray reactions --to @alice    Reactions on alice's messages
+
 SHORTCUTS
 ---------
   fray msg-abc123               View specific message (shorthand)
@@ -181,6 +199,24 @@ func printQuickstartGuide(outWriter io.Writer, allAgents []types.Agent, register
 	fmt.Fprintln(outWriter, "Reply to specific messages:")
 	fmt.Fprintln(outWriter, "  fray post --as alice -r msg-abc \"Good point\"")
 	fmt.Fprintln(outWriter, "  fray reply msg-abc            View message and its reply chain")
+
+	fmt.Fprintln(outWriter, "\nFILTERS")
+	fmt.Fprintln(outWriter, "-------")
+	fmt.Fprintln(outWriter, "Thread listing:")
+	fmt.Fprintln(outWriter, "  fray threads --as <a>         List threads you follow")
+	fmt.Fprintln(outWriter, "  fray threads --tree --as <a>  Tree view with indicators")
+	fmt.Fprintln(outWriter, "  fray threads --activity       Sort by recent activity")
+	fmt.Fprintln(outWriter, "")
+	fmt.Fprintln(outWriter, "Within-thread:")
+	fmt.Fprintln(outWriter, "  fray get design --pinned      Show pinned messages only")
+	fmt.Fprintln(outWriter, "  fray get design --by @alice   Messages from agent")
+	fmt.Fprintln(outWriter, "  fray get design --with \"text\" Search by content")
+	fmt.Fprintln(outWriter, "  fray get design --reactions   Messages with reactions")
+	fmt.Fprintln(outWriter, "")
+	fmt.Fprintln(outWriter, "Cross-thread:")
+	fmt.Fprintln(outWriter, "  fray faves --as <a>           List faved items")
+	fmt.Fprintln(outWriter, "  fray reactions --by @alice    Messages alice reacted to")
+	fmt.Fprintln(outWriter, "  fray reactions --to @alice    Reactions on alice's messages")
 
 	fmt.Fprintln(outWriter, "\nSHORTCUTS")
 	fmt.Fprintln(outWriter, "---------")
