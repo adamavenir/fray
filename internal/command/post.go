@@ -15,9 +15,18 @@ import (
 // NewPostCmd creates the post command.
 func NewPostCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "post",
-		Short: "Post message to room",
-		Args:  cobra.ExactArgs(1),
+		Use:   "post [path] <message>",
+		Short: "Post message to room or thread",
+		Long: `Post a message to the room or a specific thread.
+
+If a path is provided as first arg, posts to that location.
+Paths:
+  fray post "msg"                    Post to room (default)
+  fray post meta "msg"               Post to project meta
+  fray post opus/notes "msg"         Post to agent's notes
+  fray post design-thread "msg"      Post to thread by name
+  fray post roles/architect/keys "msg"  Post to role's keys`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := GetContext(cmd)
 			if err != nil {
@@ -31,6 +40,26 @@ func NewPostCmd() *cobra.Command {
 			answerRef, _ := cmd.Flags().GetString("answer")
 			quoteRef, _ := cmd.Flags().GetString("quote")
 			silent, _ := cmd.Flags().GetBool("silent")
+
+			// Determine path and message body
+			var messageBody string
+			if len(args) == 2 {
+				// First arg is path, second is message
+				pathArg := args[0]
+				messageBody = args[1]
+
+				// Try to resolve path as thread (only if not already using --thread)
+				if threadRef == "" {
+					thread, err := resolveThreadRef(ctx.DB, pathArg)
+					if err == nil && thread != nil {
+						threadRef = thread.GUID
+					} else {
+						return writeCommandError(cmd, fmt.Errorf("thread not found: %s", pathArg))
+					}
+				}
+			} else {
+				messageBody = args[0]
+			}
 
 			if agentRef == "" {
 				return writeCommandError(cmd, fmt.Errorf("--as is required"))
@@ -125,7 +154,7 @@ func NewPostCmd() *cobra.Command {
 
 			reactionText := ""
 			if replyID != nil && answerRef == "" {
-				if reaction, ok := core.NormalizeReactionText(args[0]); ok {
+				if reaction, ok := core.NormalizeReactionText(messageBody); ok {
 					reactionText = reaction
 				}
 			}
@@ -169,7 +198,7 @@ func NewPostCmd() *cobra.Command {
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
-			mentions := core.ExtractMentions(args[0], bases)
+			mentions := core.ExtractMentions(messageBody, bases)
 			mentions = core.ExpandAllMention(mentions, bases)
 
 			now := time.Now().Unix()
@@ -180,7 +209,7 @@ func NewPostCmd() *cobra.Command {
 			created, err := db.CreateMessage(ctx.DB, types.Message{
 				TS:               now,
 				FromAgent:        agentID,
-				Body:             args[0],
+				Body:             messageBody,
 				Mentions:         mentions,
 				Home:             home,
 				ReplyTo:          replyID,
@@ -216,7 +245,7 @@ func NewPostCmd() *cobra.Command {
 			}
 
 			// Extract questions from markdown sections
-			sections, _ := core.ExtractQuestionSections(args[0])
+			sections, _ := core.ExtractQuestionSections(messageBody)
 			for _, section := range sections {
 				status := types.QuestionStatusOpen
 				if section.IsWondering {

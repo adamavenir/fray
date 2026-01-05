@@ -182,6 +182,13 @@ func NewNewCmd() *cobra.Command {
 				return writeCommandError(cmd, err)
 			}
 
+			// Create agent thread hierarchy for new agents
+			if !isRejoin {
+				if err := ensureAgentHierarchy(ctx, agentID); err != nil {
+					return writeCommandError(cmd, err)
+				}
+			}
+
 			var existingKnown *db.ProjectKnownAgent
 			if projectConfig != nil {
 				if entry, ok := projectConfig.KnownAgents[agentRecord.GUID]; ok {
@@ -422,4 +429,101 @@ func parseNumeric(value string) int {
 		num = num*10 + int(r-'0')
 	}
 	return num
+}
+
+// ensureAgentHierarchy creates the agent thread hierarchy if it doesn't exist.
+// Creates: {agent}/ (knowledge), {agent}/notes (system), {agent}/jrnl (system)
+func ensureAgentHierarchy(ctx *CommandContext, agentID string) error {
+	// Check if agent parent thread exists
+	agentThread, err := db.GetThreadByName(ctx.DB, agentID, nil)
+	if err != nil {
+		return err
+	}
+
+	if agentThread == nil {
+		// Create agent parent thread (knowledge type)
+		thread, err := db.CreateThread(ctx.DB, types.Thread{
+			Name: agentID,
+			Type: types.ThreadTypeKnowledge,
+		})
+		if err != nil {
+			return err
+		}
+		if err := db.AppendThread(ctx.Project.DBPath, thread, []string{agentID}); err != nil {
+			return err
+		}
+		// Subscribe agent to their own thread
+		if err := db.SubscribeThread(ctx.DB, thread.GUID, agentID, time.Now().Unix()); err != nil {
+			return err
+		}
+		agentThread = &thread
+	}
+
+	// Check and create notes subthread
+	notesThread, err := db.GetThreadByName(ctx.DB, "notes", &agentThread.GUID)
+	if err != nil {
+		return err
+	}
+	if notesThread == nil {
+		thread, err := db.CreateThread(ctx.DB, types.Thread{
+			Name:         "notes",
+			ParentThread: &agentThread.GUID,
+			Type:         types.ThreadTypeSystem,
+		})
+		if err != nil {
+			return err
+		}
+		if err := db.AppendThread(ctx.Project.DBPath, thread, []string{agentID}); err != nil {
+			return err
+		}
+		if err := db.SubscribeThread(ctx.DB, thread.GUID, agentID, time.Now().Unix()); err != nil {
+			return err
+		}
+	}
+
+	// Check and create jrnl subthread
+	jrnlThread, err := db.GetThreadByName(ctx.DB, "jrnl", &agentThread.GUID)
+	if err != nil {
+		return err
+	}
+	if jrnlThread == nil {
+		thread, err := db.CreateThread(ctx.DB, types.Thread{
+			Name:         "jrnl",
+			ParentThread: &agentThread.GUID,
+			Type:         types.ThreadTypeSystem,
+		})
+		if err != nil {
+			return err
+		}
+		if err := db.AppendThread(ctx.Project.DBPath, thread, []string{agentID}); err != nil {
+			return err
+		}
+		if err := db.SubscribeThread(ctx.DB, thread.GUID, agentID, time.Now().Unix()); err != nil {
+			return err
+		}
+	}
+
+	// Check and create meta subthread (self-knowledge, persistent)
+	metaThread, err := db.GetThreadByName(ctx.DB, "meta", &agentThread.GUID)
+	if err != nil {
+		return err
+	}
+	if metaThread == nil {
+		thread, err := db.CreateThread(ctx.DB, types.Thread{
+			Name:         "meta",
+			ParentThread: &agentThread.GUID,
+			Type:         types.ThreadTypeSystem,
+		})
+		if err != nil {
+			return err
+		}
+		if err := db.AppendThread(ctx.Project.DBPath, thread, []string{agentID}); err != nil {
+			return err
+		}
+		if err := db.SubscribeThread(ctx.DB, thread.GUID, agentID, time.Now().Unix()); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

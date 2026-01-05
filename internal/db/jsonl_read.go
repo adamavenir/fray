@@ -576,6 +576,9 @@ func ReadThreads(projectPath string) ([]ThreadJSONLRecord, []threadSubscriptionE
 			if update.Status != nil {
 				existing.Status = *update.Status
 			}
+			if update.ThreadType != nil {
+				existing.ThreadType = *update.ThreadType
+			}
 			if update.ParentThread != nil {
 				existing.ParentThread = update.ParentThread
 			}

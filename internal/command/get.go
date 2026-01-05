@@ -16,9 +16,21 @@ import (
 // NewGetCmd creates the get command.
 func NewGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get [agent]",
-		Short: "Get messages",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "get [path]",
+		Short: "Get messages from room, thread, or path",
+		Long: `Get messages from various sources.
+
+Paths:
+  fray get                    Room + notifications (default, requires --as)
+  fray get meta               Project meta thread
+  fray get opus/notes         Agent's notes thread
+  fray get design-thread      Specific thread by name
+  fray get notifs             Notifications only (@mentions + followed threads)
+  fray get msg-abc            Specific message (shorthand: fray msg-abc)
+
+Legacy (deprecated):
+  fray get <agent>            Still works for agent-based room + mentions`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := GetContext(cmd)
 			if err != nil {
@@ -39,13 +51,10 @@ func NewGetCmd() *cobra.Command {
 			hideEvents, _ := cmd.Flags().GetBool("hide-events")
 			showEvents, _ := cmd.Flags().GetBool("show-events")
 			showAllMessages, _ := cmd.Flags().GetBool("show-all")
+			asRef, _ := cmd.Flags().GetString("as")
 			if showEvents {
 				hideEvents = false
 			}
-
-			// Query mode when no agent provided and using explicit range/limit flags
-			// If agent is provided with --last, we stay in agent mode but use --last as room limit
-			isQueryMode := (last != "" && len(args) == 0) || since != "" || before != "" || from != "" || to != "" || all
 
 			projectName := GetProjectName(ctx.Project.Root)
 			var agentBases map[string]struct{}
@@ -55,9 +64,46 @@ func NewGetCmd() *cobra.Command {
 					return writeCommandError(cmd, err)
 				}
 			}
-			var resolvedAgentID string
+
+			// Determine what we're getting
+			var target string
 			if len(args) > 0 {
-				resolvedAgentID, err = resolveAgentRef(ctx, args[0])
+				target = args[0]
+			}
+
+			// Handle special path: "notifs"
+			if target == "notifs" {
+				return getNotifications(cmd, ctx, asRef, projectName, agentBases, showAllMessages)
+			}
+
+			// Try to resolve as thread path first
+			if target != "" && !strings.HasPrefix(target, "msg-") {
+				thread, err := resolveThreadRef(ctx.DB, target)
+				if err == nil && thread != nil {
+					return getThread(cmd, ctx, thread, last, since, showAllMessages, projectName, agentBases, hideEvents)
+				}
+			}
+
+			// Try to resolve as message ID
+			if target != "" && (strings.HasPrefix(target, "msg-") || len(target) <= 12) {
+				msg, err := resolveMessageRef(ctx.DB, target)
+				if err == nil && msg != nil {
+					return getMessage(cmd, ctx, msg, projectName, agentBases)
+				}
+			}
+
+			// Query mode when using explicit range/limit flags
+			isQueryMode := (last != "" && len(args) == 0) || since != "" || before != "" || from != "" || to != "" || all
+
+			// Legacy: try to resolve as agent ID for backward compatibility
+			var resolvedAgentID string
+			if target != "" {
+				resolvedAgentID, err = resolveAgentRef(ctx, target)
+				if err != nil {
+					return writeCommandError(cmd, fmt.Errorf("unknown path, thread, or agent: %s", target))
+				}
+			} else if asRef != "" {
+				resolvedAgentID, err = resolveAgentRef(ctx, asRef)
 				if err != nil {
 					return writeCommandError(cmd, err)
 				}
@@ -389,8 +435,231 @@ func NewGetCmd() *cobra.Command {
 	cmd.Flags().Bool("hide-events", false, "hide event messages")
 	cmd.Flags().Bool("show-events", false, "show event messages")
 	cmd.Flags().Bool("show-all", false, "disable accordion, show all messages fully")
+	cmd.Flags().String("as", "", "agent identity (uses FRAY_AGENT_ID if not set)")
+	cmd.Flags().Bool("replies", false, "show message with reply chain")
 
 	return cmd
+}
+
+// getThread displays messages from a thread.
+func getThread(cmd *cobra.Command, ctx *CommandContext, thread *types.Thread, last, since string, showAll bool, projectName string, agentBases map[string]struct{}, hideEvents bool) error {
+	var messages []types.Message
+	var err error
+
+	messages, err = db.GetThreadMessages(ctx.DB, thread.GUID)
+	if err != nil {
+		return writeCommandError(cmd, err)
+	}
+	messages, err = db.ApplyMessageEditCounts(ctx.Project.DBPath, messages)
+	if err != nil {
+		return writeCommandError(cmd, err)
+	}
+	messages = filterDeletedMessages(messages)
+
+	// Apply --since filter
+	if since != "" {
+		cursor, err := core.ParseTimeExpression(ctx.DB, since, "since")
+		if err != nil {
+			return writeCommandError(cmd, err)
+		}
+		var filtered []types.Message
+		for _, msg := range messages {
+			if cursor.GUID != "" && msg.ID > cursor.GUID {
+				filtered = append(filtered, msg)
+			} else if cursor.GUID == "" && msg.TS > cursor.TS {
+				filtered = append(filtered, msg)
+			}
+		}
+		messages = filtered
+	}
+
+	// Apply --last limit
+	if last != "" {
+		limit, err := strconv.Atoi(last)
+		if err != nil {
+			return writeCommandError(cmd, fmt.Errorf("invalid --last value: %s", last))
+		}
+		if limit > 0 && len(messages) > limit {
+			messages = messages[len(messages)-limit:]
+		}
+	}
+
+	if hideEvents {
+		messages = filterEventMessages(messages)
+	}
+
+	path, _ := buildThreadPath(ctx.DB, thread)
+
+	if ctx.JSONMode {
+		payload := map[string]any{
+			"thread":   thread,
+			"path":     path,
+			"messages": messages,
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Thread %s (%s)\n\n", path, thread.GUID)
+
+	if len(messages) == 0 {
+		fmt.Fprintln(out, "No messages in thread")
+		return nil
+	}
+
+	quotedMsgs := CollectQuotedMessages(ctx.DB, messages)
+	lines := FormatMessageListAccordion(messages, AccordionOptions{
+		ShowAll:     showAll,
+		ProjectName: projectName,
+		AgentBases:  agentBases,
+		QuotedMsgs:  quotedMsgs,
+	})
+	for _, line := range lines {
+		fmt.Fprintln(out, line)
+	}
+	return nil
+}
+
+// getMessage displays a single message.
+func getMessage(cmd *cobra.Command, ctx *CommandContext, msg *types.Message, projectName string, agentBases map[string]struct{}) error {
+	showReplies, _ := cmd.Flags().GetBool("replies")
+
+	if ctx.JSONMode {
+		if showReplies {
+			replies, _ := db.GetReplies(ctx.DB, msg.ID)
+			payload := map[string]any{
+				"message": msg,
+				"replies": replies,
+			}
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(msg)
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out, FormatMessageFull(*msg, projectName, agentBases))
+
+	if showReplies {
+		replies, err := db.GetReplies(ctx.DB, msg.ID)
+		if err != nil {
+			return writeCommandError(cmd, err)
+		}
+		if len(replies) > 0 {
+			fmt.Fprintln(out, "\nReplies:")
+			for _, reply := range replies {
+				fmt.Fprintln(out, FormatMessage(reply, projectName, agentBases))
+			}
+		}
+	}
+	return nil
+}
+
+// getNotifications displays notifications for an agent.
+func getNotifications(cmd *cobra.Command, ctx *CommandContext, asRef, projectName string, agentBases map[string]struct{}, showAll bool) error {
+	agentID, err := resolveSubscriptionAgent(ctx, asRef)
+	if err != nil {
+		return writeCommandError(cmd, fmt.Errorf("--as is required for notifications"))
+	}
+
+	agentBase := agentID
+	if strings.Contains(agentID, ".") {
+		idx := strings.LastIndex(agentID, ".")
+		agentBase = agentID[:idx]
+	}
+
+	// Get @mentions
+	allHomes := ""
+	mentionOpts := &types.MessageQueryOptions{
+		Limit:                 20,
+		IncludeRepliesToAgent: agentBase,
+		AgentPrefix:           agentBase,
+		Home:                  &allHomes,
+	}
+
+	// Check ghost cursor for session-aware unread logic
+	useGhostCursorBoundary := false
+	mentionGhostCursor, _ := db.GetGhostCursor(ctx.DB, agentBase, "room")
+	if mentionGhostCursor != nil && mentionGhostCursor.SessionAckAt == nil {
+		msg, msgErr := db.GetMessage(ctx.DB, mentionGhostCursor.MessageGUID)
+		if msgErr == nil && msg != nil {
+			mentionOpts.Since = &types.MessageCursor{GUID: msg.ID, TS: msg.TS}
+			useGhostCursorBoundary = true
+		}
+	}
+	if !useGhostCursorBoundary {
+		mentionOpts.UnreadOnly = true
+	}
+
+	mentionMessages, err := db.GetMessagesWithMention(ctx.DB, agentBase, mentionOpts)
+	if err != nil {
+		return writeCommandError(cmd, err)
+	}
+	mentionMessages, err = db.ApplyMessageEditCounts(ctx.Project.DBPath, mentionMessages)
+	if err != nil {
+		return writeCommandError(cmd, err)
+	}
+
+	// Filter out self-mentions
+	filtered := make([]types.Message, 0, len(mentionMessages))
+	for _, msg := range mentionMessages {
+		parsed, err := core.ParseAgentID(msg.FromAgent)
+		if err != nil {
+			filtered = append(filtered, msg)
+			continue
+		}
+		if parsed.Base != agentBase {
+			filtered = append(filtered, msg)
+		}
+	}
+
+	// Get thread activity hints
+	threadHints, _ := getThreadActivityHints(ctx, agentBase)
+
+	if ctx.JSONMode {
+		payload := map[string]any{
+			"mentions": filtered,
+			"threads":  threadHints,
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Notifications for @%s\n\n", agentBase)
+
+	if len(filtered) == 0 {
+		fmt.Fprintln(out, "@mentions: (none)")
+	} else {
+		fmt.Fprintln(out, "@mentions:")
+		for _, msg := range filtered {
+			fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
+		}
+	}
+
+	if len(threadHints) > 0 {
+		fmt.Fprintln(out, "\nThreads:")
+		for _, hint := range threadHints {
+			fmt.Fprintln(out, formatThreadHint(hint))
+		}
+	}
+
+	// Mark messages as read
+	if len(filtered) > 0 {
+		ids := make([]string, 0, len(filtered))
+		for _, msg := range filtered {
+			ids = append(ids, msg.ID)
+		}
+		if err := db.MarkMessagesRead(ctx.DB, ids, agentBase); err != nil {
+			return writeCommandError(cmd, err)
+		}
+	}
+
+	// Ack ghost cursor if we used it as boundary
+	if useGhostCursorBoundary && mentionGhostCursor != nil {
+		now := time.Now().Unix()
+		_ = db.AckGhostCursor(ctx.DB, agentBase, "room", now)
+	}
+
+	return nil
 }
 
 func parseOptionalInt(value string, fallback int) int {

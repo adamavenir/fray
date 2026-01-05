@@ -13,6 +13,7 @@ import (
 type ThreadUpdates struct {
 	Name              types.OptionalString
 	Status            types.OptionalString
+	Type              types.OptionalString
 	ParentThread      types.OptionalString
 	AnchorMessageGUID types.OptionalString
 	AnchorHidden      types.OptionalBool
@@ -34,6 +35,10 @@ func CreateThread(db *sql.DB, thread types.Thread) (types.Thread, error) {
 	if status == "" {
 		status = types.ThreadStatusOpen
 	}
+	threadType := thread.Type
+	if threadType == "" {
+		threadType = types.ThreadTypeStandard
+	}
 	createdAt := thread.CreatedAt
 	if createdAt == 0 {
 		createdAt = time.Now().Unix()
@@ -45,15 +50,16 @@ func CreateThread(db *sql.DB, thread types.Thread) (types.Thread, error) {
 	}
 
 	_, err := db.Exec(`
-		INSERT INTO fray_threads (guid, name, parent_thread, status, created_at, anchor_message_guid, anchor_hidden, last_activity_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, guid, thread.Name, thread.ParentThread, string(status), createdAt, thread.AnchorMessageGUID, anchorHidden, thread.LastActivityAt)
+		INSERT INTO fray_threads (guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, guid, thread.Name, thread.ParentThread, string(status), string(threadType), createdAt, thread.AnchorMessageGUID, anchorHidden, thread.LastActivityAt)
 	if err != nil {
 		return types.Thread{}, err
 	}
 
 	thread.GUID = guid
 	thread.Status = status
+	thread.Type = threadType
 	thread.CreatedAt = createdAt
 	return thread, nil
 }
@@ -70,6 +76,10 @@ func UpdateThread(db *sql.DB, guid string, updates ThreadUpdates) (*types.Thread
 	if updates.Status.Set {
 		fields = append(fields, "status = ?")
 		args = append(args, nullableValue(updates.Status.Value))
+	}
+	if updates.Type.Set {
+		fields = append(fields, "type = ?")
+		args = append(args, nullableValue(updates.Type.Value))
 	}
 	if updates.ParentThread.Set {
 		fields = append(fields, "parent_thread = ?")
@@ -107,7 +117,7 @@ func UpdateThread(db *sql.DB, guid string, updates ThreadUpdates) (*types.Thread
 // GetThread returns a thread by GUID.
 func GetThread(db *sql.DB, guid string) (*types.Thread, error) {
 	row := db.QueryRow(`
-		SELECT guid, name, parent_thread, status, created_at, anchor_message_guid, anchor_hidden, last_activity_at
+		SELECT guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at
 		FROM fray_threads WHERE guid = ?
 	`, guid)
 
@@ -124,7 +134,7 @@ func GetThread(db *sql.DB, guid string) (*types.Thread, error) {
 // GetThreadByPrefix returns the first thread matching a GUID prefix.
 func GetThreadByPrefix(db *sql.DB, prefix string) (*types.Thread, error) {
 	rows, err := db.Query(`
-		SELECT guid, name, parent_thread, status, created_at, anchor_message_guid, anchor_hidden, last_activity_at
+		SELECT guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at
 		FROM fray_threads
 		WHERE guid = ? OR guid LIKE ?
 		ORDER BY created_at ASC
@@ -149,12 +159,12 @@ func GetThreadByName(db *sql.DB, name string, parent *string) (*types.Thread, er
 	var row *sql.Row
 	if parent == nil {
 		row = db.QueryRow(`
-			SELECT guid, name, parent_thread, status, created_at, anchor_message_guid, anchor_hidden, last_activity_at
+			SELECT guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at
 			FROM fray_threads WHERE name = ? AND parent_thread IS NULL
 		`, name)
 	} else {
 		row = db.QueryRow(`
-			SELECT guid, name, parent_thread, status, created_at, anchor_message_guid, anchor_hidden, last_activity_at
+			SELECT guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at
 			FROM fray_threads WHERE name = ? AND parent_thread = ?
 		`, name, *parent)
 	}
@@ -172,7 +182,7 @@ func GetThreadByName(db *sql.DB, name string, parent *string) (*types.Thread, er
 // GetThreads returns threads filtered by options.
 func GetThreads(db *sql.DB, options *types.ThreadQueryOptions) ([]types.Thread, error) {
 	query := `
-		SELECT DISTINCT t.guid, t.name, t.parent_thread, t.status, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
+		SELECT DISTINCT t.guid, t.name, t.parent_thread, t.status, t.type, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
 		FROM fray_threads t
 	`
 	var conditions []string
@@ -291,7 +301,7 @@ func IsMessageInThread(db *sql.DB, threadGUID, messageGUID string) (bool, error)
 
 func scanThread(scanner interface{ Scan(dest ...any) error }) (types.Thread, error) {
 	var row threadRow
-	if err := scanner.Scan(&row.GUID, &row.Name, &row.ParentThread, &row.Status, &row.CreatedAt, &row.AnchorMessageGUID, &row.AnchorHidden, &row.LastActivityAt); err != nil {
+	if err := scanner.Scan(&row.GUID, &row.Name, &row.ParentThread, &row.Status, &row.Type, &row.CreatedAt, &row.AnchorMessageGUID, &row.AnchorHidden, &row.LastActivityAt); err != nil {
 		return types.Thread{}, err
 	}
 	return row.toThread(), nil
@@ -317,6 +327,7 @@ type threadRow struct {
 	Name              string
 	ParentThread      sql.NullString
 	Status            sql.NullString
+	Type              sql.NullString
 	CreatedAt         int64
 	AnchorMessageGUID sql.NullString
 	AnchorHidden      sql.NullInt64
@@ -328,11 +339,16 @@ func (row threadRow) toThread() types.Thread {
 	if row.Status.Valid && row.Status.String != "" {
 		status = types.ThreadStatus(row.Status.String)
 	}
+	threadType := types.ThreadTypeStandard
+	if row.Type.Valid && row.Type.String != "" {
+		threadType = types.ThreadType(row.Type.String)
+	}
 	thread := types.Thread{
 		GUID:         row.GUID,
 		Name:         row.Name,
 		ParentThread: nullStringPtr(row.ParentThread),
 		Status:       status,
+		Type:         threadType,
 		CreatedAt:    row.CreatedAt,
 	}
 	if row.AnchorMessageGUID.Valid {
@@ -464,7 +480,7 @@ func IsThreadPinned(db *sql.DB, threadGUID string) (bool, error) {
 // GetPinnedThreads returns all pinned threads.
 func GetPinnedThreads(db *sql.DB) ([]types.Thread, error) {
 	rows, err := db.Query(`
-		SELECT t.guid, t.name, t.parent_thread, t.status, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
+		SELECT t.guid, t.name, t.parent_thread, t.status, t.type, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
 		FROM fray_threads t
 		INNER JOIN fray_thread_pins p ON p.thread_guid = t.guid
 		ORDER BY p.pinned_at ASC
@@ -519,7 +535,7 @@ func IsThreadMuted(db *sql.DB, threadGUID, agentID string) (bool, error) {
 func GetMutedThreads(db *sql.DB, agentID string) ([]types.Thread, error) {
 	now := time.Now().Unix()
 	rows, err := db.Query(`
-		SELECT t.guid, t.name, t.parent_thread, t.status, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
+		SELECT t.guid, t.name, t.parent_thread, t.status, t.type, t.created_at, t.anchor_message_guid, t.anchor_hidden, t.last_activity_at
 		FROM fray_threads t
 		INNER JOIN fray_thread_mutes m ON m.thread_guid = t.guid
 		WHERE m.agent_id = ?

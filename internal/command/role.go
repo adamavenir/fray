@@ -8,6 +8,7 @@ import (
 
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
+	"github.com/adamavenir/fray/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -106,6 +107,11 @@ func newRoleAddCmd() *cobra.Command {
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "@%s already holds %s\n", agentID, roleName)
 				return nil
+			}
+
+			// Ensure role thread hierarchy exists
+			if err := ensureRoleHierarchy(ctx, roleName); err != nil {
+				return writeCommandError(cmd, err)
 			}
 
 			// Add to DB
@@ -230,6 +236,11 @@ func newRolePlayCmd() *cobra.Command {
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "@%s already playing %s\n", agentID, roleName)
 				return nil
+			}
+
+			// Ensure role thread hierarchy exists
+			if err := ensureRoleHierarchy(ctx, roleName); err != nil {
+				return writeCommandError(cmd, err)
 			}
 
 			// Add to DB
@@ -358,4 +369,84 @@ func NewRolesCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// ensureRoleHierarchy creates the role thread hierarchy if it doesn't exist.
+// Creates: roles/{role}/ (knowledge), roles/{role}/meta (system), roles/{role}/keys (system)
+func ensureRoleHierarchy(ctx *CommandContext, roleName string) error {
+	roleThreadName := fmt.Sprintf("roles/%s", roleName)
+
+	// Check if role parent thread exists
+	roleThread, err := db.GetThreadByName(ctx.DB, roleThreadName, nil)
+	if err != nil {
+		return err
+	}
+
+	if roleThread == nil {
+		// Create role parent thread
+		roleThread, err = createKnowledgeThread(ctx, roleThreadName, nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Check and create meta subthread
+	metaThread, err := db.GetThreadByName(ctx.DB, "meta", &roleThread.GUID)
+	if err != nil {
+		return err
+	}
+	if metaThread == nil {
+		if _, err := createSystemThread(ctx, "meta", &roleThread.GUID); err != nil {
+			return err
+		}
+	}
+
+	// Check and create keys subthread
+	keysThread, err := db.GetThreadByName(ctx.DB, "keys", &roleThread.GUID)
+	if err != nil {
+		return err
+	}
+	if keysThread == nil {
+		if _, err := createSystemThread(ctx, "keys", &roleThread.GUID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// createKnowledgeThread creates a thread with type=knowledge.
+func createKnowledgeThread(ctx *CommandContext, name string, parent *string) (*types.Thread, error) {
+	thread, err := db.CreateThread(ctx.DB, types.Thread{
+		Name:         name,
+		ParentThread: parent,
+		Type:         types.ThreadTypeKnowledge,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.AppendThread(ctx.Project.DBPath, thread, nil); err != nil {
+		return nil, err
+	}
+
+	return &thread, nil
+}
+
+// createSystemThread creates a thread with type=system.
+func createSystemThread(ctx *CommandContext, name string, parent *string) (*types.Thread, error) {
+	thread, err := db.CreateThread(ctx.DB, types.Thread{
+		Name:         name,
+		ParentThread: parent,
+		Type:         types.ThreadTypeSystem,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.AppendThread(ctx.Project.DBPath, thread, nil); err != nil {
+		return nil, err
+	}
+
+	return &thread, nil
 }

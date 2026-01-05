@@ -75,6 +75,7 @@ type ThreadJSONLRecord struct {
 	ParentThread      *string  `json:"parent_thread,omitempty"`
 	Subscribed        []string `json:"subscribed,omitempty"`
 	Status            string   `json:"status"`
+	ThreadType        string   `json:"thread_type,omitempty"`
 	CreatedAt         int64    `json:"created_at"`
 	AnchorMessageGUID *string  `json:"anchor_message_guid,omitempty"`
 	AnchorHidden      bool     `json:"anchor_hidden,omitempty"`
@@ -87,6 +88,7 @@ type ThreadUpdateJSONLRecord struct {
 	GUID              string  `json:"guid"`
 	Name              *string `json:"name,omitempty"`
 	Status            *string `json:"status,omitempty"`
+	ThreadType        *string `json:"thread_type,omitempty"`
 	ParentThread      *string `json:"parent_thread,omitempty"`
 	AnchorMessageGUID *string `json:"anchor_message_guid,omitempty"`
 	AnchorHidden      *bool   `json:"anchor_hidden,omitempty"`

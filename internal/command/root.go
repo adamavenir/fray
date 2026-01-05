@@ -67,6 +67,15 @@ func NewRootCmd(version string) *cobra.Command {
 		NewPinCmd(),
 		NewUnpinCmd(),
 		NewMvCmd(),
+		NewFollowCmd(),
+		NewUnfollowCmd(),
+		NewMuteCmd(),
+		NewUnmuteCmd(),
+		NewAddCmd(),
+		NewRemoveCmd(),
+		NewArchiveCmd(),
+		NewRestoreCmd(),
+		NewAnchorCmd(),
 		NewWonderCmd(),
 		NewAskCmd(),
 		NewQuestionsCmd(),
@@ -75,6 +84,8 @@ func NewRootCmd(version string) *cobra.Command {
 		NewSurfaceCmd(),
 		NewNoteCmd(),
 		NewNotesCmd(),
+		NewKeyCmd(),
+		NewKeysCmd(),
 		NewMetaCmd(),
 		NewReactCmd(),
 		NewFaveCmd(),
@@ -112,7 +123,33 @@ func NewRootCmd(version string) *cobra.Command {
 
 func Execute() error {
 	os.Args = rewriteMentionArgs(os.Args)
+	os.Args = rewriteMessageIDArgs(os.Args)
 	return NewRootCmd(Version).Execute()
+}
+
+// rewriteMessageIDArgs rewrites "fray msg-xxx" to "fray get msg-xxx".
+func rewriteMessageIDArgs(args []string) []string {
+	if len(args) < 2 {
+		return args
+	}
+	idx := findFirstNonFlagArg(args[1:])
+	if idx == -1 {
+		return args
+	}
+	fullIdx := idx + 1
+	if fullIdx >= len(args) {
+		return args
+	}
+	arg := args[fullIdx]
+	// Check if it looks like a message ID (msg-xxxx or short prefix)
+	if strings.HasPrefix(arg, "msg-") {
+		updated := make([]string, 0, len(args)+1)
+		updated = append(updated, args[:fullIdx]...)
+		updated = append(updated, "get")
+		updated = append(updated, args[fullIdx:]...)
+		return updated
+	}
+	return args
 }
 
 func rewriteMentionArgs(args []string) []string {

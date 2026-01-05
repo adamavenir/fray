@@ -255,14 +255,24 @@ const (
 	ThreadStatusArchived ThreadStatus = "archived"
 )
 
+// ThreadType represents thread category.
+type ThreadType string
+
+const (
+	ThreadTypeStandard  ThreadType = "standard"  // normal user-created thread
+	ThreadTypeKnowledge ThreadType = "knowledge" // knowledge hierarchy (meta, role, agent)
+	ThreadTypeSystem    ThreadType = "system"    // system-managed (notes, keys, jrnl)
+)
+
 // Thread represents a container thread.
 type Thread struct {
 	GUID              string       `json:"guid"`
 	Name              string       `json:"name"`
 	ParentThread      *string      `json:"parent_thread,omitempty"`
 	Status            ThreadStatus `json:"status"`
+	Type              ThreadType   `json:"type,omitempty"`
 	CreatedAt         int64        `json:"created_at"`
-	CreatedBy         *string      `json:"created_by,omitempty"`   // agent_id or "human" who created thread
+	CreatedBy         *string      `json:"created_by,omitempty"`  // agent_id or "human" who created thread
 	OwnerAgent        *string      `json:"owner_agent,omitempty"` // agent who owns thread for daemon purposes (nil = human-only)
 	AnchorMessageGUID *string      `json:"anchor_message_guid,omitempty"`
 	AnchorHidden      bool         `json:"anchor_hidden,omitempty"`

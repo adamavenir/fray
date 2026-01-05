@@ -70,6 +70,26 @@ internal/types/   # Go types
 - **Moving**: Use `fray mv` to change a message's home (unlike `thread add` which only references)
 - **Activity tracking**: `last_activity_at` tracks when messages are added/moved
 
+**Thread Types**: Threads have a `type` field:
+- `standard` - normal user-created threads
+- `knowledge` - knowledge hierarchy threads (auto-created for agents/roles)
+- `system` - system-managed threads (notes, keys, jrnl)
+
+**Knowledge Hierarchy**: Agents and roles have dedicated thread hierarchies:
+```
+{agent}/                 # Agent's root thread (knowledge type)
+├── meta/                # Self-knowledge, identity (persistent)
+├── notes/               # Working notes (ephemeral)
+└── jrnl/                # Personal journal
+
+roles/{role}/            # Role's root thread (knowledge type)
+├── meta/                # Role-specific context
+└── keys/                # Atomic insights for the role
+```
+- Agent hierarchies auto-created on `fray new`
+- Role hierarchies auto-created on `fray role add/play`
+- Use `fray key` to record role insights, `fray keys` to view
+
 **Message types**: Messages have a `type` field: `'agent'`, `'user'`, `'event'`, or `'surface'`. Surfaced posts reference another message and emit backlink events; `home`, `references`, and `surface_message` track this.
 
 **Database**: Uses `modernc.org/sqlite` (pure Go). Tables are prefixed `fray_`. Primary keys are GUIDs (`guid TEXT PRIMARY KEY`).
@@ -200,58 +220,85 @@ fray here                      # Who's active (with claim counts)
 fray bye alice "message"       # Leave (auto-clears claims)
 fray whoami                    # Show your identity and nicknames
 
-# Messaging
-fray post --as alice "message" # Post (use @mentions)
-fray post --as alice -r <guid> # Reply to message
-fray post --as alice -q <guid> "..." # Quote message inline
-fray post --as alice --thread <ref> "message" # Post in thread
-fray post --as alice --answer <q> "message"   # Answer question
-fray get alice                 # Room + my @mentions
-fray @alice                    # Check mentions for alice
-fray reply <guid>              # View reply chain
-fray versions <guid>           # Show message edit history
-fray thread <ref>              # View thread messages
-fray thread <ref> --pinned     # View only pinned messages
-fray threads                   # List threads
-fray thread anchor <ref> <msg> # Set anchor message for thread
-fray thread anchor <ref> --hide # Hide anchor from parent
-fray pin <msg> [--thread <ref>]  # Pin message in thread
-fray unpin <msg> [--thread <ref>] # Unpin message from thread
-fray mv <msg...> <dest>        # Move messages to thread/room
-fray mv <msg> room             # Move message back to room
-fray wonder "..." --as alice   # Create unasked question
-fray ask "..." --to bob --as alice # Ask question
-fray questions                 # List questions
-fray question <id>             # View/close question
-fray surface <msg> "..." --as alice # Surface message with backlink
-fray note "..." --as alice     # Post to notes
-fray notes --as alice          # View notes thread
-fray meta "..." --as alice     # Post to meta
-fray meta                      # View meta
-fray history alice             # Show agent's message history
-fray between alice bob         # Messages between two agents
+# Messaging (path-based)
+fray post "message" --as alice         # Post to room
+fray post meta "message" --as alice    # Post to project meta
+fray post opus/notes "msg" --as alice  # Post to agent notes path
+fray post design-thread "msg" --as a   # Post to named thread
+fray post -r <guid> "reply" --as alice # Reply to message
+fray get                               # Room + notifs (uses FRAY_AGENT_ID)
+fray get --as opus                     # Room + notifs for agent
+fray get meta                          # View project meta
+fray get opus/notes                    # View agent notes path
+fray get design-thread                 # View thread by name
+fray get notifs --as opus              # Notifications only
+fray msg-abc123                        # View specific message (shorthand)
+fray @alice                            # Check mentions for alice
+
+# Thread operations (path-based)
+fray thread design-thread              # View or create thread
+fray thread opus/notes "Summary"       # Create nested thread with anchor
+fray threads                           # List threads
+fray follow design-thread --as alice   # Follow/subscribe to thread
+fray unfollow design-thread --as alice # Unfollow thread
+fray mute design-thread --as alice     # Mute thread notifications
+fray unmute design-thread --as alice   # Unmute thread
+fray add design-thread msg-abc         # Add message to thread
+fray remove design-thread msg-abc      # Remove from thread
+fray anchor design-thread msg-abc      # Set thread anchor
+fray archive design-thread             # Archive thread
+fray restore design-thread             # Restore archived thread
+fray pin <msg> [--thread <ref>]        # Pin message in thread
+fray unpin <msg> [--thread <ref>]      # Unpin message
+fray mv <msg...> <dest>                # Move messages to thread/room
+
+# Universal operations (by ID prefix)
+fray rm msg-abc123                     # Delete message
+fray rm thrd-xyz789                    # Delete (archive) thread
+fray fave msg-abc --as alice           # Fave message
+fray fave thrd-xyz --as alice          # Fave thread (also subscribes)
+
+# Questions
+fray wonder "..." --as alice           # Create unasked question
+fray ask "..." --to bob --as alice     # Ask question
+fray questions                         # List questions
+fray question <id>                     # View/close question
+fray post --answer <q> "answer" --as a # Answer question
+
+# Knowledge hierarchy
+fray note "..." --as alice             # Post to agent notes
+fray notes --as alice                  # View agent notes
+fray meta "..." --as alice             # Post to project meta
+fray meta                              # View project meta
+fray key "insight" --as alice --role r # Record role key insight
+fray keys                              # View all role keys
+fray keys --role architect             # View architect keys only
+
+# Legacy (still works)
+fray thread subscribe <ref> --as a     # Old subscribe syntax
+fray thread unsubscribe <ref> --as a   # Old unsubscribe syntax
+fray get alice                         # Agent-based room + mentions
 
 # Time-based queries
-fray get --since 1h            # Last hour
-fray get --since today         # Since midnight
-fray get --since #abc          # After specific message
-fray history alice --since 2d  # Last 2 days
+fray get --since 1h --as opus          # Last hour
+fray get --since today --as opus       # Since midnight
+fray get --since #abc --as opus        # After specific message
+fray history alice --since 2d          # Last 2 days
 
 # Channels
-fray ls                        # List registered channels
-fray chat <channel>            # Chat in specific channel
-fray --in <channel> ...        # Operate in another channel
+fray ls                                # List registered channels
+fray chat <channel>                    # Chat in specific channel
+fray --in <channel> ...                # Operate in another channel
 
 # Nicknames
-fray nick @alice --as helper   # Add nickname
-fray nicks @alice              # Show nicknames
+fray nick @alice --as helper           # Add nickname
+fray nicks @alice                      # Show nicknames
 
 # Faves (personal collections)
-fray fave <item> --as alice    # Fave thread or message (also subscribes to threads)
-fray unfave <item> --as alice  # Remove from faves (does NOT unsubscribe)
-fray faves --as alice          # List all faves
-fray faves --as alice --threads   # List only faved threads
-fray faves --as alice --messages  # List only faved messages
+fray fave <item> --as alice            # Fave thread or message
+fray unfave <item> --as alice          # Remove from faves
+fray faves --as alice                  # List all faves
+fray faves --as alice --threads        # List only faved threads
 
 # Claims (collision prevention)
 fray claim @alice --file path      # Claim a file

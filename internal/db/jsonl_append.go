@@ -246,6 +246,7 @@ func AppendThread(projectPath string, thread types.Thread, subscribed []string) 
 		ParentThread:      thread.ParentThread,
 		Subscribed:        subscribed,
 		Status:            string(thread.Status),
+		ThreadType:        string(thread.Type),
 		CreatedAt:         thread.CreatedAt,
 		AnchorMessageGUID: thread.AnchorMessageGUID,
 		AnchorHidden:      thread.AnchorHidden,

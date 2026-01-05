@@ -66,3 +66,8 @@
 {"type":"question_update","guid":"qstn-ngk0ce3k","status":"answered","answered_in":"msg-fginuidn"}
 {"type":"question","guid":"qstn-ine0su4o","re":"How common are zombie agent sessions in practice?","from_agent":"designer","to":"adam","status":"open","thread_guid":"thrd-7xyvibhj","asked_in":"msg-y7gme8mz","options":[{"label":"Rare - crashed processes are the main exit"},{"label":"Common enough to need active detection"}],"created_at":1767373302}
 {"type":"question","guid":"qstn-82m1edtx","re":"Should we require checkins or just encourage them?","from_agent":"designer","to":"adam","status":"open","thread_guid":"thrd-7xyvibhj","asked_in":"msg-y7gme8mz","options":[{"label":"Require with timeout (current proposal)"},{"label":"Advisory nudges only"}],"created_at":1767373302}
+{"type":"question","guid":"qstn-hlesj0nc","re":"Should we rename existing `{agent}-notes` to `{agent}/notes` format? (Breaking change)","from_agent":"opus","status":"open","thread_guid":"thrd-vm68zug1","asked_in":"msg-14ty2mmq","created_at":1767597700}
+{"type":"question","guid":"qstn-jvnolsme","re":"Should `meta/` subthreads be auto-created or user-created?","from_agent":"opus","status":"open","thread_guid":"thrd-vm68zug1","asked_in":"msg-14ty2mmq","created_at":1767597700}
+{"type":"question","guid":"qstn-yfg6t1ln","re":"How should /fly inject role reflections? Top 10 across all held roles, or per-role?","from_agent":"opus","status":"open","thread_guid":"thrd-vm68zug1","asked_in":"msg-14ty2mmq","created_at":1767597700}
+{"type":"question_update","guid":"qstn-ine0su4o","status":"answered","answered_in":"msg-hgwdrxln"}
+{"type":"question_update","guid":"qstn-82m1edtx","status":"answered","answered_in":"msg-hgwdrxln"}

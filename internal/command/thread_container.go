@@ -16,11 +16,20 @@ import (
 // NewThreadCmd creates the container thread command.
 func NewThreadCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "thread [ref]",
-		Short: "View or manage threads",
-		Args:  cobra.ArbitraryArgs,
+		Use:   "thread <path> [anchor]",
+		Short: "View or create threads",
+		Long: `View an existing thread or create a new one.
+
+If the thread exists, displays its messages.
+If the thread doesn't exist, creates it with optional anchor message.
+
+Examples:
+  fray thread design-thread                    # View existing thread
+  fray thread new-design "Project summary"     # Create with anchor
+  fray thread opus/notes                       # View or create path-based thread`,
+		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
+			if len(args) == 0 {
 				return cmd.Help()
 			}
 			ctx, err := GetContext(cmd)
@@ -29,9 +38,11 @@ func NewThreadCmd() *cobra.Command {
 			}
 			defer ctx.DB.Close()
 
+			// Try to resolve as existing thread first
 			thread, err := resolveThreadRef(ctx.DB, args[0])
 			if err != nil {
-				return writeCommandError(cmd, err)
+				// Thread doesn't exist - create it
+				return createThreadFromPath(cmd, ctx, args)
 			}
 
 			pinnedOnly, _ := cmd.Flags().GetBool("pinned")
@@ -163,24 +174,171 @@ func NewThreadCmd() *cobra.Command {
 	cmd.Flags().String("last", "", "show last N messages")
 	cmd.Flags().String("since", "", "show messages after time or GUID")
 	cmd.Flags().Bool("show-all", false, "disable accordion, show all messages fully")
+	cmd.Flags().String("as", "", "agent to attribute anchor message (for creation)")
+	cmd.Flags().String("subscribe", "", "comma-separated agent list to subscribe (for creation)")
 
 	cmd.AddCommand(
-		NewThreadNewCmd(),
-		NewThreadAddCmd(),
-		NewThreadRemoveCmd(),
-		NewThreadSubscribeCmd(),
-		NewThreadUnsubscribeCmd(),
-		NewThreadArchiveCmd(),
-		NewThreadRestoreCmd(),
 		NewThreadRenameCmd(),
-		NewThreadAnchorCmd(),
 		NewThreadPinCmd(),
 		NewThreadUnpinCmd(),
-		NewThreadMuteCmd(),
-		NewThreadUnmuteCmd(),
 	)
 
 	return cmd
+}
+
+// createThreadFromPath creates a thread from a path specification.
+// Supports paths like "design-thread" or "opus/notes" with optional anchor.
+func createThreadFromPath(cmd *cobra.Command, ctx *CommandContext, args []string) error {
+	pathArg := args[0]
+	var anchorText string
+	if len(args) > 1 {
+		anchorText = args[1]
+	}
+
+	asRef, _ := cmd.Flags().GetString("as")
+	subscribeList, _ := cmd.Flags().GetString("subscribe")
+
+	// Parse path to determine parent and thread name
+	var parentGUID *string
+	var name string
+
+	if strings.Contains(pathArg, "/") {
+		parts := strings.Split(pathArg, "/")
+		name = parts[len(parts)-1]
+
+		// Resolve parent path
+		parentPath := strings.Join(parts[:len(parts)-1], "/")
+		parent, err := resolveThreadRef(ctx.DB, parentPath)
+		if err != nil {
+			return writeCommandError(cmd, fmt.Errorf("parent thread not found: %s", parentPath))
+		}
+		parentGUID = &parent.GUID
+
+		// Check nesting depth
+		parentDepth, err := getThreadDepth(ctx.DB, parent)
+		if err != nil {
+			return writeCommandError(cmd, err)
+		}
+		if parentDepth >= MaxThreadNestingDepth {
+			return writeCommandError(cmd, fmt.Errorf("cannot create thread: maximum nesting depth (%d) exceeded", MaxThreadNestingDepth))
+		}
+	} else {
+		name = pathArg
+	}
+
+	name = strings.TrimSpace(name)
+	if err := validateThreadName(name); err != nil {
+		return writeCommandError(cmd, err)
+	}
+
+	// Check if thread already exists
+	existing, err := db.GetThreadByName(ctx.DB, name, parentGUID)
+	if err != nil {
+		return writeCommandError(cmd, err)
+	}
+	if existing != nil {
+		return writeCommandError(cmd, fmt.Errorf("thread already exists: %s", pathArg))
+	}
+
+	// Create the thread
+	thread, err := db.CreateThread(ctx.DB, types.Thread{
+		Name:         name,
+		ParentThread: parentGUID,
+		Status:       types.ThreadStatusOpen,
+	})
+	if err != nil {
+		return writeCommandError(cmd, err)
+	}
+
+	// Handle subscribers
+	subscribers := splitCommaList(subscribeList)
+	for i, subscriber := range subscribers {
+		subscribers[i] = ResolveAgentRef(subscriber, ctx.ProjectConfig)
+	}
+
+	if err := db.AppendThread(ctx.Project.DBPath, thread, subscribers); err != nil {
+		return writeCommandError(cmd, err)
+	}
+
+	now := time.Now().Unix()
+	for _, agentID := range subscribers {
+		if err := db.SubscribeThread(ctx.DB, thread.GUID, agentID, now); err != nil {
+			return writeCommandError(cmd, err)
+		}
+	}
+
+	// Create anchor message if provided
+	var anchorGUID string
+	if anchorText != "" {
+		agentID := "system"
+		if asRef != "" {
+			agentID, err = resolveAgentRef(ctx, asRef)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+		}
+
+		bases, err := db.GetAgentBases(ctx.DB)
+		if err != nil {
+			return writeCommandError(cmd, err)
+		}
+		mentions := core.ExtractMentions(anchorText, bases)
+		mentions = core.ExpandAllMention(mentions, bases)
+
+		newMsg := types.Message{
+			TS:        now,
+			Home:      thread.GUID,
+			FromAgent: agentID,
+			Body:      anchorText,
+			Mentions:  mentions,
+			Type:      types.MessageTypeAgent,
+		}
+
+		created, err := db.CreateMessage(ctx.DB, newMsg)
+		if err != nil {
+			return writeCommandError(cmd, err)
+		}
+
+		if err := db.AppendMessage(ctx.Project.DBPath, created); err != nil {
+			return writeCommandError(cmd, err)
+		}
+
+		anchorGUID = created.ID
+
+		// Set as anchor
+		_, err = db.UpdateThread(ctx.DB, thread.GUID, db.ThreadUpdates{
+			AnchorMessageGUID: types.OptionalString{Set: true, Value: &anchorGUID},
+			LastActivityAt:    types.OptionalInt64{Set: true, Value: &now},
+		})
+		if err != nil {
+			return writeCommandError(cmd, err)
+		}
+
+		if err := db.AppendThreadUpdate(ctx.Project.DBPath, db.ThreadUpdateJSONLRecord{
+			GUID:              thread.GUID,
+			AnchorMessageGUID: &anchorGUID,
+			LastActivityAt:    &now,
+		}); err != nil {
+			return writeCommandError(cmd, err)
+		}
+	}
+
+	if ctx.JSONMode {
+		payload := map[string]any{
+			"thread":     thread,
+			"subscribed": subscribers,
+			"anchor":     anchorGUID,
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
+	}
+
+	path, _ := buildThreadPath(ctx.DB, &thread)
+	if anchorText != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Created thread %s (%s) with anchor\n", path, thread.GUID)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "Created thread %s (%s)\n", path, thread.GUID)
+	}
+	return nil
 }
 
 // NewThreadsCmd creates the threads list command.

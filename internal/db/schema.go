@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS fray_threads (
   name TEXT NOT NULL,
   parent_thread TEXT,
   status TEXT DEFAULT 'open',
+  type TEXT DEFAULT 'standard',
   created_at INTEGER NOT NULL,
   anchor_message_guid TEXT,
   anchor_hidden INTEGER NOT NULL DEFAULT 0,
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS fray_threads (
 CREATE INDEX IF NOT EXISTS idx_fray_threads_parent ON fray_threads(parent_thread);
 CREATE INDEX IF NOT EXISTS idx_fray_threads_status ON fray_threads(status);
 CREATE INDEX IF NOT EXISTS idx_fray_threads_activity ON fray_threads(last_activity_at);
+CREATE INDEX IF NOT EXISTS idx_fray_threads_type ON fray_threads(type);
 
 -- Thread subscriptions
 CREATE TABLE IF NOT EXISTS fray_thread_subscriptions (
@@ -767,6 +769,11 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(threadColumns, "last_activity_at") {
 			if _, err := db.Exec("ALTER TABLE fray_threads ADD COLUMN last_activity_at INTEGER"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(threadColumns, "type") {
+			if _, err := db.Exec("ALTER TABLE fray_threads ADD COLUMN type TEXT DEFAULT 'standard'"); err != nil {
 				return err
 			}
 		}

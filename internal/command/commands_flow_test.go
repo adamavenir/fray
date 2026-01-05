@@ -245,8 +245,8 @@ func TestThreadCommandFlow(t *testing.T) {
 	}
 
 	cmd = NewRootCmd("test")
-	if _, err := executeCommand(cmd, "thread", "new", "analysis"); err != nil {
-		t.Fatalf("thread new: %v", err)
+	if _, err := executeCommand(cmd, "thread", "analysis"); err != nil {
+		t.Fatalf("thread create: %v", err)
 	}
 
 	cmd = NewRootCmd("test")
@@ -259,13 +259,13 @@ func TestThreadCommandFlow(t *testing.T) {
 	_ = dbConn.Close()
 
 	cmd = NewRootCmd("test")
-	if _, err := executeCommand(cmd, "thread", "add", "analysis", roomMsgID, "--as", "alice"); err != nil {
-		t.Fatalf("thread add: %v", err)
+	if _, err := executeCommand(cmd, "add", "analysis", roomMsgID, "--as", "alice"); err != nil {
+		t.Fatalf("add: %v", err)
 	}
 
 	cmd = NewRootCmd("test")
-	if _, err := executeCommand(cmd, "thread", "subscribe", "analysis", "--agent", "alice"); err != nil {
-		t.Fatalf("thread subscribe: %v", err)
+	if _, err := executeCommand(cmd, "follow", "analysis", "--as", "alice"); err != nil {
+		t.Fatalf("follow: %v", err)
 	}
 
 	dbConn = openProjectDB(t, projectDir)
@@ -283,7 +283,14 @@ func TestThreadCommandFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get subscribed threads: %v", err)
 	}
-	if len(threads) != 1 || threads[0].GUID != thread.GUID {
+	found := false
+	for _, t := range threads {
+		if t.GUID == thread.GUID {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Fatalf("expected subscription to analysis thread")
 	}
 
@@ -323,8 +330,8 @@ func TestCrossThreadReplyAutoAdd(t *testing.T) {
 	}
 
 	cmd = NewRootCmd("test")
-	if _, err := executeCommand(cmd, "thread", "new", "analysis"); err != nil {
-		t.Fatalf("thread new: %v", err)
+	if _, err := executeCommand(cmd, "thread", "analysis"); err != nil {
+		t.Fatalf("thread create: %v", err)
 	}
 
 	cmd = NewRootCmd("test")

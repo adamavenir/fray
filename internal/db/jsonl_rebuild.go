@@ -386,13 +386,17 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	if len(threads) > 0 {
 		insertThread := `
 			INSERT OR REPLACE INTO fray_threads (
-				guid, name, parent_thread, status, created_at, anchor_message_guid, anchor_hidden, last_activity_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`
 		for _, thread := range threads {
 			status := thread.Status
 			if status == "" {
 				status = string(types.ThreadStatusOpen)
+			}
+			threadType := thread.ThreadType
+			if threadType == "" {
+				threadType = string(types.ThreadTypeStandard)
 			}
 			anchorHidden := 0
 			if thread.AnchorHidden {
@@ -403,6 +407,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 				thread.Name,
 				thread.ParentThread,
 				status,
+				threadType,
 				thread.CreatedAt,
 				thread.AnchorMessageGUID,
 				anchorHidden,
