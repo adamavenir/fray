@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
+- Roles: `fray role add/drop/play/stop <agent> <role>` for persistent and session-scoped role assignment; `fray roles` lists all; `fray here` shows roles; `fray bye` clears session roles
 - Faves: `fray fave/unfave <item>` for personal collections; faving threads auto-subscribes; `fray faves` to list with `--threads`/`--messages` filters
 - Quote messages: `fray post --quote/-q <guid>` embeds quoted content inline with `>` prefix and source attribution
 - Multi-react support: same agent can react multiple times (each session); display shows `👍x3` for multiple, `👍 alice` for single
