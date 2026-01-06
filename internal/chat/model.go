@@ -509,12 +509,14 @@ func (m *Model) renderInput() string {
 }
 
 func (m *Model) statusLine() string {
-	channel := m.channelLabel()
-	right := "? for help"
-	threadLabel := m.currentThreadLabel()
-	left := fmt.Sprintf("#%s · %s", channel, threadLabel)
+	right := ""
+	if m.input.Value() == "" {
+		right = "? for help"
+	}
+	breadcrumb := m.breadcrumb()
+	left := breadcrumb
 	if m.status != "" {
-		left = fmt.Sprintf("%s · #%s · %s", m.status, channel, threadLabel)
+		left = fmt.Sprintf("%s · %s", m.status, breadcrumb)
 	}
 	return alignStatusLine(left, right, m.mainWidth())
 }
@@ -835,6 +837,23 @@ func (m *Model) currentThreadLabel() string {
 		return m.currentThread.GUID
 	}
 	return path
+}
+
+func (m *Model) breadcrumb() string {
+	channel := m.channelLabel()
+	if m.currentPseudo != "" {
+		return channel + " ❯ " + string(m.currentPseudo)
+	}
+	if m.currentThread == nil {
+		return channel + " ❯ main"
+	}
+	path, err := threadPath(m.db, m.currentThread)
+	if err != nil || path == "" {
+		return channel + " ❯ " + m.currentThread.GUID
+	}
+	// Convert slash-separated path to breadcrumb with ❯
+	parts := strings.Split(path, "/")
+	return channel + " ❯ " + strings.Join(parts, " ❯ ")
 }
 
 func (m *Model) refreshReactions() error {

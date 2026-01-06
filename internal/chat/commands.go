@@ -53,61 +53,42 @@ func (m *Model) runSlashCommand(input string) (tea.Cmd, error) {
 	case "/n":
 		// Set nickname for selected thread
 		return m.setThreadNickname(fields[1:])
-	case "/f":
-		// Toggle fave for selected thread (if thread panel focused)
-		if m.threadPanelFocus {
-			m.toggleFaveSelectedThread()
-			return nil, nil
-		}
-		return nil, fmt.Errorf("/f only works when thread panel is focused (press Tab)")
-	case "/M":
-		// Mute/unmute selected thread
-		return m.toggleMuteThread()
+	case "/f", "/fave":
+		// Fave current thread (or selected thread if panel focused)
+		return m.runFaveCommand(fields[1:])
+	case "/unfave":
+		// Unfave current thread (or explicit target)
+		return m.runUnfaveCommand(fields[1:])
+	case "/M", "/mute":
+		// Mute current thread (or selected if panel focused)
+		return m.runMuteCommand(fields[1:])
+	case "/unmute":
+		// Unmute current thread (or explicit target)
+		return m.runUnmuteCommand(fields[1:])
+	case "/follow":
+		// Follow/subscribe to current thread
+		return m.runFollowCommand(fields[1:])
+	case "/unfollow":
+		// Unfollow current thread
+		return m.runUnfollowCommand(fields[1:])
+	case "/archive":
+		// Archive current thread (or explicit target)
+		return m.runArchiveCommand(fields[1:])
+	case "/restore":
+		// Restore archived thread
+		return m.runRestoreCommand(fields[1:])
+	case "/rename":
+		// Rename current thread
+		return m.runRenameCommand(fields[1:])
 	case "/edit":
 		return nil, m.runEditCommand(input)
 	case "/delete", "/rm":
 		return nil, m.runDeleteCommand(input)
 	case "/prune":
-		return nil, m.runPruneCommand(fields[1:])
+		return nil, fmt.Errorf("/prune is disabled (see fray-jqxf)")
 	}
 
 	return nil, fmt.Errorf("unknown command: %s", fields[0])
-}
-
-func (m *Model) toggleMuteThread() (tea.Cmd, error) {
-	if !m.threadPanelFocus {
-		return nil, fmt.Errorf("/M only works when thread panel is focused (press Tab)")
-	}
-	entries := m.threadEntries()
-	if m.threadIndex < 0 || m.threadIndex >= len(entries) {
-		return nil, fmt.Errorf("no thread selected")
-	}
-	entry := entries[m.threadIndex]
-	if entry.Kind != threadEntryThread || entry.Thread == nil {
-		return nil, fmt.Errorf("selected item is not a thread")
-	}
-
-	guid := entry.Thread.GUID
-	isMuted := m.mutedThreads[guid]
-
-	if isMuted {
-		// Unmute by deleting from mutes table
-		if err := db.UnmuteThread(m.db, guid, m.username); err != nil {
-			return nil, fmt.Errorf("failed to unmute: %w", err)
-		}
-		m.status = fmt.Sprintf("Unmuted %s", entry.Thread.Name)
-	} else {
-		// Mute
-		if err := db.MuteThread(m.db, guid, m.username, 0, nil); err != nil {
-			return nil, fmt.Errorf("failed to mute: %w", err)
-		}
-		m.status = fmt.Sprintf("Muted %s", entry.Thread.Name)
-	}
-
-	m.refreshMutedThreads()
-	m.input.SetValue("")
-	m.input.CursorEnd()
-	return nil, nil
 }
 
 func (m *Model) setThreadNickname(args []string) (tea.Cmd, error) {
@@ -181,28 +162,37 @@ func buildHelpText() string {
 		formatHelpRow(
 			helpItemStyle+"Ctrl-C"+helpResetStyle+" - clear text",
 			helpItemStyle+"Up"+helpResetStyle+" - edit last",
-			helpItemStyle+"Tab"+helpResetStyle+" - thread/channel list",
+			helpItemStyle+"Tab"+helpResetStyle+" - thread panel",
 			25,
 			22,
 		),
 		"",
-		helpLabelStyle + "Commands" + helpResetStyle,
+		helpLabelStyle + "Thread Commands" + helpResetStyle + " (operate on current thread)",
+		formatHelpRow(
+			helpItemStyle+"/fave /unfave"+helpResetStyle,
+			helpItemStyle+"/follow /unfollow"+helpResetStyle,
+			helpItemStyle+"/mute /unmute"+helpResetStyle,
+			18,
+			22,
+		),
+		formatHelpRow(
+			helpItemStyle+"/archive /restore"+helpResetStyle,
+			helpItemStyle+"/rename <name>"+helpResetStyle,
+			helpItemStyle+"/n <nick>"+helpResetStyle,
+			18,
+			22,
+		),
+		"",
+		helpLabelStyle + "Message Commands" + helpResetStyle,
 		formatHelpRow(
 			helpItemStyle+"/edit <id> <text> -m <reason>"+helpResetStyle,
 			helpItemStyle+"/delete <id>"+helpResetStyle,
-			helpItemStyle+"/prune [--keep N]"+helpResetStyle,
-			25,
-			22,
-		),
-		formatHelpRow(
-			helpItemStyle+"/help"+helpResetStyle,
-			helpItemStyle+"/quit"+helpResetStyle,
 			"",
-			25,
+			35,
 			22,
 		),
 		"",
-		helpItemStyle + "Click" + helpResetStyle + " a message to start a threaded reply. " +
+		helpItemStyle + "Click" + helpResetStyle + " a message to reply. " +
 			helpItemStyle + "Double-click" + helpResetStyle + " to copy.",
 	}
 	return strings.Join(lines, "\n")
@@ -637,4 +627,328 @@ func parseNonNegativeInt(value string) (int, error) {
 		return 0, fmt.Errorf("invalid value: %s", value)
 	}
 	return parsed, nil
+}
+
+// getTargetThread returns the thread to operate on: either from explicit arg or current thread.
+func (m *Model) getTargetThread(args []string) (*types.Thread, error) {
+	if len(args) > 0 {
+		thread, err := m.resolveThreadRef(args[0])
+		if err != nil {
+			return nil, err
+		}
+		return thread, nil
+	}
+	if m.currentThread == nil {
+		return nil, fmt.Errorf("no thread selected (use main to navigate, or specify thread)")
+	}
+	return m.currentThread, nil
+}
+
+// resolveThreadRef finds a thread by GUID, prefix, or name.
+func (m *Model) resolveThreadRef(ref string) (*types.Thread, error) {
+	value := strings.TrimSpace(strings.TrimPrefix(ref, "#"))
+	if value == "" {
+		return nil, fmt.Errorf("thread reference is required")
+	}
+
+	// Try exact GUID match
+	thread, err := db.GetThread(m.db, value)
+	if err != nil {
+		return nil, err
+	}
+	if thread != nil {
+		return thread, nil
+	}
+
+	// Try prefix match
+	thread, err = db.GetThreadByPrefix(m.db, value)
+	if err != nil {
+		return nil, err
+	}
+	if thread != nil {
+		return thread, nil
+	}
+
+	// Try name match
+	thread, err = db.GetThreadByName(m.db, value, nil)
+	if err != nil {
+		return nil, err
+	}
+	if thread != nil {
+		return thread, nil
+	}
+
+	return nil, fmt.Errorf("thread not found: %s", ref)
+}
+
+func (m *Model) runFaveCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if m.favedThreads[thread.GUID] {
+		m.status = fmt.Sprintf("%s is already faved", thread.Name)
+		return nil, nil
+	}
+
+	favedAt, err := db.AddFave(m.db, m.username, "thread", thread.GUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fave: %w", err)
+	}
+	if err := db.AppendAgentFave(m.projectDBPath, m.username, "thread", thread.GUID, favedAt); err != nil {
+		return nil, fmt.Errorf("failed to persist fave: %w", err)
+	}
+
+	// Also subscribe to the thread (faving implies following)
+	now := time.Now().Unix()
+	if !m.subscribedThreads[thread.GUID] {
+		if err := db.SubscribeThread(m.db, thread.GUID, m.username, now); err == nil {
+			_ = db.AppendThreadSubscribe(m.projectDBPath, db.ThreadSubscribeJSONLRecord{
+				ThreadGUID:   thread.GUID,
+				AgentID:      m.username,
+				SubscribedAt: now,
+			})
+			m.refreshSubscribedThreads()
+		}
+	}
+
+	m.refreshFavedThreads()
+	m.status = fmt.Sprintf("Faved %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runUnfaveCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !m.favedThreads[thread.GUID] {
+		m.status = fmt.Sprintf("%s is not faved", thread.Name)
+		return nil, nil
+	}
+
+	if err := db.RemoveFave(m.db, m.username, "thread", thread.GUID); err != nil {
+		return nil, fmt.Errorf("failed to unfave: %w", err)
+	}
+	if err := db.AppendAgentUnfave(m.projectDBPath, m.username, "thread", thread.GUID, time.Now().Unix()); err != nil {
+		return nil, fmt.Errorf("failed to persist unfave: %w", err)
+	}
+
+	m.refreshFavedThreads()
+	m.status = fmt.Sprintf("Unfaved %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runMuteCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if m.mutedThreads[thread.GUID] {
+		m.status = fmt.Sprintf("%s is already muted", thread.Name)
+		return nil, nil
+	}
+
+	if err := db.MuteThread(m.db, thread.GUID, m.username, 0, nil); err != nil {
+		return nil, fmt.Errorf("failed to mute: %w", err)
+	}
+
+	m.refreshMutedThreads()
+	m.status = fmt.Sprintf("Muted %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runUnmuteCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !m.mutedThreads[thread.GUID] {
+		m.status = fmt.Sprintf("%s is not muted", thread.Name)
+		return nil, nil
+	}
+
+	if err := db.UnmuteThread(m.db, thread.GUID, m.username); err != nil {
+		return nil, fmt.Errorf("failed to unmute: %w", err)
+	}
+
+	m.refreshMutedThreads()
+	m.status = fmt.Sprintf("Unmuted %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runFollowCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if m.subscribedThreads[thread.GUID] {
+		m.status = fmt.Sprintf("Already following %s", thread.Name)
+		return nil, nil
+	}
+
+	now := time.Now().Unix()
+	if err := db.SubscribeThread(m.db, thread.GUID, m.username, now); err != nil {
+		return nil, fmt.Errorf("failed to follow: %w", err)
+	}
+	if err := db.AppendThreadSubscribe(m.projectDBPath, db.ThreadSubscribeJSONLRecord{
+		ThreadGUID:   thread.GUID,
+		AgentID:      m.username,
+		SubscribedAt: now,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to persist follow: %w", err)
+	}
+
+	m.refreshSubscribedThreads()
+	m.status = fmt.Sprintf("Following %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runUnfollowCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if !m.subscribedThreads[thread.GUID] {
+		m.status = fmt.Sprintf("Not following %s", thread.Name)
+		return nil, nil
+	}
+
+	if err := db.UnsubscribeThread(m.db, thread.GUID, m.username); err != nil {
+		return nil, fmt.Errorf("failed to unfollow: %w", err)
+	}
+	if err := db.AppendThreadUnsubscribe(m.projectDBPath, db.ThreadUnsubscribeJSONLRecord{
+		ThreadGUID:     thread.GUID,
+		AgentID:        m.username,
+		UnsubscribedAt: time.Now().Unix(),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to persist unfollow: %w", err)
+	}
+
+	m.refreshSubscribedThreads()
+	m.status = fmt.Sprintf("Unfollowed %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runArchiveCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if thread.Status == types.ThreadStatusArchived {
+		m.status = fmt.Sprintf("%s is already archived", thread.Name)
+		return nil, nil
+	}
+
+	statusValue := string(types.ThreadStatusArchived)
+	_, err = db.UpdateThread(m.db, thread.GUID, db.ThreadUpdates{
+		Status: types.OptionalString{Set: true, Value: &statusValue},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to archive: %w", err)
+	}
+	if err := db.AppendThreadUpdate(m.projectDBPath, db.ThreadUpdateJSONLRecord{
+		GUID:   thread.GUID,
+		Status: &statusValue,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to persist archive: %w", err)
+	}
+
+	// If archived current thread, navigate away
+	if m.currentThread != nil && m.currentThread.GUID == thread.GUID {
+		m.currentThread = nil
+		m.threadMessages = nil
+		m.refreshViewport(true)
+	}
+
+	m.status = fmt.Sprintf("Archived %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runRestoreCommand(args []string) (tea.Cmd, error) {
+	thread, err := m.getTargetThread(args)
+	if err != nil {
+		return nil, err
+	}
+
+	if thread.Status != types.ThreadStatusArchived {
+		m.status = fmt.Sprintf("%s is not archived", thread.Name)
+		return nil, nil
+	}
+
+	statusValue := string(types.ThreadStatusOpen)
+	_, err = db.UpdateThread(m.db, thread.GUID, db.ThreadUpdates{
+		Status: types.OptionalString{Set: true, Value: &statusValue},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to restore: %w", err)
+	}
+	if err := db.AppendThreadUpdate(m.projectDBPath, db.ThreadUpdateJSONLRecord{
+		GUID:   thread.GUID,
+		Status: &statusValue,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to persist restore: %w", err)
+	}
+
+	m.status = fmt.Sprintf("Restored %s", thread.Name)
+	m.input.SetValue("")
+	return nil, nil
+}
+
+func (m *Model) runRenameCommand(args []string) (tea.Cmd, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("usage: /rename <new-name>")
+	}
+
+	if m.currentThread == nil {
+		return nil, fmt.Errorf("no thread selected (navigate to a thread first)")
+	}
+
+	newName := strings.Join(args, " ")
+
+	// Check for duplicate name
+	var parentGUID *string
+	if m.currentThread.ParentThread != nil {
+		parentGUID = m.currentThread.ParentThread
+	}
+	existing, err := db.GetThreadByName(m.db, newName, parentGUID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.GUID != m.currentThread.GUID {
+		return nil, fmt.Errorf("thread already exists: %s", newName)
+	}
+
+	_, err = db.UpdateThread(m.db, m.currentThread.GUID, db.ThreadUpdates{
+		Name: types.OptionalString{Set: true, Value: &newName},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to rename: %w", err)
+	}
+	if err := db.AppendThreadUpdate(m.projectDBPath, db.ThreadUpdateJSONLRecord{
+		GUID: m.currentThread.GUID,
+		Name: &newName,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to persist rename: %w", err)
+	}
+
+	oldName := m.currentThread.Name
+	m.currentThread.Name = newName
+	m.status = fmt.Sprintf("Renamed %s to %s", oldName, newName)
+	m.input.SetValue("")
+	return nil, nil
 }
