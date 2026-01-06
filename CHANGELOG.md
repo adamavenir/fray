@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0 (unreleased)]
 
 ### Fixed
+- Chat: sidebar click targets no longer misaligned after scrolling or window switching
+- Chat: sidebar now shows only root threads (children via drill-in)
+- Chat: re-clicking selected thread drills into it (same as 'l' key)
+- Chat: clicking header when drilled in navigates back up
+- Chat: drilling into agent from meta auto-selects notes
+- Chat: agent avatars display in meta/ thread listings
+- Chat: meta thread always appears first in thread list
+- JSONL: agent_update records now apply Avatar field
+- `fray migrate`: test updated for new "already migrated" message
 - Rebuild: threads now topologically sorted before insert (fixes FK constraint errors from reparented threads)
 - `fray migrate`: automatically detects and fixes legacy thread naming patterns (`{agent}-notes` → `{agent}/notes`)
 - Database queries: explicit column ordering prevents scan errors after schema migrations
