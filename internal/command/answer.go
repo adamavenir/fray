@@ -157,13 +157,25 @@ func runInteractiveAnswer(ctx *CommandContext, agentRef string) error {
 	}
 
 	// Get open questions addressed to this identity
-	questions, err := db.GetQuestions(ctx.DB, &types.QuestionQueryOptions{
+	targetedQuestions, err := db.GetQuestions(ctx.DB, &types.QuestionQueryOptions{
 		Statuses: []types.QuestionStatus{types.QuestionStatusOpen},
 		ToAgent:  &identity,
 	})
 	if err != nil {
 		return err
 	}
+
+	// Also get open questions with no target (anyone can answer)
+	untargetedQuestions, err := db.GetQuestions(ctx.DB, &types.QuestionQueryOptions{
+		Statuses:     []types.QuestionStatus{types.QuestionStatusOpen},
+		NoTargetOnly: true,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Combine: targeted first, then untargeted
+	questions := append(targetedQuestions, untargetedQuestions...)
 
 	if len(questions) == 0 {
 		fmt.Printf("No open questions for @%s\n", identity)

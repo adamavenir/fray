@@ -372,31 +372,27 @@ func NewRolesCmd() *cobra.Command {
 }
 
 // ensureRoleHierarchy creates the role thread hierarchy if it doesn't exist.
-// Creates: roles/{role}/ (knowledge), roles/{role}/meta (system), roles/{role}/keys (system)
+// Creates: meta/role-{role}/ (knowledge), meta/role-{role}/keys (system)
 func ensureRoleHierarchy(ctx *CommandContext, roleName string) error {
-	roleThreadName := fmt.Sprintf("roles/%s", roleName)
+	// First ensure meta/ root thread exists
+	metaThread, err := ensureMetaThread(ctx)
+	if err != nil {
+		return err
+	}
 
-	// Check if role parent thread exists
-	roleThread, err := db.GetThreadByName(ctx.DB, roleThreadName, nil)
+	// Role thread uses role-{name} format under meta/
+	roleThreadName := fmt.Sprintf("role-%s", roleName)
+
+	// Check if role thread exists under meta/
+	roleThread, err := db.GetThreadByName(ctx.DB, roleThreadName, &metaThread.GUID)
 	if err != nil {
 		return err
 	}
 
 	if roleThread == nil {
-		// Create role parent thread
-		roleThread, err = createKnowledgeThread(ctx, roleThreadName, nil)
+		// Create role thread as child of meta/
+		roleThread, err = createKnowledgeThread(ctx, roleThreadName, &metaThread.GUID)
 		if err != nil {
-			return err
-		}
-	}
-
-	// Check and create meta subthread
-	metaThread, err := db.GetThreadByName(ctx.DB, "meta", &roleThread.GUID)
-	if err != nil {
-		return err
-	}
-	if metaThread == nil {
-		if _, err := createSystemThread(ctx, "meta", &roleThread.GUID); err != nil {
 			return err
 		}
 	}

@@ -13,6 +13,7 @@ import (
 type AgentUpdates struct {
 	Status   types.OptionalString
 	Purpose  types.OptionalString
+	Avatar   types.OptionalString
 	LastSeen types.OptionalInt64
 	LeftAt   types.OptionalInt64
 }
@@ -20,7 +21,7 @@ type AgentUpdates struct {
 // GetAgent returns an agent by exact ID.
 func GetAgent(db *sql.DB, agentID string) (*types.Agent, error) {
 	row := db.QueryRow(`
-		SELECT guid, agent_id, status, purpose, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
 		FROM fray_agents
 		WHERE agent_id = ?
 	`, agentID)
@@ -38,7 +39,7 @@ func GetAgent(db *sql.DB, agentID string) (*types.Agent, error) {
 // GetAgentsByPrefix returns agents matching a prefix.
 func GetAgentsByPrefix(db *sql.DB, prefix string) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
 		FROM fray_agents
 		WHERE agent_id = ? OR agent_id LIKE ?
 		ORDER BY agent_id
@@ -65,7 +66,7 @@ func GetAgentsByPrefix(db *sql.DB, prefix string) ([]types.Agent, error) {
 // GetAgents returns all agents.
 func GetAgents(db *sql.DB) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
 		FROM fray_agents
 		ORDER BY agent_id
 	`)
@@ -120,9 +121,9 @@ func CreateAgent(db *sql.DB, agent types.Agent) error {
 	}
 
 	_, err := db.Exec(`
-		INSERT INTO fray_agents (guid, agent_id, status, purpose, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, guid, agent.AgentID, agent.Status, agent.Purpose, agent.RegisteredAt, agent.LastSeen, agent.LeftAt, managed, invokeJSON, presence, agent.MentionWatermark, agent.LastHeartbeat)
+		INSERT INTO fray_agents (guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, guid, agent.AgentID, agent.Status, agent.Purpose, agent.Avatar, agent.RegisteredAt, agent.LastSeen, agent.LeftAt, managed, invokeJSON, presence, agent.MentionWatermark, agent.LastHeartbeat)
 	return err
 }
 
@@ -163,6 +164,10 @@ func UpdateAgent(db *sql.DB, agentID string, updates AgentUpdates) error {
 		fields = append(fields, "purpose = ?")
 		args = append(args, nullableValue(updates.Purpose.Value))
 	}
+	if updates.Avatar.Set {
+		fields = append(fields, "avatar = ?")
+		args = append(args, nullableValue(updates.Avatar.Value))
+	}
 	if updates.LastSeen.Set {
 		fields = append(fields, "last_seen = ?")
 		args = append(args, nullableValue(updates.LastSeen.Value))
@@ -185,7 +190,7 @@ func UpdateAgent(db *sql.DB, agentID string, updates AgentUpdates) error {
 // GetActiveAgents returns non-stale agents.
 func GetActiveAgents(db *sql.DB, staleHours int) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
 		FROM fray_agents
 		WHERE left_at IS NULL
 		  AND last_seen > (strftime('%s', 'now') - ? * 3600)
@@ -213,7 +218,7 @@ func GetActiveAgents(db *sql.DB, staleHours int) ([]types.Agent, error) {
 // GetAllAgents returns all agents.
 func GetAllAgents(db *sql.DB) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, last_session_id
 		FROM fray_agents
 		ORDER BY agent_id
 	`)
@@ -557,7 +562,7 @@ func NextVersion(db *sql.DB, base string) (int, error) {
 
 func scanAgent(scanner interface{ Scan(dest ...any) error }) (types.Agent, error) {
 	var row agentRow
-	if err := scanner.Scan(&row.GUID, &row.AgentID, &row.Status, &row.Purpose, &row.RegisteredAt, &row.LastSeen, &row.LeftAt, &row.Managed, &row.Invoke, &row.Presence, &row.MentionWatermark, &row.LastHeartbeat, &row.LastSessionID); err != nil {
+	if err := scanner.Scan(&row.GUID, &row.AgentID, &row.Status, &row.Purpose, &row.Avatar, &row.RegisteredAt, &row.LastSeen, &row.LeftAt, &row.Managed, &row.Invoke, &row.Presence, &row.MentionWatermark, &row.LastHeartbeat, &row.LastSessionID); err != nil {
 		return types.Agent{}, err
 	}
 	return row.toAgent(), nil
@@ -568,6 +573,7 @@ type agentRow struct {
 	AgentID          string
 	Status           sql.NullString
 	Purpose          sql.NullString
+	Avatar           sql.NullString
 	RegisteredAt     int64
 	LastSeen         int64
 	LeftAt           sql.NullInt64
@@ -585,6 +591,7 @@ func (row agentRow) toAgent() types.Agent {
 		AgentID:          row.AgentID,
 		Status:           nullStringPtr(row.Status),
 		Purpose:          nullStringPtr(row.Purpose),
+		Avatar:           nullStringPtr(row.Avatar),
 		RegisteredAt:     row.RegisteredAt,
 		LastSeen:         row.LastSeen,
 		LeftAt:           nullIntPtr(row.LeftAt),

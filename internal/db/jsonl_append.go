@@ -118,6 +118,7 @@ func AppendAgent(projectPath string, agent types.Agent) error {
 		AgentID:          agent.AgentID,
 		Status:           agent.Status,
 		Purpose:          agent.Purpose,
+		Avatar:           agent.Avatar,
 		RegisteredAt:     agent.RegisteredAt,
 		LastSeen:         agent.LastSeen,
 		LeftAt:           agent.LeftAt,

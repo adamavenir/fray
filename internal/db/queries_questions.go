@@ -188,6 +188,9 @@ func GetQuestions(db *sql.DB, opts *types.QuestionQueryOptions) ([]types.Questio
 			conditions = append(conditions, "asked_in = ?")
 			args = append(args, *opts.AskedIn)
 		}
+		if opts.NoTargetOnly {
+			conditions = append(conditions, "(to_agent IS NULL OR to_agent = '')")
+		}
 	}
 
 	if len(conditions) > 0 {

@@ -107,6 +107,7 @@ type Model struct {
 	mutedThreads           map[string]bool   // muted threads for current user
 	viewingMutedCollection bool              // true when drilled into muted collection view
 	threadNicknames        map[string]string // thread nicknames for current user
+	avatarMap              map[string]string // agent_id -> avatar character
 	drillPath              []string          // current drill path (thread GUIDs from root to current)
 	threadScrollOffset  int               // scroll offset for virtual scrolling in thread panel
 	zoneManager         *zone.Manager     // bubblezone manager for click tracking
@@ -218,6 +219,7 @@ func NewModel(opts Options) (*Model, error) {
 		subscribedThreads:  make(map[string]bool),
 		mutedThreads:       make(map[string]bool),
 		threadNicknames:    make(map[string]string),
+		avatarMap:          make(map[string]string),
 		zoneManager:        zone.New(),
 		channels:        channels,
 		channelIndex:    channelIndex,
@@ -229,6 +231,7 @@ func NewModel(opts Options) (*Model, error) {
 	model.refreshSubscribedThreads()
 	model.refreshMutedThreads()
 	model.refreshThreadNicknames()
+	model.refreshAvatars()
 	model.calculateThreadPanelWidth() // Calculate initial width since panel starts open
 	return model, nil
 }
@@ -991,6 +994,21 @@ func (m *Model) refreshThreadNicknames() {
 	m.threadNicknames = nicknames
 }
 
+func (m *Model) refreshAvatars() {
+	if m.db == nil {
+		return
+	}
+	agents, err := db.GetAgents(m.db)
+	if err != nil {
+		return
+	}
+	m.avatarMap = make(map[string]string)
+	for _, agent := range agents {
+		if agent.Avatar != nil && *agent.Avatar != "" {
+			m.avatarMap[agent.AgentID] = *agent.Avatar
+		}
+	}
+}
 
 func countMessages(dbConn *sql.DB, includeArchived bool) (int, error) {
 	query := "SELECT COUNT(*) FROM fray_messages"

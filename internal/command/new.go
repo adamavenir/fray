@@ -156,11 +156,24 @@ func NewNewCmd() *cobra.Command {
 					}
 				}
 
+				// Collect used avatars from existing agents
+				usedAvatars := make(map[string]struct{})
+				existingAgents, _ := db.GetAgents(ctx.DB)
+				for _, a := range existingAgents {
+					if a.Avatar != nil && *a.Avatar != "" {
+						usedAvatars[*a.Avatar] = struct{}{}
+					}
+				}
+
+				// Assign avatar based on agent name
+				avatar := core.AssignAvatar(agentID, usedAvatars)
+
 				agent := types.Agent{
 					GUID:         agentGUID,
 					AgentID:      agentID,
 					Status:       optionalString(statusOpt),
 					Purpose:      optionalString(purposeOpt),
+					Avatar:       &avatar,
 					RegisteredAt: now,
 					LastSeen:     now,
 					LeftAt:       nil,
@@ -431,20 +444,51 @@ func parseNumeric(value string) int {
 	return num
 }
 
+// ensureMetaThread ensures the root meta/ thread exists.
+func ensureMetaThread(ctx *CommandContext) (*types.Thread, error) {
+	metaThread, err := db.GetThreadByName(ctx.DB, "meta", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if metaThread == nil {
+		thread, err := db.CreateThread(ctx.DB, types.Thread{
+			Name: "meta",
+			Type: types.ThreadTypeKnowledge,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := db.AppendThread(ctx.Project.DBPath, thread, []string{"meta"}); err != nil {
+			return nil, err
+		}
+		metaThread = &thread
+	}
+
+	return metaThread, nil
+}
+
 // ensureAgentHierarchy creates the agent thread hierarchy if it doesn't exist.
-// Creates: {agent}/ (knowledge), {agent}/notes (system), {agent}/jrnl (system)
+// Creates: meta/{agent}/ (knowledge), meta/{agent}/notes (system), meta/{agent}/jrnl (system)
 func ensureAgentHierarchy(ctx *CommandContext, agentID string) error {
-	// Check if agent parent thread exists
-	agentThread, err := db.GetThreadByName(ctx.DB, agentID, nil)
+	// First ensure meta/ root thread exists
+	metaThread, err := ensureMetaThread(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Check if agent thread exists under meta/
+	agentThread, err := db.GetThreadByName(ctx.DB, agentID, &metaThread.GUID)
 	if err != nil {
 		return err
 	}
 
 	if agentThread == nil {
-		// Create agent parent thread (knowledge type)
+		// Create agent thread as child of meta/ (knowledge type)
 		thread, err := db.CreateThread(ctx.DB, types.Thread{
-			Name: agentID,
-			Type: types.ThreadTypeKnowledge,
+			Name:         agentID,
+			ParentThread: &metaThread.GUID,
+			Type:         types.ThreadTypeKnowledge,
 		})
 		if err != nil {
 			return err
@@ -489,28 +533,6 @@ func ensureAgentHierarchy(ctx *CommandContext, agentID string) error {
 	if jrnlThread == nil {
 		thread, err := db.CreateThread(ctx.DB, types.Thread{
 			Name:         "jrnl",
-			ParentThread: &agentThread.GUID,
-			Type:         types.ThreadTypeSystem,
-		})
-		if err != nil {
-			return err
-		}
-		if err := db.AppendThread(ctx.Project.DBPath, thread, []string{agentID}); err != nil {
-			return err
-		}
-		if err := db.SubscribeThread(ctx.DB, thread.GUID, agentID, time.Now().Unix()); err != nil {
-			return err
-		}
-	}
-
-	// Check and create meta subthread (self-knowledge, persistent)
-	metaThread, err := db.GetThreadByName(ctx.DB, "meta", &agentThread.GUID)
-	if err != nil {
-		return err
-	}
-	if metaThread == nil {
-		thread, err := db.CreateThread(ctx.DB, types.Thread{
-			Name:         "meta",
 			ParentThread: &agentThread.GUID,
 			Type:         types.ThreadTypeSystem,
 		})

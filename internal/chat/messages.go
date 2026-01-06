@@ -56,8 +56,14 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 		color = colorForAgent(msg.FromAgent, m.colorMap)
 	}
 
+	// Get avatar for agent, or human avatar for users
+	avatar := m.avatarMap[msg.FromAgent]
+	if msg.Type == types.MessageTypeUser && avatar == "" {
+		avatar = core.HumanAvatar
+	}
+
 	// Mark byline as zone for copying whole message
-	bylineText := renderByline(msg.FromAgent, color)
+	bylineText := renderByline(msg.FromAgent, avatar, color)
 	sender := m.zoneManager.Mark("byline-"+msg.ID, bylineText)
 
 	body := highlightCodeBlocks(msg.Body)
@@ -199,8 +205,13 @@ func (m *Model) markBodyZones(msgID string, body string, color lipgloss.Color) s
 	return strings.Join(styledLines, "\n")
 }
 
-func renderByline(agent string, color lipgloss.Color) string {
-	content := fmt.Sprintf(" @%s: ", agent)
+func renderByline(agent string, avatar string, color lipgloss.Color) string {
+	var content string
+	if avatar != "" {
+		content = fmt.Sprintf(" %s @%s: ", avatar, agent)
+	} else {
+		content = fmt.Sprintf(" @%s: ", agent)
+	}
 	textColor := contrastTextColor(color)
 	style := lipgloss.NewStyle().Background(color).Foreground(textColor).Bold(true)
 	return style.Render(content)

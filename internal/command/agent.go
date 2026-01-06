@@ -34,6 +34,7 @@ func NewAgentCmd() *cobra.Command {
 		NewAgentEndCmd(),
 		NewAgentListCmd(),
 		NewAgentCheckCmd(),
+		NewAgentAvatarCmd(),
 	)
 
 	return cmd
@@ -629,6 +630,72 @@ Trigger: %s
 
 Run: fray get %s
 `, triggerMsgID, agentID)
+}
+
+// NewAgentAvatarCmd updates an agent's avatar.
+func NewAgentAvatarCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "avatar <name> <avatar>",
+		Short: "Set agent avatar character",
+		Long: `Set the avatar character for an agent. The avatar is displayed in chat bylines.
+
+Examples:
+  fray agent avatar opus 🅾
+  fray agent avatar designer 🅳
+  fray agent avatar helper ✿`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cmdCtx, err := GetContext(cmd)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			defer cmdCtx.DB.Close()
+
+			agentID := core.NormalizeAgentRef(args[0])
+			avatar := args[1]
+
+			agent, err := db.GetAgent(cmdCtx.DB, agentID)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			if agent == nil {
+				return writeCommandError(cmd, fmt.Errorf("agent not found: @%s", agentID))
+			}
+
+			// Validate avatar
+			if !core.IsValidAvatar(avatar) {
+				return writeCommandError(cmd, fmt.Errorf("invalid avatar: %s (use a single character from the avatar pool)", avatar))
+			}
+
+			// Update in database
+			updates := db.AgentUpdates{
+				Avatar: types.OptionalString{Set: true, Value: &avatar},
+			}
+			if err := db.UpdateAgent(cmdCtx.DB, agentID, updates); err != nil {
+				return writeCommandError(cmd, err)
+			}
+
+			// Append to JSONL
+			if err := db.AppendAgentUpdate(cmdCtx.Project.DBPath, db.AgentUpdateJSONLRecord{
+				AgentID: agentID,
+				Avatar:  &avatar,
+			}); err != nil {
+				return writeCommandError(cmd, err)
+			}
+
+			if cmdCtx.JSONMode {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+					"agent_id": agentID,
+					"avatar":   avatar,
+				})
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated @%s avatar to %s\n", agentID, avatar)
+			return nil
+		},
+	}
+
+	return cmd
 }
 
 func init() {

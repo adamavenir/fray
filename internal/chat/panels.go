@@ -29,6 +29,7 @@ const (
 	threadEntrySeparator
 	threadEntryMessageCollection
 	threadEntryThreadCollection
+	threadEntrySectionHeader // For grouping labels like "agents", "roles", "topics"
 )
 
 type messageCollectionView string
@@ -437,6 +438,7 @@ func (m *Model) threadEntries() []threadEntry {
 
 	// Check if we're drilled into a thread
 	drilledThread := m.currentDrillThread()
+	inMetaView := false
 	if drilledThread != nil {
 		// When drilled in: show "back" entry + immediate children only
 		entries = append(entries, threadEntry{
@@ -451,6 +453,8 @@ func (m *Model) threadEntries() []threadEntry {
 		} else {
 			roots = nil // No children
 		}
+		// Check if we're drilled into the meta thread
+		inMetaView = drilledThread.Name == "meta" && drilledThread.ParentThread == nil
 	} else {
 		// At top level: show #main
 		entries = append(entries, threadEntry{Kind: threadEntryMain, Label: "#main"})
@@ -463,6 +467,78 @@ func (m *Model) threadEntries() []threadEntry {
 			return slice[i].Name < slice[j].Name
 		})
 		children[key] = slice
+	}
+
+	// Special handling for meta view: group children into topics, agents, roles
+	if inMetaView && len(roots) > 0 {
+		var topics, agents, roles []types.Thread
+		for _, thread := range roots {
+			if strings.HasPrefix(thread.Name, "role-") {
+				roles = append(roles, thread)
+			} else {
+				// Check if this is an agent thread (has agent-like substructure)
+				_, hasNotes := children[thread.GUID]
+				if hasNotes {
+					agents = append(agents, thread)
+				} else {
+					topics = append(topics, thread)
+				}
+			}
+		}
+
+		// Sort each group
+		sort.Slice(topics, func(i, j int) bool { return topics[i].Name < topics[j].Name })
+		sort.Slice(agents, func(i, j int) bool { return agents[i].Name < agents[j].Name })
+		sort.Slice(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
+
+		// Add entries with section headers
+		if len(topics) > 0 {
+			entries = append(entries, threadEntry{Kind: threadEntrySectionHeader, Label: "topics"})
+			for _, thread := range topics {
+				t := thread
+				entries = append(entries, threadEntry{
+					Kind:        threadEntryThread,
+					Thread:      &t,
+					Label:       thread.Name,
+					Indent:      0,
+					HasChildren: len(children[thread.GUID]) > 0,
+					Collapsed:   m.collapsedThreads[thread.GUID],
+					Faved:       m.favedThreads[thread.GUID],
+				})
+			}
+		}
+		if len(agents) > 0 {
+			entries = append(entries, threadEntry{Kind: threadEntrySectionHeader, Label: "agents"})
+			for _, thread := range agents {
+				t := thread
+				entries = append(entries, threadEntry{
+					Kind:        threadEntryThread,
+					Thread:      &t,
+					Label:       thread.Name,
+					Indent:      0,
+					HasChildren: len(children[thread.GUID]) > 0,
+					Collapsed:   m.collapsedThreads[thread.GUID],
+					Faved:       m.favedThreads[thread.GUID],
+				})
+			}
+		}
+		if len(roles) > 0 {
+			entries = append(entries, threadEntry{Kind: threadEntrySectionHeader, Label: "roles"})
+			for _, thread := range roles {
+				t := thread
+				entries = append(entries, threadEntry{
+					Kind:        threadEntryThread,
+					Thread:      &t,
+					Label:       thread.Name,
+					Indent:      0,
+					HasChildren: len(children[thread.GUID]) > 0,
+					Collapsed:   m.collapsedThreads[thread.GUID],
+					Faved:       m.favedThreads[thread.GUID],
+				})
+			}
+		}
+
+		return entries
 	}
 
 	// Helper to walk thread hierarchy
@@ -733,6 +809,9 @@ func (m *Model) threadEntryLabel(entry threadEntry) string {
 			}
 		}
 		return "   " + entry.Label
+	case threadEntrySectionHeader:
+		// Section headers for meta view grouping
+		return " ─ " + entry.Label + " ─"
 	default:
 		return ""
 	}
@@ -864,6 +943,12 @@ func (m *Model) renderThreadPanel() string {
 			} else {
 				lines = append(lines, strings.Repeat("─", width-1))
 			}
+			continue
+		}
+		if entry.Kind == threadEntrySectionHeader {
+			// Section headers are dim and non-selectable
+			headerLabel := m.threadEntryLabel(entry)
+			lines = append(lines, collapsedStyle.Render(headerLabel))
 			continue
 		}
 		label := m.threadEntryLabel(entry)
@@ -1191,7 +1276,7 @@ func (m *Model) moveThreadSelection(delta int) {
 	if !m.threadFilterActive {
 		indices = make([]int, 0, len(entries))
 		for i, entry := range entries {
-			if entry.Kind == threadEntrySeparator {
+			if entry.Kind == threadEntrySeparator || entry.Kind == threadEntrySectionHeader {
 				continue
 			}
 			indices = append(indices, i)

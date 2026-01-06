@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,7 +234,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 		return err
 	}
 	if err := initSchemaWith(db); err != nil {
-		return err
+		return fmt.Errorf("initSchemaWith: %w", err)
 	}
 
 	if config != nil && config.ChannelID != "" {
@@ -249,8 +250,8 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 
 	insertAgent := `
 		INSERT OR REPLACE INTO fray_agents (
-			guid, agent_id, status, purpose, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, agent := range agents {
@@ -288,6 +289,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 			agent.AgentID,
 			status,
 			purpose,
+			agent.Avatar,
 			agent.RegisteredAt,
 			agent.LastSeen,
 			agent.LeftAt,
@@ -384,12 +386,16 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	}
 
 	if len(threads) > 0 {
+		// Topologically sort threads so parents are inserted before children
+		// (required for FK constraint on parent_thread)
+		threads = topoSortThreads(threads)
+
 		insertThread := `
 			INSERT OR REPLACE INTO fray_threads (
 				guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`
-		for _, thread := range threads {
+		for i, thread := range threads {
 			status := thread.Status
 			if status == "" {
 				status = string(types.ThreadStatusOpen)
@@ -413,7 +419,11 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 				anchorHidden,
 				thread.LastActivityAt,
 			); err != nil {
-				return err
+				parent := ""
+				if thread.ParentThread != nil {
+					parent = *thread.ParentThread
+				}
+				return fmt.Errorf("thread[%d] %s name=%q parent=%q: %w", i, thread.GUID, thread.Name, parent, err)
 			}
 		}
 
@@ -434,7 +444,17 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 			}
 		}
 
+		// Build set of valid thread GUIDs for FK validation
+		threadGUIDs := make(map[string]bool, len(threads))
+		for _, t := range threads {
+			threadGUIDs[t.GUID] = true
+		}
+
 		for _, event := range subEvents {
+			// Skip events for non-existent threads (archived/deleted)
+			if !threadGUIDs[event.ThreadGUID] {
+				continue
+			}
 			set, ok := subscriptions[event.ThreadGUID]
 			if !ok {
 				set = make(map[string]int64)
@@ -454,13 +474,17 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 					INSERT OR REPLACE INTO fray_thread_subscriptions (thread_guid, agent_id, subscribed_at)
 					VALUES (?, ?, ?)
 				`, threadGUID, agentID, subscribedAt); err != nil {
-					return err
+					return fmt.Errorf("subscription thread=%s agent=%s: %w", threadGUID, agentID, err)
 				}
 			}
 		}
 
 		threadMessages := make(map[string]map[string]ThreadMessageJSONLRecord)
 		for _, event := range msgEvents {
+			// Skip events for non-existent threads
+			if !threadGUIDs[event.ThreadGUID] {
+				continue
+			}
 			switch event.Type {
 			case "thread_message":
 				if _, ok := threadMessages[event.ThreadGUID]; !ok {
@@ -485,7 +509,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 					INSERT OR REPLACE INTO fray_thread_messages (thread_guid, message_guid, added_by, added_at)
 					VALUES (?, ?, ?, ?)
 				`, entry.ThreadGUID, entry.MessageGUID, entry.AddedBy, entry.AddedAt); err != nil {
-					return err
+					return fmt.Errorf("thread_messages thread=%s msg=%s: %w", entry.ThreadGUID, entry.MessageGUID, err)
 				}
 			}
 		}
@@ -683,4 +707,50 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	}
 
 	return nil
+}
+
+// topoSortThreads sorts threads so parents appear before children.
+// This ensures FK constraints on parent_thread are satisfied during insert.
+func topoSortThreads(threads []ThreadJSONLRecord) []ThreadJSONLRecord {
+	if len(threads) == 0 {
+		return threads
+	}
+
+	// Build a map for quick lookup
+	byGUID := make(map[string]ThreadJSONLRecord, len(threads))
+	for _, t := range threads {
+		byGUID[t.GUID] = t
+	}
+
+	// Track visited and result
+	visited := make(map[string]bool, len(threads))
+	result := make([]ThreadJSONLRecord, 0, len(threads))
+
+	// DFS helper - adds thread after all ancestors
+	var visit func(guid string)
+	visit = func(guid string) {
+		if visited[guid] {
+			return
+		}
+		visited[guid] = true
+
+		thread, ok := byGUID[guid]
+		if !ok {
+			return
+		}
+
+		// Visit parent first (if exists)
+		if thread.ParentThread != nil && *thread.ParentThread != "" {
+			visit(*thread.ParentThread)
+		}
+
+		result = append(result, thread)
+	}
+
+	// Visit all threads
+	for _, t := range threads {
+		visit(t.GUID)
+	}
+
+	return result
 }

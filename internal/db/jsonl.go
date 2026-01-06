@@ -202,6 +202,7 @@ type AgentJSONLRecord struct {
 	AgentID          string              `json:"agent_id"`
 	Status           *string             `json:"status,omitempty"`
 	Purpose          *string             `json:"purpose,omitempty"`
+	Avatar           *string             `json:"avatar,omitempty"`
 	Goal             *string             `json:"goal,omitempty"`
 	Bio              *string             `json:"bio,omitempty"`
 	RegisteredAt     int64               `json:"registered_at"`
@@ -220,6 +221,7 @@ type AgentUpdateJSONLRecord struct {
 	AgentID          string              `json:"agent_id"`
 	Status           *string             `json:"status,omitempty"`
 	Purpose          *string             `json:"purpose,omitempty"`
+	Avatar           *string             `json:"avatar,omitempty"`
 	LastSeen         *int64              `json:"last_seen,omitempty"`
 	LeftAt           *int64              `json:"left_at,omitempty"`
 	Managed          *bool               `json:"managed,omitempty"`

@@ -47,6 +47,7 @@ type Agent struct {
 	AgentID          string         `json:"agent_id"`
 	Status           *string        `json:"status,omitempty"`
 	Purpose          *string        `json:"purpose,omitempty"`
+	Avatar           *string        `json:"avatar,omitempty"`            // single-char avatar for display
 	RegisteredAt     int64          `json:"registered_at"`
 	LastSeen         int64          `json:"last_seen"`
 	LeftAt           *int64         `json:"left_at,omitempty"`
@@ -177,11 +178,12 @@ type MessageQueryOptions struct {
 
 // QuestionQueryOptions controls question queries.
 type QuestionQueryOptions struct {
-	Statuses   []QuestionStatus
-	ThreadGUID *string
-	RoomOnly   bool
-	ToAgent    *string
-	AskedIn    *string // Filter by source message GUID
+	Statuses     []QuestionStatus
+	ThreadGUID   *string
+	RoomOnly     bool
+	ToAgent      *string
+	AskedIn      *string // Filter by source message GUID
+	NoTargetOnly bool    // Filter to questions with no to_agent (anyone can answer)
 }
 
 // ThreadQueryOptions controls thread queries.

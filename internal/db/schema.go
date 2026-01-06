@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   agent_id TEXT NOT NULL UNIQUE,       -- e.g., "alice.419", "pm.3.sub.1"
   status TEXT,                         -- current task/focus (mutable)
   purpose TEXT,                        -- static identity/role info
+  avatar TEXT,                         -- single-char avatar for display
   registered_at INTEGER NOT NULL,      -- unix timestamp
   last_seen INTEGER NOT NULL,          -- updated on post
   left_at INTEGER,                     -- set by "bye", null if active
