@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Chat: thread panel redesign with complete navigation system (shows all threads, hierarchical drill with h/l, colored headers by depth, fzf search, dynamic width with wrapping)
+- Chat: thread panel virtual scrolling (handles hundreds of threads smoothly)
+- Chat: thread list live updates (1s poll, auto-navigates from deleted threads)
+- Chat: semantic click-to-copy using bubblezone (double-click ID copies ID, byline/footer copies message, paragraph copies paragraph)
+- Chat: message IDs bold+underlined for visibility
 - Chat: thread management features - nicknames (/n), fave/unfave (/f, Ctrl-f), mute/unmute (/M, Ctrl-m)
 - Chat: visual indicators - ★ for faves, ✦ for unread mentions, (n) counts, 2-char alignment, dim grey for non-subscribed
 - Chat: keyboard shortcuts - Tab/Shift-Tab for panels, Enter/Esc to close, Ctrl-B toggles persistence
