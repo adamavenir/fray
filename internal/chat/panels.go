@@ -1034,11 +1034,12 @@ func (m *Model) handleThreadPanelKeys(msg tea.KeyMsg) (bool, tea.Cmd) {
 		m.toggleFaveSelectedThread()
 		return true, nil
 	case tea.KeyCtrlN:
-		// Ctrl-n to set nickname - pre-fill input and focus textarea
+		// Ctrl-n to set nickname - store target and pre-fill input
 		entries := m.threadEntries()
 		if m.threadIndex >= 0 && m.threadIndex < len(entries) {
 			entry := entries[m.threadIndex]
 			if entry.Kind == threadEntryThread && entry.Thread != nil {
+				m.pendingNicknameGUID = entry.Thread.GUID
 				m.input.SetValue("/n ")
 				m.input.CursorEnd()
 				m.threadPanelFocus = false

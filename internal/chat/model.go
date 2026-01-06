@@ -119,6 +119,7 @@ type Model struct {
 	sidebarFilterActive  bool
 	sidebarScrollOffset  int               // scroll offset for virtual scrolling in channel sidebar
 	sidebarPersistent    bool              // if true, Tab just changes focus (doesn't close)
+	pendingNicknameGUID  string            // thread GUID for pending /n command (set by Ctrl-N)
 	helpMessageID       string
 	initialScroll       bool
 	lastClickID         string

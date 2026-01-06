@@ -111,33 +111,50 @@ func (m *Model) toggleMuteThread() (tea.Cmd, error) {
 }
 
 func (m *Model) setThreadNickname(args []string) (tea.Cmd, error) {
-	if !m.threadPanelFocus {
-		return nil, fmt.Errorf("/n only works when thread panel is focused (press Tab)")
-	}
-	entries := m.threadEntries()
-	if m.threadIndex < 0 || m.threadIndex >= len(entries) {
-		return nil, fmt.Errorf("no thread selected")
-	}
-	entry := entries[m.threadIndex]
-	if entry.Kind != threadEntryThread || entry.Thread == nil {
-		return nil, fmt.Errorf("selected item is not a thread")
+	var guid string
+	var threadName string
+
+	// Check if we have a pending nickname target from Ctrl-N
+	if m.pendingNicknameGUID != "" {
+		guid = m.pendingNicknameGUID
+		// Find thread name for status message
+		for _, t := range m.threads {
+			if t.GUID == guid {
+				threadName = t.Name
+				break
+			}
+		}
+		m.pendingNicknameGUID = "" // Clear after use
+	} else if m.threadPanelFocus {
+		// Fall back to focused thread
+		entries := m.threadEntries()
+		if m.threadIndex < 0 || m.threadIndex >= len(entries) {
+			return nil, fmt.Errorf("no thread selected")
+		}
+		entry := entries[m.threadIndex]
+		if entry.Kind != threadEntryThread || entry.Thread == nil {
+			return nil, fmt.Errorf("selected item is not a thread")
+		}
+		guid = entry.Thread.GUID
+		threadName = entry.Thread.Name
+	} else {
+		return nil, fmt.Errorf("/n only works when thread panel is focused (press Tab) or via Ctrl-N")
 	}
 
 	nickname := strings.Join(args, " ")
-	guid := entry.Thread.GUID
 
 	if nickname == "" {
 		// Clear nickname
 		if err := db.SetNickname(m.db, m.username, "thread", guid, ""); err != nil {
 			return nil, fmt.Errorf("failed to clear nickname: %w", err)
 		}
-		m.status = fmt.Sprintf("Cleared nickname for %s", entry.Thread.Name)
+		m.status = fmt.Sprintf("Cleared nickname for %s", threadName)
 	} else {
 		// Set nickname
 		if err := db.SetNickname(m.db, m.username, "thread", guid, nickname); err != nil {
 			return nil, fmt.Errorf("failed to set nickname: %w", err)
 		}
-		m.status = fmt.Sprintf("Set nickname '%s' for %s", nickname, entry.Thread.Name)
+		m.status = fmt.Sprintf("Set nickname '%s' for %s", nickname, threadName)
 	}
 
 	m.refreshThreadNicknames()
