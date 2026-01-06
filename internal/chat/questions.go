@@ -1,8 +1,6 @@
 package chat
 
 import (
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/adamavenir/fray/internal/db"
@@ -21,45 +19,42 @@ const (
 	pseudoThreadStale  = messageCollectionStaleQuestions
 )
 
-func (m *Model) renderQuestions() string {
+// questionSourceMessages returns the source messages for questions in the current pseudo-thread.
+// This allows questions to be displayed using the standard message rendering.
+func (m *Model) questionSourceMessages() []types.Message {
 	if len(m.pseudoQuestions) == 0 {
-		return "No questions"
+		return nil
 	}
-	lines := make([]string, 0, len(m.pseudoQuestions))
-	for _, question := range m.pseudoQuestions {
-		threadLabel := "room"
-		if question.ThreadGUID != nil {
-			thread, _ := db.GetThread(m.db, *question.ThreadGUID)
-			if thread != nil {
-				if path, err := threadPath(m.db, thread); err == nil && path != "" {
-					threadLabel = path
-				} else {
-					threadLabel = thread.GUID
-				}
-			} else {
-				threadLabel = *question.ThreadGUID
+	messages := make([]types.Message, 0, len(m.pseudoQuestions))
+	for _, q := range m.pseudoQuestions {
+		if q.AskedIn != nil {
+			// Fetch the actual source message
+			msg, err := db.GetMessage(m.db, *q.AskedIn)
+			if err == nil && msg != nil {
+				messages = append(messages, *msg)
 			}
+		} else {
+			// For questions without a source message (e.g., wondering), create a synthetic one
+			messages = append(messages, types.Message{
+				ID:        q.GUID,
+				TS:        q.CreatedAt,
+				FromAgent: q.FromAgent,
+				Body:      q.Re,
+				Type:      types.MessageTypeAgent,
+				Home:      "room",
+			})
 		}
-		toAgent := "--"
-		if question.ToAgent != nil {
-			toAgent = "@" + *question.ToAgent
-		}
-		lines = append(lines, fmt.Sprintf("[%s] %s @%s → %s (%s)", question.GUID, question.Status, question.FromAgent, toAgent, threadLabel))
-		lines = append(lines, fmt.Sprintf("  %s", question.Re))
 	}
-	return strings.Join(lines, "\n\n")
+	return messages
 }
 
 func (m *Model) refreshQuestionCounts() {
 	if m.questionCounts == nil {
 		m.questionCounts = make(map[pseudoThreadKind]int)
 	}
-	threadGUID, roomOnly := m.questionScope()
-
+	// Question counts are global (not thread-scoped) so sidebar doesn't jump around
 	openQuestions, err := db.GetQuestions(m.db, &types.QuestionQueryOptions{
-		Statuses:   []types.QuestionStatus{types.QuestionStatusOpen},
-		ThreadGUID: threadGUID,
-		RoomOnly:   roomOnly,
+		Statuses: []types.QuestionStatus{types.QuestionStatusOpen},
 	})
 	if err == nil {
 		m.questionCounts[pseudoThreadOpen] = len(openQuestions)
@@ -74,18 +69,14 @@ func (m *Model) refreshQuestionCounts() {
 	}
 
 	answeredQuestions, err := db.GetQuestions(m.db, &types.QuestionQueryOptions{
-		Statuses:   []types.QuestionStatus{types.QuestionStatusAnswered},
-		ThreadGUID: threadGUID,
-		RoomOnly:   roomOnly,
+		Statuses: []types.QuestionStatus{types.QuestionStatusAnswered},
 	})
 	if err == nil {
 		m.questionCounts[pseudoThreadClosed] = len(answeredQuestions)
 	}
 
 	unaskedQuestions, err := db.GetQuestions(m.db, &types.QuestionQueryOptions{
-		Statuses:   []types.QuestionStatus{types.QuestionStatusUnasked},
-		ThreadGUID: threadGUID,
-		RoomOnly:   roomOnly,
+		Statuses: []types.QuestionStatus{types.QuestionStatusUnasked},
 	})
 	if err == nil {
 		m.questionCounts[pseudoThreadWonder] = len(unaskedQuestions)
@@ -97,11 +88,8 @@ func (m *Model) refreshPseudoQuestions() {
 		m.pseudoQuestions = nil
 		return
 	}
-	threadGUID, roomOnly := m.questionScope()
-	options := types.QuestionQueryOptions{
-		ThreadGUID: threadGUID,
-		RoomOnly:   roomOnly,
-	}
+	// Query globally to match sidebar counts
+	options := types.QuestionQueryOptions{}
 
 	switch m.currentPseudo {
 	case pseudoThreadOpen:
@@ -131,11 +119,4 @@ func (m *Model) refreshPseudoQuestions() {
 		return
 	}
 	m.pseudoQuestions = questions
-}
-
-func (m *Model) questionScope() (*string, bool) {
-	if m.currentThread != nil {
-		return &m.currentThread.GUID, false
-	}
-	return nil, true
 }

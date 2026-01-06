@@ -176,6 +176,10 @@ func (m *Model) loadOlderMessages() {
 }
 
 func (m *Model) currentMessages() []types.Message {
+	// For pseudo-threads (open-qs, etc), return source messages from questions
+	if m.currentPseudo != "" {
+		return m.questionSourceMessages()
+	}
 	var messages []types.Message
 	if m.currentThread != nil {
 		messages = m.threadMessages

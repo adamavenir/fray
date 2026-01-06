@@ -181,6 +181,7 @@ type QuestionQueryOptions struct {
 	ThreadGUID *string
 	RoomOnly   bool
 	ToAgent    *string
+	AskedIn    *string // Filter by source message GUID
 }
 
 // ThreadQueryOptions controls thread queries.

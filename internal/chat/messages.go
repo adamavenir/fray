@@ -14,9 +14,6 @@ import (
 )
 
 func (m *Model) renderMessages() string {
-	if m.currentPseudo != "" {
-		return m.renderQuestions()
-	}
 	messages := m.currentMessages()
 	prefixLength := core.GetDisplayPrefixLength(m.messageCount)
 
@@ -63,8 +60,7 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 	bylineText := renderByline(msg.FromAgent, color)
 	sender := m.zoneManager.Mark("byline-"+msg.ID, bylineText)
 
-	strippedBody := core.StripQuestionSections(msg.Body)
-	body := highlightCodeBlocks(strippedBody)
+	body := highlightCodeBlocks(msg.Body)
 	width := m.mainWidth()
 	if width > 0 {
 		body = ansi.Wrap(body, width, "")
@@ -125,6 +121,12 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 		}
 		lines = append(lines, line)
 	}
+	if questionLine := m.formatQuestionStatus(msg.ID); questionLine != "" {
+		if width > 0 {
+			questionLine = ansi.Wrap(questionLine, width, "")
+		}
+		lines = append(lines, questionLine)
+	}
 	lines = append(lines, meta)
 	return strings.Join(lines, "\n")
 }
@@ -141,6 +143,40 @@ func (m *Model) replyContext(replyTo string, prefixLength int) string {
 	}
 	preview := truncatePreview(body, 50)
 	return lipgloss.NewStyle().Foreground(metaColor).Render(fmt.Sprintf("↪ Reply to @%s: %s", fromAgent, preview))
+}
+
+func (m *Model) formatQuestionStatus(msgID string) string {
+	questions, err := db.GetQuestions(m.db, &types.QuestionQueryOptions{
+		AskedIn: &msgID,
+	})
+	if err != nil || len(questions) == 0 {
+		return ""
+	}
+
+	var answered, unanswered []string
+	for i, q := range questions {
+		label := fmt.Sprintf("Q%d", i+1)
+		if q.Status == types.QuestionStatusAnswered {
+			answered = append(answered, label)
+		} else {
+			unanswered = append(unanswered, label)
+		}
+	}
+
+	var parts []string
+	if len(answered) > 0 {
+		answeredStyle := lipgloss.NewStyle().Bold(true)
+		parts = append(parts, answeredStyle.Render("Answered")+": "+strings.Join(answered, ", "))
+	}
+	if len(unanswered) > 0 {
+		unansweredStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")) // yellow
+		parts = append(parts, unansweredStyle.Render("Unanswered")+": "+strings.Join(unanswered, ", "))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "  ")
 }
 
 func (m *Model) markBodyZones(msgID string, body string, color lipgloss.Color) string {
@@ -268,9 +304,6 @@ func filterUpdates(messages []types.Message, showUpdates bool) []types.Message {
 
 func (m *Model) messageAtLine(line int) (*types.Message, bool) {
 	if line < 0 {
-		return nil, false
-	}
-	if m.currentPseudo != "" {
 		return nil, false
 	}
 	prefixLength := core.GetDisplayPrefixLength(m.messageCount)

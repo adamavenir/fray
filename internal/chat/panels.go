@@ -525,20 +525,22 @@ func (m *Model) threadEntries() []threadEntry {
 		shownGUIDs[thread.GUID] = true
 	}
 
-	// 3b. Message collections with content (open-qs, stale-qs) - shown after faves
-	if m.questionCounts[pseudoThreadKind(messageCollectionOpenQuestions)] > 0 {
-		entries = append(entries, threadEntry{
-			Kind:              threadEntryMessageCollection,
-			MessageCollection: messageCollectionOpenQuestions,
-			Label:             string(messageCollectionOpenQuestions),
-		})
-	}
-	if m.questionCounts[pseudoThreadKind(messageCollectionStaleQuestions)] > 0 {
-		entries = append(entries, threadEntry{
-			Kind:              threadEntryMessageCollection,
-			MessageCollection: messageCollectionStaleQuestions,
-			Label:             string(messageCollectionStaleQuestions),
-		})
+	// 3b. Message collections with content (open-qs, stale-qs) - only at top level
+	if m.drillDepth() == 0 {
+		if m.questionCounts[pseudoThreadKind(messageCollectionOpenQuestions)] > 0 {
+			entries = append(entries, threadEntry{
+				Kind:              threadEntryMessageCollection,
+				MessageCollection: messageCollectionOpenQuestions,
+				Label:             string(messageCollectionOpenQuestions),
+			})
+		}
+		if m.questionCounts[pseudoThreadKind(messageCollectionStaleQuestions)] > 0 {
+			entries = append(entries, threadEntry{
+				Kind:              threadEntryMessageCollection,
+				MessageCollection: messageCollectionStaleQuestions,
+				Label:             string(messageCollectionStaleQuestions),
+			})
+		}
 	}
 
 	// 4. Subscribed threads sorted by recency (last_activity_at)
@@ -1271,6 +1273,8 @@ func (m *Model) selectThreadEntry() {
 		}
 	case threadEntryMessageCollection:
 		// Convert messageCollectionView back to pseudoThreadKind for compatibility
+		m.currentThread = nil
+		m.threadMessages = nil
 		m.currentPseudo = pseudoThreadKind(entry.MessageCollection)
 	case threadEntryThreadCollection:
 		// Handle thread collection views

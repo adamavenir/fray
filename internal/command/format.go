@@ -85,11 +85,9 @@ func formatMessageWithOptions(msg types.Message, projectName string, agentBases 
 	}
 
 	color := getAgentColor(msg.FromAgent, msg.Type, nil)
-	// Strip question sections from display
-	strippedBody := core.StripQuestionSections(msg.Body)
-	displayBody := strippedBody
+	displayBody := msg.Body
 	if truncate {
-		displayBody = truncateForDisplay(strippedBody, msg.ID)
+		displayBody = truncateForDisplay(msg.Body, msg.ID)
 	}
 
 	// Format quote block if present
@@ -123,8 +121,7 @@ func formatMessageWithOptions(msg types.Message, projectName string, agentBases 
 // formatQuoteBlock formats the quoted message for inline display.
 func formatQuoteBlock(quotedMsg *types.Message, _ map[string]struct{}) string {
 	// Get first few lines of quoted message, truncated
-	body := core.StripQuestionSections(quotedMsg.Body)
-	lines := strings.Split(body, "\n")
+	lines := strings.Split(quotedMsg.Body, "\n")
 
 	// Take at most 3 lines, truncate each
 	maxLines := 3
@@ -386,9 +383,8 @@ func isAlphaNum(r rune) bool {
 // FormatMessagePreview formats a message as a one-line preview for accordion display.
 // Format: "  [msg-abc123] @agent: First line of message..."
 func FormatMessagePreview(msg types.Message, projectName string) string {
-	// Get first line of body, strip question sections
-	body := core.StripQuestionSections(msg.Body)
-	firstLine := strings.Split(body, "\n")[0]
+	// Get first line of body
+	firstLine := strings.Split(msg.Body, "\n")[0]
 
 	// Truncate if too long
 	maxLen := 50
