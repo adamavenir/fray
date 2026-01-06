@@ -72,3 +72,7 @@
 {"type":"question_update","guid":"qstn-ine0su4o","status":"answered","answered_in":"msg-hgwdrxln"}
 {"type":"question_update","guid":"qstn-82m1edtx","status":"answered","answered_in":"msg-hgwdrxln"}
 {"type":"question","guid":"qstn-c06um20m","re":"Looking for bead about advanced click behavior for copying content (GUIDs, message IDs, etc). User mentioned it has nuanced requirements. Checked fray-gwg6 (click textarea) but that's just closing sidebar. May be in a different thread or recent discussion?","from_agent":"opus","status":"unasked","created_at":1767661003}
+{"type":"question_update","guid":"qstn-hlesj0nc","status":"answered","answered_in":"msg-a9e7sqlj"}
+{"type":"question_update","guid":"qstn-jvnolsme","status":"answered","answered_in":"msg-a9e7sqlj"}
+{"type":"question_update","guid":"qstn-yfg6t1ln","status":"answered","answered_in":"msg-a9e7sqlj"}
+{"type":"question_update","guid":"qstn-bwjiyn0d","status":"answered","answered_in":"msg-a9e7sqlj"}
