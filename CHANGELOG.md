@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat: footer message ID no longer bold+underlined (stays dimmed)
 - Chat: initial sidebar width calculated correctly on startup
 - Chat: click-to-copy now copies single line instead of entire paragraph
+- Chat: open-qs view now uses standard message rendering (clicking, replies work correctly)
+- Chat: open-qs sidebar item no longer appears/disappears when selecting threads
+- `fray edit`: reason flag (-m) now optional for humans (still required for agents via FRAY_AGENT_ID)
 
 ### Removed
 - Deprecated shorthand commands: `fray meta`, `fray note`, `fray key`, `fray mentions`, `fray view`, `fray history`, `fray between` (use path-based `fray get/post` instead)
@@ -33,9 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat: deleted messages now hidden (not shown as `[deleted]`)
 - Chat: thread view only scrolls to bottom on new messages
 - Chat: scroll-back preloads older messages when near top (smoother history browsing)
+- Chat: questions in messages no longer stripped - full question text stays visible
 - `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
+- Chat: question status line under messages with embedded questions (shows Answered/Unanswered with Q1, Q2 labels)
 - Chat: thread panel redesign with complete navigation system (shows all threads, hierarchical drill with h/l, colored headers by depth, fzf search, dynamic width with wrapping)
 - Chat: thread panel virtual scrolling (handles hundreds of threads smoothly)
 - Chat: thread list live updates (1s poll, auto-navigates from deleted threads)
