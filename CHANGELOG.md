@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat: mouse wheel scrolling in sidebars
 - Chat: click-to-focus for panels and textarea
 - Chat: collection views (open-qs, stale-qs) appear after faves when non-empty, hidden when empty
-- Chat: thread management features - nicknames (/n), fave/unfave (/f, Ctrl-f), mute/unmute (/mute command)
+- Chat: thread management features - nicknames (Ctrl-n), fave/unfave (Ctrl-f), mute/unmute (/mute command)
 - Chat: visual indicators - ★ for faves, ✦ for unread mentions, (n) counts, 2-char alignment, dim grey for non-subscribed
 - Chat: keyboard shortcuts - Tab/Shift-Tab for panels, Enter/Esc to close, Ctrl-B toggles persistence
 - Database: fray_faves.nickname column for personal thread/message labels
