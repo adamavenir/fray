@@ -73,10 +73,18 @@ Paths:
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
+
+			// Check if this is the stored human username
+			isHumanUser := false
 			if agent == nil {
-				return writeCommandError(cmd, fmt.Errorf("agent not found: @%s. Use 'fray new' first", agentID))
+				storedUsername, _ := db.GetConfig(ctx.DB, "username")
+				if storedUsername != "" && storedUsername == agentID {
+					isHumanUser = true
+				} else {
+					return writeCommandError(cmd, fmt.Errorf("agent not found: @%s. Use 'fray new' first", agentID))
+				}
 			}
-			if agent.LeftAt != nil {
+			if agent != nil && agent.LeftAt != nil {
 				return writeCommandError(cmd, fmt.Errorf("agent @%s has left. Use 'fray back @%s' to resume", agentID, agentID))
 			}
 
@@ -170,10 +178,12 @@ Paths:
 					return writeCommandError(cmd, err)
 				}
 
-				now := time.Now().Unix()
-				updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
-				if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
-					return writeCommandError(cmd, err)
+				if !isHumanUser {
+					now := time.Now().Unix()
+					updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
+					if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
+						return writeCommandError(cmd, err)
+					}
 				}
 
 				if silent {
@@ -206,6 +216,10 @@ Paths:
 			if thread != nil {
 				home = thread.GUID
 			}
+			msgType := types.MessageTypeAgent
+			if isHumanUser {
+				msgType = types.MessageTypeUser
+			}
 			created, err := db.CreateMessage(ctx.DB, types.Message{
 				TS:               now,
 				FromAgent:        agentID,
@@ -214,6 +228,7 @@ Paths:
 				Home:             home,
 				ReplyTo:          replyID,
 				QuoteMessageGUID: quoteID,
+				Type:             msgType,
 			})
 			if err != nil {
 				return writeCommandError(cmd, err)
@@ -239,9 +254,11 @@ Paths:
 				}
 			}
 
-			updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
-			if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
-				return writeCommandError(cmd, err)
+			if !isHumanUser {
+				updates := db.AgentUpdates{LastSeen: types.OptionalInt64{Set: true, Value: &now}}
+				if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
+					return writeCommandError(cmd, err)
+				}
 			}
 
 			// Extract questions from markdown sections

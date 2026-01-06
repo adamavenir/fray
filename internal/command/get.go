@@ -408,7 +408,10 @@ Legacy (deprecated):
 						if len(direct) > 0 || len(fyi) > 0 {
 							fmt.Fprintln(out, "")
 						}
-						fmt.Fprintf(out, "%d likely stale (>2h)\n", len(stale))
+						fmt.Fprintf(out, "%d likely stale (>2h):\n", len(stale))
+						for _, msg := range stale {
+							fmt.Fprintln(out, FormatMessagePreview(msg, projectName))
+						}
 					}
 
 					if len(direct) == 0 && len(fyi) == 0 && len(stale) == 0 {
@@ -716,9 +719,49 @@ func getNotifications(cmd *cobra.Command, ctx *CommandContext, asRef, projectNam
 	if len(filtered) == 0 {
 		fmt.Fprintln(out, "@mentions: (none)")
 	} else {
-		fmt.Fprintln(out, "@mentions:")
+		// Categorize mentions: direct vs FYI vs stale
+		now := time.Now().Unix()
+		staleThreshold := now - 2*60*60 // 2 hours
+		var direct, fyi, stale []types.Message
 		for _, msg := range filtered {
-			fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
+			if msg.TS < staleThreshold {
+				stale = append(stale, msg)
+			} else if isDirectMention(msg.Body, agentBase) {
+				direct = append(direct, msg)
+			} else {
+				fyi = append(fyi, msg)
+			}
+		}
+
+		if len(direct) > 0 {
+			fmt.Fprintf(out, "Recent @%s:\n", agentBase)
+			for _, msg := range direct {
+				fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
+			}
+		}
+
+		if len(fyi) > 0 {
+			if len(direct) > 0 {
+				fmt.Fprintln(out, "")
+			}
+			fmt.Fprintln(out, "You were FYI'd here:")
+			for _, msg := range fyi {
+				fmt.Fprintln(out, FormatMessage(msg, projectName, agentBases))
+			}
+		}
+
+		if len(stale) > 0 {
+			if len(direct) > 0 || len(fyi) > 0 {
+				fmt.Fprintln(out, "")
+			}
+			fmt.Fprintf(out, "%d likely stale (>2h):\n", len(stale))
+			for _, msg := range stale {
+				fmt.Fprintln(out, FormatMessagePreview(msg, projectName))
+			}
+		}
+
+		if len(direct) == 0 && len(fyi) == 0 && len(stale) == 0 {
+			fmt.Fprintln(out, "@mentions: (none)")
 		}
 	}
 
