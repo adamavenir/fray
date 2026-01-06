@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray @agent`: includes mentions from thread messages, not just room
 - Chat: Enter key now submits message immediately (was requiring double-enter when suggestions shown)
 - Chat: faved_at column now nullable (can have nickname without fave)
+- Chat: Enter key in sidebar selects thread instead of muting
+- Chat: drilling into childless items no longer loops infinitely
+- Chat: Esc in drilled sidebar navigates back instead of closing panel
+- Chat: footer message ID no longer bold+underlined (stays dimmed)
+- Chat: initial sidebar width calculated correctly on startup
+- Chat: click-to-copy now copies single line instead of entire paragraph
 
 ### Removed
 - Deprecated shorthand commands: `fray meta`, `fray note`, `fray key`, `fray mentions`, `fray view`, `fray history`, `fray between` (use path-based `fray get/post` instead)
@@ -33,9 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat: thread panel redesign with complete navigation system (shows all threads, hierarchical drill with h/l, colored headers by depth, fzf search, dynamic width with wrapping)
 - Chat: thread panel virtual scrolling (handles hundreds of threads smoothly)
 - Chat: thread list live updates (1s poll, auto-navigates from deleted threads)
-- Chat: semantic click-to-copy using bubblezone (double-click ID copies ID, byline/footer copies message, paragraph copies paragraph)
-- Chat: message IDs bold+underlined for visibility
-- Chat: thread management features - nicknames (/n), fave/unfave (/f, Ctrl-f), mute/unmute (/M, Ctrl-m)
+- Chat: semantic click-to-copy using bubblezone (double-click ID copies ID, byline/footer copies message, line copies line)
+- Chat: sidebar redesign - project name instead of header, right chevrons for drillable items, consistent indentation
+- Chat: muted collection drill-in (view and select muted threads)
+- Chat: mouse wheel scrolling in sidebars
+- Chat: click-to-focus for panels and textarea
+- Chat: collection views (open-qs, stale-qs) appear after faves when non-empty, hidden when empty
+- Chat: thread management features - nicknames (/n), fave/unfave (/f, Ctrl-f), mute/unmute (/mute command)
 - Chat: visual indicators - ★ for faves, ✦ for unread mentions, (n) counts, 2-char alignment, dim grey for non-subscribed
 - Chat: keyboard shortcuts - Tab/Shift-Tab for panels, Enter/Esc to close, Ctrl-B toggles persistence
 - Database: fray_faves.nickname column for personal thread/message labels
