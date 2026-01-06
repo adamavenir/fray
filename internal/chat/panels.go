@@ -761,7 +761,57 @@ func (m *Model) renderThreadPanel() string {
 		lines = append(lines, itemStyle.Render(" (no matches)"))
 	}
 
-	for _, index := range indices {
+	// Virtual scrolling: calculate visible range
+	visibleHeight := m.height - 4 // subtract header(1) + space(1) + footer(1) + padding(1)
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
+	// Adjust scroll offset to keep selection visible
+	if m.threadPanelFocus {
+		// Find position of selected entry in filtered list
+		selectedPos := -1
+		for i, idx := range indices {
+			if idx == m.threadIndex {
+				selectedPos = i
+				break
+			}
+		}
+		if selectedPos >= 0 {
+			// Scroll down if selection is below visible area
+			if selectedPos >= m.threadScrollOffset + visibleHeight {
+				m.threadScrollOffset = selectedPos - visibleHeight + 1
+			}
+			// Scroll up if selection is above visible area
+			if selectedPos < m.threadScrollOffset {
+				m.threadScrollOffset = selectedPos
+			}
+		}
+	}
+
+	// Ensure scroll offset is within bounds
+	if m.threadScrollOffset < 0 {
+		m.threadScrollOffset = 0
+	}
+	maxScroll := len(indices) - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.threadScrollOffset > maxScroll {
+		m.threadScrollOffset = maxScroll
+	}
+
+	// Calculate visible slice
+	startIdx := m.threadScrollOffset
+	endIdx := startIdx + visibleHeight
+	if endIdx > len(indices) {
+		endIdx = len(indices)
+	}
+
+	// Only render visible entries
+	visibleIndices := indices[startIdx:endIdx]
+
+	for _, index := range visibleIndices {
 		entry := entries[index]
 		if entry.Kind == threadEntrySeparator {
 			if entry.Label == "search" {
@@ -980,6 +1030,7 @@ func (m *Model) resetThreadFilter() {
 	m.threadFilter = ""
 	m.threadMatches = nil
 	m.threadSearchResults = nil
+	m.threadScrollOffset = 0
 }
 
 func (m *Model) updateThreadMatches() {
@@ -1215,6 +1266,7 @@ func (m *Model) drillIn(thread *types.Thread) {
 	}
 	m.drillPath = append(m.drillPath, thread.GUID)
 	m.threadIndex = 0 // Focus first child
+	m.threadScrollOffset = 0
 }
 
 func (m *Model) drillOut() string {
@@ -1224,6 +1276,7 @@ func (m *Model) drillOut() string {
 	// Pop last element
 	lastGUID := m.drillPath[len(m.drillPath)-1]
 	m.drillPath = m.drillPath[:len(m.drillPath)-1]
+	m.threadScrollOffset = 0
 	return lastGUID // Return the thread we were drilled into (for focus restoration)
 }
 

@@ -16,6 +16,7 @@ type pollMsg struct {
 	threadMessages []types.Message
 	threadID       string
 	questions      []types.Question
+	threads        []types.Thread
 }
 
 func (m *Model) pollCmd() tea.Cmd {
@@ -90,11 +91,18 @@ func (m *Model) pollCmd() tea.Cmd {
 			}
 		}
 
+		// Fetch thread list for live updates
+		threads, err := db.GetThreads(m.db, &types.ThreadQueryOptions{})
+		if err != nil {
+			threads = nil // Don't fail the poll, just return empty
+		}
+
 		return pollMsg{
 			roomMessages:   roomMessages,
 			threadMessages: threadMessages,
 			threadID:       threadID,
 			questions:      questions,
+			threads:        threads,
 		}
 	})
 }

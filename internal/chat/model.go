@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	zone "github.com/lrstanley/bubblezone"
 )
 
 const doubleClickInterval = 400 * time.Millisecond
@@ -106,6 +107,8 @@ type Model struct {
 	mutedThreads        map[string]bool   // muted threads for current user
 	threadNicknames     map[string]string // thread nicknames for current user
 	drillPath           []string          // current drill path (thread GUIDs from root to current)
+	threadScrollOffset  int               // scroll offset for virtual scrolling in thread panel
+	zoneManager         *zone.Manager     // bubblezone manager for click tracking
 	channels            []channelEntry
 	channelIndex        int
 	sidebarOpen          bool
@@ -212,6 +215,7 @@ func NewModel(opts Options) (*Model, error) {
 		subscribedThreads:  make(map[string]bool),
 		mutedThreads:       make(map[string]bool),
 		threadNicknames:    make(map[string]string),
+		zoneManager:        zone.New(),
 		channels:        channels,
 		channelIndex:    channelIndex,
 		initialScroll:   true,
@@ -378,6 +382,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pseudoQuestions = msg.questions
 			m.refreshViewport(true)
 		}
+
+		// Handle thread list updates (live updates, renames, deletions)
+		if msg.threads != nil {
+			// Check if current thread was deleted
+			if m.currentThread != nil {
+				threadStillExists := false
+				for _, t := range msg.threads {
+					if t.GUID == m.currentThread.GUID {
+						threadStillExists = true
+						// Update thread name if it changed
+						if t.Name != m.currentThread.GUID {
+							m.currentThread = &t
+						}
+						break
+					}
+				}
+				// Auto-navigate away from deleted thread
+				if !threadStillExists {
+					m.currentThread = nil
+					m.currentPseudo = ""
+					m.threadMessages = nil
+					m.refreshViewport(true)
+					m.status = "Thread was deleted, returned to main"
+				}
+			}
+			// Update thread list
+			m.threads = msg.threads
+		}
+
 		m.refreshQuestionCounts()
 		m.refreshUnreadCounts()
 
@@ -417,11 +450,14 @@ func (m *Model) View() string {
 			panels = append(panels, panel)
 		}
 	}
+	var output string
 	if len(panels) == 0 {
-		return main
+		output = main
+	} else {
+		left := lipgloss.JoinHorizontal(lipgloss.Top, panels...)
+		output = lipgloss.JoinHorizontal(lipgloss.Top, left, main)
 	}
-	left := lipgloss.JoinHorizontal(lipgloss.Top, panels...)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, main)
+	return m.zoneManager.Scan(output)
 }
 
 func (m *Model) renderInput() string {
@@ -632,7 +668,7 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 	if m.lastClickID == message.ID && now.Sub(m.lastClickAt) <= doubleClickInterval {
 		m.lastClickID = ""
 		m.lastClickAt = time.Time{}
-		m.copyMessage(*message)
+		m.copyFromZone(msg, *message)
 		return true, nil
 	}
 
@@ -640,6 +676,80 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 	m.lastClickAt = now
 	m.prefillReply(*message)
 	return true, nil
+}
+
+func (m *Model) copyFromZone(mouseMsg tea.MouseMsg, msg types.Message) {
+	// Check which zone was clicked
+	guidZone := fmt.Sprintf("guid-%s", msg.ID)
+	bylineZone := fmt.Sprintf("byline-%s", msg.ID)
+	footerZone := fmt.Sprintf("footer-%s", msg.ID)
+
+	var textToCopy string
+	var description string
+
+	// Check each zone type in priority order
+	if m.zoneManager.Get(guidZone).InBounds(mouseMsg) {
+		// Double-clicked on GUID - copy just the ID
+		prefixLength := core.GetDisplayPrefixLength(m.messageCount)
+		textToCopy = core.GetGUIDPrefix(msg.ID, prefixLength)
+		description = "message ID"
+	} else if m.zoneManager.Get(bylineZone).InBounds(mouseMsg) || m.zoneManager.Get(footerZone).InBounds(mouseMsg) {
+		// Double-clicked on byline or footer - copy whole message
+		textToCopy = msg.Body
+		if msg.Type != types.MessageTypeEvent {
+			textToCopy = fmt.Sprintf("@%s: %s", msg.FromAgent, msg.Body)
+		}
+		description = "message"
+	} else {
+		// Check paragraph zones
+		foundPara := false
+		paragraphs := m.extractParagraphs(msg.Body)
+		for i := range paragraphs {
+			paraZone := fmt.Sprintf("para-%s-%d", msg.ID, i)
+			if m.zoneManager.Get(paraZone).InBounds(mouseMsg) {
+				textToCopy = paragraphs[i]
+				description = "paragraph"
+				foundPara = true
+				break
+			}
+		}
+		if !foundPara {
+			// Fallback: copy whole message
+			textToCopy = msg.Body
+			if msg.Type != types.MessageTypeEvent {
+				textToCopy = fmt.Sprintf("@%s: %s", msg.FromAgent, msg.Body)
+			}
+			description = "message"
+		}
+	}
+
+	if err := copyToClipboard(textToCopy); err != nil {
+		m.status = err.Error()
+		return
+	}
+	m.status = fmt.Sprintf("Copied %s to clipboard.", description)
+}
+
+func (m *Model) extractParagraphs(body string) []string {
+	strippedBody := core.StripQuestionSections(body)
+	lines := strings.Split(strippedBody, "\n")
+	paragraphs := []string{}
+	currentPara := []string{}
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			if len(currentPara) > 0 {
+				paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
+				currentPara = []string{}
+			}
+		} else {
+			currentPara = append(currentPara, line)
+		}
+	}
+	if len(currentPara) > 0 {
+		paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
+	}
+	return paragraphs
 }
 
 func (m *Model) copyMessage(msg types.Message) {

@@ -59,21 +59,31 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 		color = colorForAgent(msg.FromAgent, m.colorMap)
 	}
 
-	sender := renderByline(msg.FromAgent, color)
+	// Mark byline as zone for copying whole message
+	bylineText := renderByline(msg.FromAgent, color)
+	sender := m.zoneManager.Mark("byline-"+msg.ID, bylineText)
+
 	strippedBody := core.StripQuestionSections(msg.Body)
 	body := highlightCodeBlocks(strippedBody)
 	width := m.mainWidth()
 	if width > 0 {
 		body = ansi.Wrap(body, width, "")
 	}
-	bodyLine := lipgloss.NewStyle().Foreground(color).Render(body)
+
+	// Parse body into paragraphs and mark each as a zone
+	bodyLine := m.markBodyZones(msg.ID, body, color)
 	editedSuffix := ""
 	if msg.Edited || msg.EditCount > 0 || msg.EditedAt != nil {
 		editedSuffix = " (edited)"
 	}
 
 	// Build the meta line with guid and read_to markers
-	guidPart := fmt.Sprintf("#%s%s", core.GetGUIDPrefix(msg.ID, prefixLength), editedSuffix)
+	guidPrefix := core.GetGUIDPrefix(msg.ID, prefixLength)
+	guidText := fmt.Sprintf("#%s%s", guidPrefix, editedSuffix)
+	// Make GUID bold+underline and mark as zone for click-to-copy
+	styledGuid := lipgloss.NewStyle().Bold(true).Underline(true).Render(guidText)
+	guidPart := m.zoneManager.Mark("guid-"+msg.ID, styledGuid)
+
 	readToPart := ""
 	if agents, ok := readToMap[msg.ID]; ok && len(agents) > 0 {
 		mentions := make([]string, len(agents))
@@ -86,18 +96,22 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 	var meta string
 	if readToPart != "" && width > 0 {
 		// Right-align read_to on the same line
-		guidWidth := len(guidPart)
+		// Note: use unstyled guidText for width calculation
+		guidWidth := len(guidText)
 		readWidth := len(readToPart)
 		padding := width - guidWidth - readWidth
 		if padding < 2 {
 			padding = 2
 		}
 		metaText := guidPart + strings.Repeat(" ", padding) + readToPart
-		meta = lipgloss.NewStyle().Foreground(color).Faint(true).Render(metaText)
+		styledMeta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(metaText)
+		meta = m.zoneManager.Mark("footer-"+msg.ID, styledMeta)
 	} else if readToPart != "" {
-		meta = lipgloss.NewStyle().Foreground(color).Faint(true).Render(guidPart + "  " + readToPart)
+		styledMeta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(guidPart + "  " + readToPart)
+		meta = m.zoneManager.Mark("footer-"+msg.ID, styledMeta)
 	} else {
-		meta = lipgloss.NewStyle().Foreground(color).Faint(true).Render(guidPart)
+		styledMeta := lipgloss.NewStyle().Foreground(color).Faint(true).Render(guidPart)
+		meta = m.zoneManager.Mark("footer-"+msg.ID, styledMeta)
 	}
 
 	lines := []string{}
@@ -128,6 +142,38 @@ func (m *Model) replyContext(replyTo string, prefixLength int) string {
 	}
 	preview := truncatePreview(body, 50)
 	return lipgloss.NewStyle().Foreground(metaColor).Render(fmt.Sprintf("↪ Reply to @%s: %s", fromAgent, preview))
+}
+
+func (m *Model) markBodyZones(msgID string, body string, color lipgloss.Color) string {
+	// Split body into paragraphs (separated by blank lines)
+	lines := strings.Split(body, "\n")
+	paragraphs := []string{}
+	currentPara := []string{}
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			if len(currentPara) > 0 {
+				paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
+				currentPara = []string{}
+			}
+		} else {
+			currentPara = append(currentPara, line)
+		}
+	}
+	if len(currentPara) > 0 {
+		paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
+	}
+
+	// Mark each paragraph as a zone and style it
+	styledParas := make([]string, len(paragraphs))
+	style := lipgloss.NewStyle().Foreground(color)
+	for i, para := range paragraphs {
+		styledPara := style.Render(para)
+		zoneID := fmt.Sprintf("para-%s-%d", msgID, i)
+		styledParas[i] = m.zoneManager.Mark(zoneID, styledPara)
+	}
+
+	return strings.Join(styledParas, "\n\n")
 }
 
 func renderByline(agent string, color lipgloss.Color) string {
