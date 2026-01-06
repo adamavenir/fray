@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray history`: now accepts users as well as agents
 - `fray @agent`: includes mentions from thread messages, not just room
 - Chat: Enter key now submits message immediately (was requiring double-enter when suggestions shown)
+- Chat: faved_at column now nullable (can have nickname without fave)
 
 ### Removed
 - Deprecated shorthand commands: `fray meta`, `fray note`, `fray key`, `fray mentions`, `fray view`, `fray history`, `fray between` (use path-based `fray get/post` instead)
@@ -29,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
+- Chat: thread panel redesign with complete navigation system (shows all threads, hierarchical drill with h/l, colored headers by depth, fzf search, dynamic width with wrapping)
+- Chat: thread management features - nicknames (/n), fave/unfave (/f, Ctrl-f), mute/unmute (/M, Ctrl-m)
+- Chat: visual indicators - ★ for faves, ✦ for unread mentions, (n) counts, 2-char alignment, dim grey for non-subscribed
+- Chat: keyboard shortcuts - Tab/Shift-Tab for panels, Enter/Esc to close, Ctrl-B toggles persistence
+- Database: fray_faves.nickname column for personal thread/message labels
 - Path-based addressing: `fray get/post meta`, `fray get opus/notes`, `fray get design-thread` for unified command interface
 - Thread listing filters: `--following`, `--activity`, `--tree` with nested display and indicators (★ followed, 📌 pinned, (muted))
 - Within-thread filters: `--pinned`, `--by @agent`, `--with "text"`, `--reactions` for `fray get <path>`
