@@ -80,9 +80,8 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 	// Build the meta line with guid and read_to markers
 	guidPrefix := core.GetGUIDPrefix(msg.ID, prefixLength)
 	guidText := fmt.Sprintf("#%s%s", guidPrefix, editedSuffix)
-	// Make GUID bold+underline and mark as zone for click-to-copy
-	styledGuid := lipgloss.NewStyle().Bold(true).Underline(true).Render(guidText)
-	guidPart := m.zoneManager.Mark("guid-"+msg.ID, styledGuid)
+	// Footer GUID stays dimmed (no bold/underline) but is click-to-copy zone
+	guidPart := m.zoneManager.Mark("guid-"+msg.ID, guidText)
 
 	readToPart := ""
 	if agents, ok := readToMap[msg.ID]; ok && len(agents) > 0 {
@@ -145,35 +144,23 @@ func (m *Model) replyContext(replyTo string, prefixLength int) string {
 }
 
 func (m *Model) markBodyZones(msgID string, body string, color lipgloss.Color) string {
-	// Split body into paragraphs (separated by blank lines)
+	// Mark each line as its own clickable zone for fine-grained copy
 	lines := strings.Split(body, "\n")
-	paragraphs := []string{}
-	currentPara := []string{}
+	style := lipgloss.NewStyle().Foreground(color)
+	styledLines := make([]string, len(lines))
 
-	for _, line := range lines {
+	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
-			if len(currentPara) > 0 {
-				paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
-				currentPara = []string{}
-			}
+			// Blank lines don't get zones
+			styledLines[i] = line
 		} else {
-			currentPara = append(currentPara, line)
+			styledLine := style.Render(line)
+			zoneID := fmt.Sprintf("line-%s-%d", msgID, i)
+			styledLines[i] = m.zoneManager.Mark(zoneID, styledLine)
 		}
 	}
-	if len(currentPara) > 0 {
-		paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
-	}
 
-	// Mark each paragraph as a zone and style it
-	styledParas := make([]string, len(paragraphs))
-	style := lipgloss.NewStyle().Foreground(color)
-	for i, para := range paragraphs {
-		styledPara := style.Render(para)
-		zoneID := fmt.Sprintf("para-%s-%d", msgID, i)
-		styledParas[i] = m.zoneManager.Mark(zoneID, styledPara)
-	}
-
-	return strings.Join(styledParas, "\n\n")
+	return strings.Join(styledLines, "\n")
 }
 
 func renderByline(agent string, color lipgloss.Color) string {

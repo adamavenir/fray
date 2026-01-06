@@ -104,9 +104,10 @@ type Model struct {
 	collapsedThreads    map[string]bool   // collapsed state per thread GUID
 	favedThreads        map[string]bool   // faved threads for current user
 	subscribedThreads   map[string]bool   // subscribed threads for current user
-	mutedThreads        map[string]bool   // muted threads for current user
-	threadNicknames     map[string]string // thread nicknames for current user
-	drillPath           []string          // current drill path (thread GUIDs from root to current)
+	mutedThreads           map[string]bool   // muted threads for current user
+	viewingMutedCollection bool              // true when drilled into muted collection view
+	threadNicknames        map[string]string // thread nicknames for current user
+	drillPath              []string          // current drill path (thread GUIDs from root to current)
 	threadScrollOffset  int               // scroll offset for virtual scrolling in thread panel
 	zoneManager         *zone.Manager     // bubblezone manager for click tracking
 	channels            []channelEntry
@@ -116,6 +117,7 @@ type Model struct {
 	sidebarFilter        string
 	sidebarMatches       []int
 	sidebarFilterActive  bool
+	sidebarScrollOffset  int               // scroll offset for virtual scrolling in channel sidebar
 	sidebarPersistent    bool              // if true, Tab just changes focus (doesn't close)
 	helpMessageID       string
 	initialScroll       bool
@@ -226,6 +228,7 @@ func NewModel(opts Options) (*Model, error) {
 	model.refreshSubscribedThreads()
 	model.refreshMutedThreads()
 	model.refreshThreadNicknames()
+	model.calculateThreadPanelWidth() // Calculate initial width since panel starts open
 	return model, nil
 }
 
@@ -341,6 +344,37 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if handled, cmd := m.handleMouseClick(msg); handled {
 				return m, cmd
+			}
+		}
+		// Handle mouse wheel scrolling based on cursor position
+		threadWidth := m.threadPanelWidth()
+		sidebarWidth := m.sidebarWidth()
+		isWheelUp := msg.Button == tea.MouseButtonWheelUp
+		isWheelDown := msg.Button == tea.MouseButtonWheelDown
+		if isWheelUp || isWheelDown {
+			// Check if over thread panel
+			if m.threadPanelOpen && msg.X < threadWidth {
+				if isWheelUp {
+					m.threadScrollOffset--
+					if m.threadScrollOffset < 0 {
+						m.threadScrollOffset = 0
+					}
+				} else {
+					m.threadScrollOffset++
+				}
+				return m, nil
+			}
+			// Check if over sidebar
+			if m.sidebarOpen && msg.X >= threadWidth && msg.X < threadWidth+sidebarWidth {
+				if isWheelUp {
+					m.sidebarScrollOffset--
+					if m.sidebarScrollOffset < 0 {
+						m.sidebarScrollOffset = 0
+					}
+				} else {
+					m.sidebarScrollOffset++
+				}
+				return m, nil
 			}
 		}
 		var cmd tea.Cmd
@@ -630,6 +664,9 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 	if m.threadPanelOpen {
 		threadWidth = m.threadPanelWidth()
 		if msg.X < threadWidth {
+			// Clicked in thread panel - give it focus
+			m.threadPanelFocus = true
+			m.sidebarFocus = false
 			if msg.Y < lipgloss.Height(m.renderThreadPanel()) {
 				if index := m.threadIndexAtLine(msg.Y); index >= 0 {
 					m.threadIndex = index
@@ -638,12 +675,16 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 				}
 				return true, nil
 			}
+			return true, nil
 		}
 	}
 
 	if m.sidebarOpen {
 		sidebarStart := threadWidth
 		if msg.X >= sidebarStart && msg.X < sidebarStart+m.sidebarWidth() {
+			// Clicked in sidebar - give it focus
+			m.sidebarFocus = true
+			m.threadPanelFocus = false
 			if msg.Y < lipgloss.Height(m.renderSidebar()) {
 				if index := m.sidebarIndexAtLine(msg.Y); index >= 0 {
 					m.channelIndex = index
@@ -651,8 +692,13 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 				}
 				return true, nil
 			}
+			return true, nil
 		}
 	}
+
+	// Clicked in main area - focus textarea
+	m.threadPanelFocus = false
+	m.sidebarFocus = false
 
 	if msg.Y >= m.viewport.Height {
 		return false, nil
@@ -701,19 +747,22 @@ func (m *Model) copyFromZone(mouseMsg tea.MouseMsg, msg types.Message) {
 		}
 		description = "message"
 	} else {
-		// Check paragraph zones
-		foundPara := false
-		paragraphs := m.extractParagraphs(msg.Body)
-		for i := range paragraphs {
-			paraZone := fmt.Sprintf("para-%s-%d", msg.ID, i)
-			if m.zoneManager.Get(paraZone).InBounds(mouseMsg) {
-				textToCopy = paragraphs[i]
-				description = "paragraph"
-				foundPara = true
+		// Check line zones
+		foundLine := false
+		lines := strings.Split(msg.Body, "\n")
+		for i, line := range lines {
+			if strings.TrimSpace(line) == "" {
+				continue // blank lines don't have zones
+			}
+			lineZone := fmt.Sprintf("line-%s-%d", msg.ID, i)
+			if m.zoneManager.Get(lineZone).InBounds(mouseMsg) {
+				textToCopy = line
+				description = "line"
+				foundLine = true
 				break
 			}
 		}
-		if !foundPara {
+		if !foundLine {
 			// Fallback: copy whole message
 			textToCopy = msg.Body
 			if msg.Type != types.MessageTypeEvent {
@@ -730,27 +779,6 @@ func (m *Model) copyFromZone(mouseMsg tea.MouseMsg, msg types.Message) {
 	m.status = fmt.Sprintf("Copied %s to clipboard.", description)
 }
 
-func (m *Model) extractParagraphs(body string) []string {
-	strippedBody := core.StripQuestionSections(body)
-	lines := strings.Split(strippedBody, "\n")
-	paragraphs := []string{}
-	currentPara := []string{}
-
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			if len(currentPara) > 0 {
-				paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
-				currentPara = []string{}
-			}
-		} else {
-			currentPara = append(currentPara, line)
-		}
-	}
-	if len(currentPara) > 0 {
-		paragraphs = append(paragraphs, strings.Join(currentPara, "\n"))
-	}
-	return paragraphs
-}
 
 func (m *Model) copyMessage(msg types.Message) {
 	text := msg.Body
