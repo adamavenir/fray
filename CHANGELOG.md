@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.0 (unreleased)]
 
 ### Fixed
+- Rebuild: threads now topologically sorted before insert (fixes FK constraint errors from reparented threads)
 - `fray migrate`: automatically detects and fixes legacy thread naming patterns (`{agent}-notes` → `{agent}/notes`)
 - Database queries: explicit column ordering prevents scan errors after schema migrations
 - `fray history`: now accepts users as well as agents
@@ -40,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray answer`: interactive mode now uses full TUI with multiline input (Ctrl+J for newlines)
 
 ### Added
+- Meta-centric hierarchy: agent threads now live under `meta/` (e.g., `meta/opus/notes`); role threads under `meta/role-{name}/`
+- `fray migrate`: moves existing agent/role threads to meta-centric structure
+- Agent avatars: auto-assigned on `fray new`, manual via `fray agent avatar <name> <char>`; any single character allowed
 - Chat: question status line under messages with embedded questions (shows Answered/Unanswered with Q1, Q2 labels)
 - Chat: thread panel redesign with complete navigation system (shows all threads, hierarchical drill with h/l, colored headers by depth, fzf search, dynamic width with wrapping)
 - Chat: thread panel virtual scrolling (handles hundreds of threads smoothly)
