@@ -84,6 +84,7 @@ type Model struct {
 	input               textarea.Model
 	messages            []types.Message
 	lastCursor          *types.MessageCursor
+	lastMentionCursor   *types.MessageCursor
 	oldestCursor        *types.MessageCursor
 	status              string
 	width               int
@@ -201,6 +202,14 @@ func NewModel(opts Options) (*Model, error) {
 		oldestCursor = &types.MessageCursor{GUID: first.ID, TS: first.TS}
 	}
 
+	// Initialize mention cursor from persisted watermark to avoid re-notifying
+	var lastMentionCursor *types.MessageCursor
+	if opts.Username != "" {
+		if mentionWatermark, _ := db.GetReadTo(opts.DB, opts.Username, "mentions"); mentionWatermark != nil {
+			lastMentionCursor = &types.MessageCursor{GUID: mentionWatermark.MessageGUID, TS: mentionWatermark.MessageTS}
+		}
+	}
+
 	count, err := countMessages(opts.DB, opts.IncludeArchived)
 	if err != nil {
 		return nil, err
@@ -217,9 +226,10 @@ func NewModel(opts Options) (*Model, error) {
 		viewport:        vp,
 		input:           input,
 		messages:        messages,
-		lastCursor:      lastCursor,
-		oldestCursor:    oldestCursor,
-		status:          "",
+		lastCursor:        lastCursor,
+		lastMentionCursor: lastMentionCursor,
+		oldestCursor:      oldestCursor,
+		status:            "",
 		messageCount:    count,
 		lastLimit:       opts.Last,
 		hasMore:         len(rawMessages) < count,
@@ -404,6 +414,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case pollMsg:
+		// Build set of room message IDs to avoid double-notifying
+		roomMsgIDs := make(map[string]struct{}, len(msg.roomMessages))
+		for _, rm := range msg.roomMessages {
+			roomMsgIDs[rm.ID] = struct{}{}
+		}
+
 		if len(msg.roomMessages) > 0 {
 			incoming := m.filterNewMessages(msg.roomMessages)
 			last := msg.roomMessages[len(msg.roomMessages)-1]
@@ -421,6 +437,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.currentThread == nil && m.currentPseudo == "" {
 					m.refreshViewport(true)
 				}
+			}
+		}
+
+		// Handle mention notifications from threads (not already in room messages)
+		if len(msg.mentionMessages) > 0 {
+			last := msg.mentionMessages[len(msg.mentionMessages)-1]
+			m.lastMentionCursor = &types.MessageCursor{GUID: last.ID, TS: last.TS}
+			// Persist watermark to avoid re-notifying on restart
+			_ = db.SetReadTo(m.db, m.username, "mentions", last.ID, last.TS)
+
+			for _, mentionMsg := range msg.mentionMessages {
+				// Skip if already notified via room messages
+				if _, inRoom := roomMsgIDs[mentionMsg.ID]; inRoom {
+					continue
+				}
+				m.maybeNotify(mentionMsg)
 			}
 		}
 

@@ -208,6 +208,11 @@ Paths:
 			if err != nil {
 				return writeCommandError(cmd, err)
 			}
+			// Include users in mentionable bases so @username mentions are extracted
+			users, _ := db.GetActiveUsers(ctx.DB)
+			for _, u := range users {
+				bases[u] = struct{}{}
+			}
 			mentions := core.ExtractMentions(messageBody, bases)
 			mentions = core.ExpandAllMention(mentions, bases)
 

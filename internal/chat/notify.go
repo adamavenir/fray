@@ -118,6 +118,7 @@ func SendNotification(msg types.Message, projectName string) error {
 		args := []string{
 			"-title", title,
 			"-message", body,
+			"-group", "fray",
 		}
 		// Add click-to-focus if the focus script is available
 		if focusScript := getFocusScriptPath(); focusScript != "" {

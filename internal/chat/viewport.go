@@ -12,15 +12,18 @@ import (
 const pollInterval = time.Second
 
 type pollMsg struct {
-	roomMessages   []types.Message
-	threadMessages []types.Message
-	threadID       string
-	questions      []types.Question
-	threads        []types.Thread
+	roomMessages    []types.Message
+	threadMessages  []types.Message
+	threadID        string
+	questions       []types.Question
+	threads         []types.Thread
+	mentionMessages []types.Message
 }
 
 func (m *Model) pollCmd() tea.Cmd {
 	cursor := m.lastCursor
+	mentionCursor := m.lastMentionCursor
+	username := m.username
 	includeArchived := m.includeArchived
 	showUpdates := m.showUpdates
 	currentThread := m.currentThread
@@ -97,12 +100,26 @@ func (m *Model) pollCmd() tea.Cmd {
 			threads = nil // Don't fail the poll, just return empty
 		}
 
+		// Fetch mentions from all threads for notifications
+		var mentionMessages []types.Message
+		if username != "" {
+			allHomes := "" // empty string = all homes (room + threads)
+			mentionOpts := &types.MessageQueryOptions{
+				Since:                  mentionCursor,
+				IncludeArchived:        false,
+				Home:                   &allHomes,
+				IncludeRepliesToAgent:  username,
+			}
+			mentionMessages, _ = db.GetMessagesWithMention(m.db, username, mentionOpts)
+		}
+
 		return pollMsg{
-			roomMessages:   roomMessages,
-			threadMessages: threadMessages,
-			threadID:       threadID,
-			questions:      questions,
-			threads:        threads,
+			roomMessages:    roomMessages,
+			threadMessages:  threadMessages,
+			threadID:        threadID,
+			questions:       questions,
+			threads:         threads,
+			mentionMessages: mentionMessages,
 		}
 	})
 }
