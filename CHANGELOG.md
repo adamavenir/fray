@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat: `/prune` command disabled until redesign
 
 ### Fixed
+- Read state persists across database rebuilds (watermark-based fallback)
+- `--since` accepts bare message IDs (`abc123`), `#`-prefix (`#abc`), and short prefixes
+- Chat: open-qs view no longer shows duplicate posts for multi-question messages
 - Chat: sidebar click targets no longer misaligned after scrolling or window switching
 - Chat: sidebar now shows only root threads (children via drill-in)
 - Chat: re-clicking selected thread drills into it (same as 'l' key)
