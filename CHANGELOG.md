@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0]
 
 ### Added
+- Thread name sanitization: names auto-convert to kebab-case with Y/n confirmation prompt
+- `fray answer`: displays context from source message above each question
+
+### Changed
+- Message display limit increased from 20 to 60 lines
+
+### Fixed
+- Question text overflow in answer TUI now wraps to terminal width
+
+### Added
 - Chat: OS native notifications for direct @mentions and replies to your messages
   - macOS: Run `fray install-notifier` for branded notifications with fray icon
   - Other platforms: Falls back to system notifications via beeep
