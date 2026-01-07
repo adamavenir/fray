@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat: `/prune` command disabled until redesign
 
 ### Fixed
+- Chat: @mentions in threads now trigger OS notifications (was room-only)
+- Chat: @user mentions (not just @agents) now extracted and notified
+- Chat: notifications no longer re-fire for already-read messages on restart
+- Chat: notifications group under "fray" in Notification Center (was "terminal-notifier")
 - Read state persists across database rebuilds (watermark-based fallback)
 - `--since` accepts bare message IDs (`abc123`), `#`-prefix (`#abc`), and short prefixes
 - Chat: open-qs view no longer shows duplicate posts for multi-question messages
