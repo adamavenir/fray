@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Token usage: integrates with ccusage to show per-session cost (requires ccusage via npx)
 - Chat: activity panel in thread sidebar showing managed agent status
   - Status icons: ▶ active, ◎ spawning, ◐ prompting, ◉ prompted, ◇ idle, 𝘅 error, · offline
+  - Semantic status icons: ⏳ awaiting, ✓ done, ⚠ blocked (set via `fray status @agent "awaiting: feedback"`)
   - Prompting/prompted states detected via ccusage token tracking
   - Session phase display (/fly, /hop, /land) next to agent name
   - Click agent row to navigate to their last posted thread
