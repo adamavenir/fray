@@ -564,9 +564,9 @@ func (d *MockDriver) Spawn(ctx context.Context, agent types.Agent, prompt string
 	if d.spawnProc != nil {
 		return d.spawnProc, nil
 	}
-	// Default: return a mock process that exits quickly (0.1s sleep)
+	// Default: return a mock process that runs for 5s (long enough for tests)
 	// Use CommandContext so the process gets killed when daemon stops
-	cmd := exec.CommandContext(ctx, "sleep", "0.1")
+	cmd := exec.CommandContext(ctx, "sleep", "5")
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -660,6 +660,29 @@ func (h *daemonHarness) createManagedAgent(agentID string) types.Agent {
 		h.t.Fatalf("get agent %s: %v", agentID, err)
 	}
 	return *created
+}
+
+// simulateRunningProcess adds a mock process to daemon's tracking map.
+// This simulates an agent that was spawned and is currently running.
+// Call after Start() to avoid cleanup resetting the state.
+func (h *daemonHarness) simulateRunningProcess(agentID string) {
+	h.t.Helper()
+
+	// Create a long-running process that won't exit during the test
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		h.t.Fatalf("simulate process: %v", err)
+	}
+
+	proc := &Process{
+		Cmd:       cmd,
+		StartedAt: time.Now(),
+		SessionID: fmt.Sprintf("simulated-session-%s", agentID),
+	}
+
+	h.daemon.mu.Lock()
+	h.daemon.processes[agentID] = proc
+	h.daemon.mu.Unlock()
 }
 
 func TestSpawnFlow_DirectMention(t *testing.T) {
@@ -793,30 +816,40 @@ func TestSpawnFlow_NoSpawnWhenActive(t *testing.T) {
 	h := newDaemonHarness(t)
 	defer h.daemon.Stop()
 
-	// Create managed agent already active
+	// Create managed agent and bob
 	alice := h.createManagedAgent("alice")
-	db.UpdateAgentPresence(h.db, alice.AgentID, types.PresenceActive)
 	h.createAgent("bob", false)
 
-	// Bob mentions alice
-	h.postMessage("bob", "@alice need help", types.MessageTypeUser)
+	// First: bob mentions alice (will trigger spawn)
+	h.postMessage("bob", "@alice first request", types.MessageTypeUser)
 
-	// Start daemon
+	// Start daemon - alice will spawn (mock process runs for 5s)
 	ctx := context.Background()
 	if err := h.daemon.Start(ctx); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	// Wait for spawn to complete (includes 2s ccusage timeout if not installed)
+	time.Sleep(3 * time.Second)
 
-	// Should queue, not spawn (agent already active)
-	if h.mockDriver.SpawnCount() != 0 {
-		t.Errorf("expected 0 spawns when active, got %d", h.mockDriver.SpawnCount())
+	// Verify first spawn happened
+	if h.mockDriver.SpawnCount() != 1 {
+		t.Fatalf("expected 1 spawn for first mention, got %d", h.mockDriver.SpawnCount())
 	}
 
-	// Verify mention was queued
+	// Now bob mentions alice again while she's still running
+	h.postMessage("bob", "@alice second request", types.MessageTypeUser)
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Should queue the second mention, not spawn again
+	if h.mockDriver.SpawnCount() != 1 {
+		t.Errorf("expected 1 spawn total, got %d", h.mockDriver.SpawnCount())
+	}
+
+	// Verify second mention was queued
 	if !h.daemon.debouncer.HasPending(alice.AgentID) {
-		t.Error("expected mention to be queued")
+		t.Error("expected second mention to be queued")
 	}
 }
 
@@ -1171,26 +1204,27 @@ func TestErrorRecovery_MultipleAgentsIndependentlyManaged(t *testing.T) {
 	h := newDaemonHarness(t)
 	defer h.daemon.Stop()
 
-	// Create two managed agents
+	// Create two managed agents and carol
 	h.createManagedAgent("alice")
 	h.createManagedAgent("bob")
 	h.createAgent("carol", false)
 
-	// Put alice in active state (already running)
-	db.UpdateAgentPresence(h.db, "alice", types.PresenceActive)
-
-	// Carol mentions both
-	h.postMessage("carol", "@alice @bob help needed", types.MessageTypeUser)
-
-	// Start daemon
+	// Start daemon first
 	ctx := context.Background()
 	if err := h.daemon.Start(ctx); err != nil {
 		t.Fatalf("start daemon: %v", err)
 	}
 
+	// Put alice in active state with a tracked process (already running)
+	db.UpdateAgentPresence(h.db, "alice", types.PresenceActive)
+	h.simulateRunningProcess("alice")
+
+	// Carol mentions both
+	h.postMessage("carol", "@alice @bob help needed", types.MessageTypeUser)
+
 	time.Sleep(200 * time.Millisecond)
 
-	// Bob should spawn, alice should be queued (already active)
+	// Bob should spawn, alice should be queued (already has running process)
 	if h.mockDriver.SpawnCount() < 1 {
 		t.Errorf("expected at least 1 spawn, got %d", h.mockDriver.SpawnCount())
 	}
@@ -1205,5 +1239,43 @@ func TestErrorRecovery_MultipleAgentsIndependentlyManaged(t *testing.T) {
 	}
 	if !bobSpawned {
 		t.Error("expected bob to spawn")
+	}
+}
+
+func TestErrorRecovery_SignalKillSetsIdle(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Configure mock driver to return a process that gets killed by signal
+	cmd := exec.Command("sh", "-c", "kill -9 $$") // Kill self with SIGKILL
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start signal process: %v", err)
+	}
+	h.mockDriver.spawnProc = &Process{
+		Cmd:       cmd,
+		StartedAt: time.Now(),
+		SessionID: "signal-killed-session",
+	}
+
+	// Create agents
+	h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice test signal kill", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	// Wait for spawn + process to exit and be detected (includes ccusage timeout)
+	time.Sleep(3 * time.Second)
+
+	// Presence should be idle (signal kill exit_code=-1 should NOT be error)
+	updated, _ := db.GetAgent(h.db, "alice")
+	if updated.Presence != types.PresenceIdle {
+		t.Errorf("expected presence 'idle' after signal kill, got %q", updated.Presence)
 	}
 }

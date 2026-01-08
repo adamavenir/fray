@@ -104,6 +104,105 @@ Use Ctrl+C or SIGTERM to gracefully shut down.`,
 	cmd.Flags().Bool("debug", false, "enable debug logging")
 
 	cmd.AddCommand(NewDaemonStatusCmd())
+	cmd.AddCommand(NewDaemonResetCmd())
+
+	return cmd
+}
+
+// NewDaemonResetCmd creates the daemon reset command.
+func NewDaemonResetCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Reset all managed agent presence states to offline",
+		Long: `Reset presence state for all managed agents.
+
+Use this when:
+- Daemon crashed and left agents in stale states
+- Database has inconsistent presence data
+- Starting fresh after manual intervention
+
+All managed agents will be set to "offline" presence.
+Running agents will not be affected - this only updates the database.
+
+Use --clear-sessions to also clear session IDs, forcing fresh spawns
+instead of resumes on next @mention.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cmdCtx, err := GetContext(cmd)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			defer cmdCtx.DB.Close()
+
+			clearSessions, _ := cmd.Flags().GetBool("clear-sessions")
+
+			// Get all managed agents
+			managedAgents, err := db.GetManagedAgents(cmdCtx.DB)
+			if err != nil {
+				return writeCommandError(cmd, fmt.Errorf("failed to get managed agents: %w", err))
+			}
+
+			if len(managedAgents) == 0 {
+				if cmdCtx.JSONMode {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+						"status":          "no_agents",
+						"count":           0,
+						"sessions_cleared": false,
+					})
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "No managed agents found")
+				return nil
+			}
+
+			// Reset each agent's presence to offline
+			resetCount := 0
+			sessionsCleared := 0
+			for _, agent := range managedAgents {
+				if err := db.UpdateAgentPresence(cmdCtx.DB, agent.AgentID, types.PresenceOffline); err != nil {
+					if !cmdCtx.JSONMode {
+						fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to reset @%s: %v\n", agent.AgentID, err)
+					}
+					continue
+				}
+				resetCount++
+
+				// Clear session ID if requested
+				if clearSessions {
+					if err := db.UpdateAgentSessionID(cmdCtx.DB, agent.AgentID, ""); err != nil {
+						if !cmdCtx.JSONMode {
+							fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to clear session for @%s: %v\n", agent.AgentID, err)
+						}
+					} else {
+						sessionsCleared++
+					}
+				}
+
+				if !cmdCtx.JSONMode {
+					msg := fmt.Sprintf("Reset @%s presence to offline (was: %s)", agent.AgentID, agent.Presence)
+					if clearSessions {
+						msg += " + cleared session"
+					}
+					fmt.Fprintln(cmd.OutOrStdout(), msg)
+				}
+			}
+
+			if cmdCtx.JSONMode {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+					"status":           "reset",
+					"count":            resetCount,
+					"sessions_cleared": sessionsCleared,
+				})
+			}
+
+			summary := fmt.Sprintf("\nReset %d agent(s) to offline", resetCount)
+			if clearSessions {
+				summary += fmt.Sprintf(", cleared %d session(s)", sessionsCleared)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), summary)
+			return nil
+		},
+	}
+
+	cmd.Flags().Bool("clear-sessions", false, "also clear session IDs (forces fresh spawns)")
 
 	return cmd
 }

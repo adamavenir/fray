@@ -89,6 +89,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 		return fmt.Errorf("acquire lock: %w", err)
 	}
 
+	// Clean up stale presence states from previous daemon runs
+	d.cleanupStalePresence()
+
 	// Create cancellable context for spawned processes
 	procCtx, cancel := context.WithCancel(ctx)
 	d.cancelFunc = cancel
@@ -205,6 +208,46 @@ func IsLocked(frayDir string) bool {
 	// Use syscall.Kill with signal 0 to check if process exists
 	// This is more reliable than proc.Signal(nil) on macOS
 	return syscall.Kill(info.PID, 0) == nil
+}
+
+// cleanupStalePresence resets stale presence states on daemon startup.
+// Agents may be stuck in active/spawning/prompting states from a previous
+// daemon run that crashed or was killed. Since we have no tracked processes
+// at startup, these states are orphaned and should be reset to idle.
+func (d *Daemon) cleanupStalePresence() {
+	agents, err := d.getManagedAgents()
+	if err != nil {
+		d.debugf("startup cleanup: error getting agents: %v", err)
+		return
+	}
+
+	staleStates := []types.PresenceState{
+		types.PresenceSpawning,
+		types.PresencePrompting,
+		types.PresencePrompted,
+		types.PresenceActive,
+	}
+
+	for _, agent := range agents {
+		isStale := false
+		for _, stale := range staleStates {
+			if agent.Presence == stale {
+				isStale = true
+				break
+			}
+		}
+
+		if !isStale {
+			continue
+		}
+
+		// Agent has a "busy" presence but daemon just started (no tracked processes)
+		// Reset to idle so mentions can spawn fresh
+		d.debugf("startup cleanup: @%s was %s, resetting to idle", agent.AgentID, agent.Presence)
+		if err := db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceIdle); err != nil {
+			d.debugf("startup cleanup: error updating @%s: %v", agent.AgentID, err)
+		}
+	}
 }
 
 // watchLoop is the main daemon loop.
@@ -344,15 +387,41 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			agent.Presence = currentAgent.Presence
 		}
 
-		// If we already spawned this poll, or agent is busy, queue the mention
+		// If we already spawned this poll, queue the mention
 		// Note: Don't advance watermark for queued messages - pending is in-memory,
 		// so on restart we need to re-query and re-queue them
-		if spawned || agent.Presence == types.PresenceSpawning || agent.Presence == types.PresencePrompting ||
-			agent.Presence == types.PresencePrompted || agent.Presence == types.PresenceActive {
-			d.debugf("    %s: queued (agent busy or already spawned)", msg.ID)
+		if spawned {
+			d.debugf("    %s: queued (already spawned this poll)", msg.ID)
 			d.debouncer.QueueMention(agent.AgentID, msg.ID)
 			hasQueued = true
 			continue
+		}
+
+		// Check if agent has an active process (busy states)
+		// Detect orphaned state: presence=active but no tracked process
+		d.mu.RLock()
+		_, hasProcess := d.processes[agent.AgentID]
+		d.mu.RUnlock()
+
+		isBusyState := agent.Presence == types.PresenceSpawning ||
+			agent.Presence == types.PresencePrompting ||
+			agent.Presence == types.PresencePrompted ||
+			agent.Presence == types.PresenceActive
+
+		if isBusyState && hasProcess {
+			// Agent has running process, queue the mention
+			d.debugf("    %s: queued (agent busy)", msg.ID)
+			d.debouncer.QueueMention(agent.AgentID, msg.ID)
+			hasQueued = true
+			continue
+		}
+
+		if isBusyState && !hasProcess {
+			// Orphaned state: presence says busy but no tracked process
+			// Reset to idle and proceed to spawn
+			d.debugf("    %s: orphaned presence detected (was %s), resetting to idle", msg.ID, agent.Presence)
+			db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceIdle)
+			agent.Presence = types.PresenceIdle
 		}
 
 		// Error state blocks auto-spawn - requires manual recovery via "fray back"
@@ -546,7 +615,6 @@ func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string
 
 	// Get min_checkin for the prompt
 	_, _, minCheckin, _ := GetTimeouts(agent.Invoke)
-	minCheckinMins := minCheckin / 60000
 
 	// Group messages by home (thread) for better context
 	homeGroups := make(map[string][]string)
@@ -577,6 +645,7 @@ func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string
 	// Wake prompt with optional checkin guidance
 	var prompt string
 	if minCheckin > 0 {
+		minCheckinMins := minCheckin / 60000
 		prompt = fmt.Sprintf(`You've been @mentioned. Check fray for context.
 
 Trigger messages:
@@ -585,15 +654,16 @@ Trigger messages:
 Run: fray get %s
 
 ---
-Checkin: Posting to fray resets a %dm timer. Silence = session recycled (resumable on @mention).`,
-			triggerInfo, agent.AgentID, minCheckinMins)
+Send a reply in fray (in the same thread where the message was received, using the flag "--reply-to <msg-id>") as quickly as you can to acknowledge the user, then continue.  Don't use the literal word 'ack' as it can sound like a panicked reply. Be casual and mix it up.`,
+			triggerInfo, agent.AgentID)
+		_ = minCheckinMins // Reserved for future use
 	} else {
 		prompt = fmt.Sprintf(`You've been @mentioned. Check fray for context.
 
 Trigger messages:
 %s
 
-Run: fray get %s`,
+Run: fray get %s then send a reply in fray (in the same thread where the message was received, using the flag "--reply-to <msg-id>") as quickly as you can to acknowledge the user, then continue. Don't use the literal word 'ack' as it can sound like a panicked reply. Be casual and mix it up.`,
 			triggerInfo, agent.AgentID)
 	}
 
@@ -747,6 +817,11 @@ func (d *Daemon) handleProcessExit(agentID string, proc *Process) {
 	// Only update presence and remove from map if this is the current process
 	if isCurrentProc {
 		if exitCode == 0 {
+			db.UpdateAgentPresence(d.database, agentID, types.PresenceIdle)
+		} else if exitCode == -1 {
+			// Signal kill (SIGTERM/SIGINT) - treat as idle, not error
+			// This handles: user Ctrl-C, daemon restart, network interruption
+			d.debugf("@%s: exit_code=-1 (signal kill) → idle (not error)", agentID)
 			db.UpdateAgentPresence(d.database, agentID, types.PresenceIdle)
 		} else {
 			db.UpdateAgentPresence(d.database, agentID, types.PresenceError)

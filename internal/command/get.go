@@ -258,6 +258,13 @@ Legacy (deprecated):
 					roomMessages = filterEventMessages(roomMessages)
 				}
 
+				// Hard cap room messages to prevent token bloat
+				// Only applies when no explicit --last flag was provided
+				roomCap := parseOptionalInt(room, 10)
+				if last == "" && len(roomMessages) > roomCap {
+					roomMessages = roomMessages[len(roomMessages)-roomCap:]
+				}
+
 				// Check ghost cursor for session-aware unread logic
 				allHomes := ""
 				mentionOpts := &types.MessageQueryOptions{
