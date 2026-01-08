@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - JSON output: structured data for programmatic access (e.g., PM agent)
   - Recent events: 30-minute feed of @pm mentions and status changes
   - Channel filtering: shows managed agents from current channel only
+  - Token usage: integrates with ccusage to show per-session cost (requires ccusage via npx)
+- Chat: activity panel in thread sidebar showing managed agent status
+  - Status icons: ▶ active, ◎ spawning, ◇ idle, 𝘅 error, · offline
+  - Session phase display (/fly, /hop, /land) next to agent name
+  - Click agent row to navigate to their last posted thread
+  - Offline agents collapsed into summary row
 
 ### Fixed
 - JSONL append now calls fsync() to ensure data is flushed to disk before returning success
