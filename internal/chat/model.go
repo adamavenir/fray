@@ -151,9 +151,9 @@ type Model struct {
 
 // TokenUsage holds token usage data from ccusage (for activity panel).
 type TokenUsage struct {
-	SessionID   string
-	TotalCost   float64
-	TotalTokens int64
+	SessionID   string  `json:"sessionId"`
+	TotalCost   float64 `json:"totalCost"`
+	TotalTokens int64   `json:"totalTokens"`
 }
 
 type errMsg struct {

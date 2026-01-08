@@ -854,6 +854,7 @@ func (m *Model) renderThreadPanel() string {
 	collapsedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))            // dim grey for non-subscribed
 
 	// Only show header when filtering or drilled in
+	filterHintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // dim grey
 	var lines []string
 	showHeader := m.threadFilterActive || m.drillDepth() > 0
 	if showHeader {
@@ -887,8 +888,8 @@ func (m *Model) renderThreadPanel() string {
 		}
 		lines = []string{headerStyle.Render(header), ""} // space after header
 	} else {
-		// Show filter hint at top, then blank line
-		lines = []string{itemStyle.Render(" <space> to filter"), ""}
+		// Show filter hint at top (dim grey, indented), then blank line
+		lines = []string{filterHintStyle.Render("   <space> to filter"), ""}
 	}
 
 	entries := m.threadEntries()
@@ -1269,14 +1270,10 @@ func threadEntryMatchesFilter(entry threadEntry, term string) bool {
 }
 
 func (m *Model) threadIndexAtLine(line int) int {
-	// Thread panel has:
+	// Thread panel always has 2 header lines:
 	// - When filtering or drilled: header(1) + blank(1) = 2 lines
-	// - When at top level: blank(1) = 1 line
-	showHeader := m.threadFilterActive || m.drillDepth() > 0
-	headerLines := 1
-	if showHeader {
-		headerLines = 2
-	}
+	// - When at top level: filter hint(1) + blank(1) = 2 lines
+	headerLines := 2
 	if line < headerLines {
 		return -1
 	}
@@ -1798,23 +1795,36 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 
 	var activeAgents, offlineAgents []types.Agent
 	for _, agent := range m.managedAgents {
-		if agent.LeftAt != nil {
-			offlineAgents = append(offlineAgents, agent)
-			continue
-		}
+		// Presence takes priority over LeftAt for categorization
+		// This handles the case where daemon sets LeftAt on process exit but agent is just idle
 		if agent.Presence == types.PresenceOffline {
 			offlineAgents = append(offlineAgents, agent)
 			continue
 		}
-		// Presence-based active check: spawning/prompting/prompted/active/error are all "active" for display
-		// Show immediately based on presence, don't wait for lastSeen update
+		// Active states: spawning/prompting/prompted/active/error are all "active" for display
 		if agent.Presence == types.PresenceSpawning || agent.Presence == types.PresencePrompting ||
 			agent.Presence == types.PresencePrompted || agent.Presence == types.PresenceActive ||
 			agent.Presence == types.PresenceError {
 			activeAgents = append(activeAgents, agent)
 			continue
 		}
-		// For idle or empty presence, use time-based threshold
+		// Idle presence: show in active section (resumable session)
+		if agent.Presence == types.PresenceIdle {
+			activeAgents = append(activeAgents, agent)
+			continue
+		}
+		// For empty presence or LeftAt set without explicit offline, use time-based threshold
+		if agent.LeftAt != nil {
+			// Agent has left - check if recently active (within threshold)
+			timeSinceActive := now - agent.LastSeen
+			if timeSinceActive > int64(staleThreshold) {
+				offlineAgents = append(offlineAgents, agent)
+			} else {
+				activeAgents = append(activeAgents, agent)
+			}
+			continue
+		}
+		// Default: use time-based threshold
 		timeSinceActive := now - agent.LastSeen
 		if timeSinceActive > int64(staleThreshold) {
 			offlineAgents = append(offlineAgents, agent)
@@ -1860,113 +1870,209 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 	return lines, len(lines)
 }
 
-// renderAgentRow renders a single agent row with background fill for token usage.
-// The row is wrapped in a bubblezone for click handling.
+// renderAgentRow renders a single agent row with two-tone background for token usage.
+// The entire row has a background: bright portion = used tokens, dim portion = remaining.
+// Format: [icon] [name] status  where icon+name are bold, status is italic
+// Text is black for readability against bright backgrounds.
 func (m *Model) renderAgentRow(agent types.Agent, width int) string {
-	// Status icon based on presence (using unicode chars from spec)
+	if width <= 0 {
+		width = 30
+	}
+	rowWidth := width - 1
+
+	// Status icon based on presence
 	icon := "▶"
 	switch agent.Presence {
 	case types.PresenceActive:
-		icon = "▶" // active
+		icon = "▶"
 	case types.PresenceSpawning:
-		icon = "◎" // spawning (process started, waiting for API)
+		icon = "◎"
 	case types.PresencePrompting:
-		icon = "◐" // prompting (sending context to API)
+		icon = "◐"
 	case types.PresencePrompted:
-		icon = "◉" // prompted (agent is generating response)
+		icon = "◉"
 	case types.PresenceIdle:
-		icon = "◇" // idle
+		icon = "◇"
 	case types.PresenceError:
-		icon = "𝘅" // blocked/error
+		icon = "𝘅"
 	case types.PresenceOffline:
-		icon = "·" // offline
+		icon = "·"
 	}
 
-	// Agent name (max 8 chars to leave room for phase)
+	// Build plain text content: " icon name status (unread)"
 	name := agent.AgentID
-	if len(name) > 8 {
-		name = name[:8]
+	status := ""
+	if agent.Status != nil && *agent.Status != "" {
+		status = *agent.Status
 	}
-
-	// Extract session phase from status
-	phase := extractSessionPhase(agent.Status)
-
-	// Build name + phase portion
-	namePhase := name
-	if phase != "" {
-		namePhase = fmt.Sprintf("%-8s %s", name, phase)
-	} else {
-		namePhase = fmt.Sprintf("%-8s", name)
-	}
-
-	// Unread count
 	unread := m.agentUnreadCounts[agent.AgentID]
-	unreadStr := ""
+
+	// Build the visible text content (no styling yet)
+	content := fmt.Sprintf(" %s %s", icon, name)
+	if status != "" {
+		content += " " + status
+	}
 	if unread > 0 {
-		unreadStr = fmt.Sprintf("(%d)", unread)
+		content += fmt.Sprintf(" (%d)", unread)
 	}
 
-	// Build the row text
-	rowText := fmt.Sprintf(" %s %s %s", icon, namePhase, unreadStr)
-	if width > 0 && len(rowText) > width-1 {
-		rowText = rowText[:width-1]
+	// Truncate content to fit row width
+	contentRunes := []rune(content)
+	if len(contentRunes) > rowWidth {
+		contentRunes = contentRunes[:rowWidth]
 	}
-	// Pad to full width for background effect
-	for len(rowText) < width-1 {
-		rowText += " "
+	// Pad to full row width
+	for len(contentRunes) < rowWidth {
+		contentRunes = append(contentRunes, ' ')
 	}
+	paddedContent := string(contentRunes)
 
 	// Get agent color
 	agentColor := m.colorForAgent(agent.AgentID)
 
-	// Calculate token fill percentage (placeholder - actual ccusage integration later)
-	// For now, use a dim version of agent color for the whole row
-	fillPercent := 0.0
+	// Calculate token usage percentage
+	// Target: 80% of 200k = 160k tokens is "full"
+	// Danger zone: >80% actual (>160k) switches to red
+	const maxTokens = 200000
+	const targetPercent = 0.80 // 80% is "full" (160k tokens)
+	const dangerThreshold = 0.80
+
+	tokenPercent := 0.0
 	if usage := m.agentTokenUsage[agent.AgentID]; usage != nil && usage.TotalTokens > 0 {
-		// Estimate: 200k context window, show percentage used
-		fillPercent = float64(usage.TotalTokens) / 200000.0
-		if fillPercent > 1.0 {
-			fillPercent = 1.0
+		tokenPercent = float64(usage.TotalTokens) / float64(maxTokens)
+	}
+
+	// Determine colors based on state
+	var brightBg, dimBg lipgloss.Color
+	inDangerZone := tokenPercent > dangerThreshold
+
+	if agent.Presence == types.PresenceError {
+		// Error state: full red background
+		brightBg = lipgloss.Color("124") // dark red
+		dimBg = lipgloss.Color("124")
+	} else if agent.Presence == types.PresenceOffline {
+		// Offline: gray background
+		brightBg = lipgloss.Color("238") // dark gray
+		dimBg = lipgloss.Color("236")    // darker gray
+	} else if inDangerZone {
+		// Danger zone (>80%): red tones
+		// Show progress within the remaining 20% (actually 15% for buffer)
+		brightBg = lipgloss.Color("196") // bright red
+		dimBg = lipgloss.Color("52")     // dark red
+	} else {
+		// Normal: two tones of agent color
+		brightBg = agentColor
+		dimBg = dimColor(agentColor)
+	}
+
+	// Calculate fill width (how many chars get bright background)
+	var fillRatio float64
+	if inDangerZone {
+		// In danger zone: show progress within the remaining 20%
+		// Map 80-100% to 0-100% of row
+		fillRatio = (tokenPercent - dangerThreshold) / (1.0 - dangerThreshold)
+		if fillRatio > 1.0 {
+			fillRatio = 1.0
+		}
+	} else if agent.Presence == types.PresenceError || agent.Presence == types.PresenceOffline {
+		// Error/offline: no fill progression
+		fillRatio = 0
+	} else {
+		// Normal: map 0-80% to 0-100% of row
+		fillRatio = tokenPercent / targetPercent
+		if fillRatio > 1.0 {
+			fillRatio = 1.0
 		}
 	}
 
-	// Style based on presence
-	var styledRow string
-	switch agent.Presence {
-	case types.PresenceError:
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("124")) // red bg
-		styledRow = style.Render(rowText)
-	case types.PresenceOffline:
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Background(lipgloss.Color("236")) // gray
-		styledRow = style.Render(rowText)
-	default:
-		// Active/spawning/idle: use agent color with fill
-		if fillPercent > 0 {
-			fillWidth := int(float64(width-1) * fillPercent)
-			if fillWidth < 1 {
-				fillWidth = 1
-			}
-			// Create filled portion and unfilled portion
-			filledPart := rowText
-			if fillWidth < len(rowText) {
-				filledPart = rowText[:fillWidth]
-			}
-			unfilledPart := ""
-			if fillWidth < len(rowText) {
-				unfilledPart = rowText[fillWidth:]
-			}
-			filledStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(agentColor)
-			unfilledStyle := lipgloss.NewStyle().Foreground(agentColor)
-			styledRow = filledStyle.Render(filledPart) + unfilledStyle.Render(unfilledPart)
-		} else {
-			style := lipgloss.NewStyle().Foreground(agentColor)
-			styledRow = style.Render(rowText)
-		}
+	// Round up to next character
+	fillChars := int(fillRatio*float64(rowWidth) + 0.99)
+	if fillChars < 0 {
+		fillChars = 0
+	}
+	if fillChars > rowWidth {
+		fillChars = rowWidth
+	}
+
+	// Text color: black for readability against bright backgrounds
+	// Exceptions: red backgrounds (error/danger) use white, offline uses gray
+	textColor := lipgloss.Color("16") // black
+	if agent.Presence == types.PresenceError || inDangerZone {
+		textColor = lipgloss.Color("231") // white for red backgrounds
+	} else if agent.Presence == types.PresenceOffline {
+		textColor = lipgloss.Color("250") // light gray
+	}
+
+	// Build styled row: split at fill boundary
+	brightStyle := lipgloss.NewStyle().Foreground(textColor).Background(brightBg)
+	dimStyle := lipgloss.NewStyle().Foreground(textColor).Background(dimBg)
+
+	var rowText string
+	if fillChars >= rowWidth {
+		// All bright
+		rowText = brightStyle.Render(paddedContent)
+	} else if fillChars <= 0 {
+		// All dim
+		rowText = dimStyle.Render(paddedContent)
+	} else {
+		// Split: bright portion then dim portion
+		brightPart := string([]rune(paddedContent)[:fillChars])
+		dimPart := string([]rune(paddedContent)[fillChars:])
+		rowText = brightStyle.Render(brightPart) + dimStyle.Render(dimPart)
 	}
 
 	// Wrap in bubblezone for click handling
 	zoneID := "agent-" + agent.AgentID
-	return m.zoneManager.Mark(zoneID, styledRow)
+	return m.zoneManager.Mark(zoneID, rowText)
+}
+
+// dimColor returns a dimmer version of a color for the unfilled portion.
+func dimColor(c lipgloss.Color) lipgloss.Color {
+	// Map bright colors to dimmer versions
+	// This is approximate since lipgloss uses 256-color codes
+	colorMap := map[string]string{
+		"36":  "23",  // cyan -> dark cyan
+		"35":  "90",  // magenta -> dark magenta
+		"33":  "19",  // blue -> dark blue
+		"32":  "22",  // green -> dark green
+		"214": "130", // orange -> dark orange
+		"226": "142", // yellow -> dark yellow
+	}
+	if dim, ok := colorMap[string(c)]; ok {
+		return lipgloss.Color(dim)
+	}
+	// Default: just return a generic dark color
+	return lipgloss.Color("236")
+}
+
+// truncateStyled truncates a styled string to maxLen visible characters.
+func truncateStyled(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	visibleCount := 0
+	inEscape := false
+	result := ""
+	for _, ch := range s {
+		if ch == '\x1b' {
+			inEscape = true
+			result += string(ch)
+			continue
+		}
+		if inEscape {
+			result += string(ch)
+			if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
+				inEscape = false
+			}
+			continue
+		}
+		if visibleCount >= maxLen {
+			break
+		}
+		result += string(ch)
+		visibleCount++
+	}
+	return result
 }
 
 // colorForAgent returns the color for an agent (reuse from colorMap or generate).
@@ -1990,21 +2096,3 @@ func (m *Model) colorForAgent(agentID string) lipgloss.Color {
 	return colors[hash%len(colors)]
 }
 
-// extractSessionPhase extracts /fly, /hop, /land from agent status.
-func extractSessionPhase(status *string) string {
-	if status == nil {
-		return ""
-	}
-	s := *status
-	// Look for /fly, /hop, /land patterns
-	if strings.Contains(s, "/fly") {
-		return "/fly"
-	}
-	if strings.Contains(s, "/hop") {
-		return "/hop"
-	}
-	if strings.Contains(s, "/land") {
-		return "/land"
-	}
-	return ""
-}
