@@ -166,10 +166,10 @@ func matchesMention(mention, agentID string) bool {
 
 // CanTriggerSpawn returns true if the message author can trigger a spawn for the agent.
 // Rules:
-// - In room: only human (non-agent) can trigger
-// - In thread with owner: human OR owner can trigger
-// - In thread without owner (user-started): only human can trigger
-func CanTriggerSpawn(msg types.Message, thread *types.Thread) bool {
+// - Human (non-agent) can always trigger
+// - Agent with "wake" trust can trigger
+// - Thread owner can trigger in their own thread
+func CanTriggerSpawn(database *sql.DB, msg types.Message, thread *types.Thread) bool {
 	// Check if author is human (message type "user" vs "agent")
 	isHuman := msg.Type == types.MessageTypeUser
 
@@ -177,11 +177,36 @@ func CanTriggerSpawn(msg types.Message, thread *types.Thread) bool {
 		return true
 	}
 
-	// Author is an agent - only allowed if they own the thread
+	// Author is an agent - check if they have "wake" trust
+	if HasWakeTrust(database, msg.FromAgent) {
+		return true
+	}
+
+	// Author is an agent - allowed if they own the thread
 	if thread != nil && thread.OwnerAgent != nil && *thread.OwnerAgent == msg.FromAgent {
 		return true
 	}
 
+	return false
+}
+
+// HasWakeTrust returns true if the agent has "wake" trust permission.
+// Agents with wake trust can trigger spawns for other agents.
+func HasWakeTrust(database *sql.DB, agentID string) bool {
+	if database == nil {
+		return false
+	}
+
+	agent, err := db.GetAgent(database, agentID)
+	if err != nil || agent == nil || agent.Invoke == nil {
+		return false
+	}
+
+	for _, t := range agent.Invoke.Trust {
+		if t == "wake" {
+			return true
+		}
+	}
 	return false
 }
 

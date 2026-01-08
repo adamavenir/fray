@@ -33,12 +33,14 @@ const (
 // InvokeConfig holds driver-specific configuration for spawning agents.
 type InvokeConfig struct {
 	Driver         string         `json:"driver,omitempty"`           // claude, codex, opencode
+	Model          string         `json:"model,omitempty"`            // model to use (e.g., sonnet-1m for 1M context Sonnet)
+	Trust          []string       `json:"trust,omitempty"`            // trust capabilities: "wake" allows this agent to wake others
 	Config         map[string]any `json:"config,omitempty"`           // driver-specific config
 	PromptDelivery PromptDelivery `json:"prompt_delivery,omitempty"`  // args, stdin, tempfile
 	SpawnTimeoutMs int64          `json:"spawn_timeout_ms,omitempty"` // max time in 'spawning' before 'error' (default: 30000)
 	IdleAfterMs    int64          `json:"idle_after_ms,omitempty"`    // time since activity before 'idle' (default: 5000)
-	MinCheckinMs   int64          `json:"min_checkin_ms,omitempty"`   // done-detection: idle + no fray posts for this duration = kill (default: 600000)
-	MaxRuntimeMs   int64          `json:"max_runtime_ms,omitempty"`   // zombie safety net: forced termination (default: 7200000)
+	MinCheckinMs   int64          `json:"min_checkin_ms,omitempty"`   // done-detection: idle + no fray posts for this duration = kill (default: 0 = disabled)
+	MaxRuntimeMs   int64          `json:"max_runtime_ms,omitempty"`   // zombie safety net: forced termination (default: 0 = unlimited)
 }
 
 // Agent represents agent identity and presence.

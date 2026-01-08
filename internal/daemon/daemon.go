@@ -318,12 +318,12 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			continue
 		}
 
-		// Check thread ownership - only human or thread owner can trigger spawn
+		// Check who can trigger spawn: human, agent with wake trust, or thread owner
 		var thread *types.Thread
 		if msg.Home != "" && msg.Home != "room" {
 			thread, _ = db.GetThread(d.database, msg.Home)
 		}
-		if !CanTriggerSpawn(msg, thread) {
+		if !CanTriggerSpawn(d.database, msg, thread) {
 			isHuman := msg.Type == types.MessageTypeUser
 			d.debugf("    %s: skip (ownership check failed) - from: %s, type: %s, isHuman: %v", msg.ID, msg.FromAgent, msg.Type, isHuman)
 			if !hasQueued && !spawned {
@@ -351,6 +351,16 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			d.debugf("    %s: queued (agent busy or already spawned)", msg.ID)
 			d.debouncer.QueueMention(agent.AgentID, msg.ID)
 			hasQueued = true
+			continue
+		}
+
+		// Error state blocks auto-spawn - requires manual recovery via "fray back"
+		if agent.Presence == types.PresenceError {
+			d.debugf("    %s: skip (agent in error state, needs manual recovery)", msg.ID)
+			// Advance watermark to avoid retrying the same message
+			if !hasQueued {
+				lastProcessedID = msg.ID
+			}
 			continue
 		}
 
@@ -552,8 +562,10 @@ func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string
 	}
 	triggerInfo := strings.Join(triggerLines, "\n")
 
-	// Wake prompt with checkin explanation
-	prompt := fmt.Sprintf(`You've been @mentioned. Check fray for context.
+	// Wake prompt with optional checkin guidance
+	var prompt string
+	if minCheckin > 0 {
+		prompt = fmt.Sprintf(`You've been @mentioned. Check fray for context.
 
 Trigger messages:
 %s
@@ -562,7 +574,16 @@ Run: fray get %s
 
 ---
 Checkin: Posting to fray resets a %dm timer. Silence = session recycled (resumable on @mention).`,
-		triggerInfo, agent.AgentID, minCheckinMins)
+			triggerInfo, agent.AgentID, minCheckinMins)
+	} else {
+		prompt = fmt.Sprintf(`You've been @mentioned. Check fray for context.
+
+Trigger messages:
+%s
+
+Run: fray get %s`,
+			triggerInfo, agent.AgentID)
+	}
 
 	return prompt, allMentions
 }
@@ -604,8 +625,9 @@ func (d *Daemon) updatePresence() {
 					if time.Since(lastActivity).Milliseconds() > idleAfter {
 						db.UpdateAgentPresence(d.database, agentID, types.PresenceIdle)
 					}
-				} else if agent.Presence == types.PresenceIdle {
+				} else if agent.Presence == types.PresenceIdle && minCheckin > 0 {
 					// Done-detection: if idle AND no fray activity (posts or heartbeat) for min_checkin, kill session
+					// Only enabled if minCheckin > 0 (disabled by default)
 					lastPostTs, _ := db.GetAgentLastPostTime(d.database, agentID)
 					lastHeartbeatTs := int64(0)
 					if agent.LastHeartbeat != nil {

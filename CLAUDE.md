@@ -109,20 +109,20 @@ Agents can be daemon-managed, enabling automatic spawning on @mentions.
 **Agent fields:**
 - `managed: bool` - whether daemon controls this agent
 - `invoke.driver` - CLI driver: `claude`, `codex`, `opencode`
+- `invoke.model` - model to use (e.g., `sonnet-1m` for 1M context Sonnet)
+- `invoke.trust` - trust capabilities: `["wake"]` allows agent to trigger spawns for other agents
 - `invoke.prompt_delivery` - how prompts are passed: `args`, `stdin`, `tempfile`
 - `invoke.spawn_timeout_ms` - max time in 'spawning' state (default: 30000)
 - `invoke.idle_after_ms` - time since activity before 'idle' (default: 5000)
-- `invoke.min_checkin_ms` - done-detection: idle + no fray posts = kill (default: 600000 / 10m)
+- `invoke.min_checkin_ms` - done-detection: idle + no fray posts = kill (default: 0 = disabled)
 - `invoke.max_runtime_ms` - zombie safety net: forced termination (default: 0 = unlimited)
 - `presence` - daemon-tracked state: `active`, `spawning`, `idle`, `error`, `offline`
 - `mention_watermark` - last processed msg_id for debouncing
 
-**Done-detection:** Daemon detects "probably done" agents via checkin mechanism:
-- Any fray activity (posts, replies, threads) resets the checkin timer
-- If agent is idle AND no fray posts for `min_checkin_ms` → session killed (resumable on next @mention)
-- Natural communication = checkin; silence = probably done
-- For long-running work without posts: use `fray heartbeat` for silent checkin
-- Use `fray clock` to see timer countdown + pending notification counts
+**Session lifecycle:** Sessions run until the agent exits (`fray bye` or `/land`). An @mention restarts a stopped session.
+- `min_checkin_ms`: Optional auto-kill if idle with no fray activity (disabled by default)
+- `max_runtime_ms`: Optional hard time limit (disabled by default)
+- Use `fray heartbeat` to signal activity during long-running work without posting
 
 **Session events** (stored in `agents.jsonl`):
 - `session_start`: agent spawned (includes `triggered_by` msg_id)

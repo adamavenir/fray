@@ -158,6 +158,11 @@ func (d *ClaudeDriver) Spawn(ctx context.Context, agent types.Agent, prompt stri
 		args = append(args, "--session-id", sessionID)
 	}
 
+	// Add model flag if specified
+	if agent.Invoke != nil && agent.Invoke.Model != "" {
+		args = append(args, "--model", agent.Invoke.Model)
+	}
+
 	switch delivery {
 	case types.PromptDeliveryArgs:
 		args = append(args, "-p", prompt)

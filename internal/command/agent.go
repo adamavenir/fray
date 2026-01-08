@@ -82,6 +82,8 @@ func NewAgentCreateCmd() *cobra.Command {
 			idleAfter, _ := cmd.Flags().GetInt64("idle-after")
 			minCheckin, _ := cmd.Flags().GetInt64("min-checkin")
 			maxRuntime, _ := cmd.Flags().GetInt64("max-runtime")
+			model, _ := cmd.Flags().GetString("model")
+			trust, _ := cmd.Flags().GetStringSlice("trust")
 
 			existing, err := db.GetAgent(ctx.DB, agentID)
 			if err != nil {
@@ -91,6 +93,8 @@ func NewAgentCreateCmd() *cobra.Command {
 			now := time.Now().Unix()
 			invoke := &types.InvokeConfig{
 				Driver:         driver,
+				Model:          model,
+				Trust:          trust,
 				PromptDelivery: types.PromptDelivery(promptDelivery),
 				SpawnTimeoutMs: spawnTimeout,
 				IdleAfterMs:    idleAfter,
@@ -146,10 +150,12 @@ func NewAgentCreateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String("driver", "claude", "CLI driver (claude, codex, opencode)")
+	cmd.Flags().String("model", "", "model to use (e.g., sonnet-1m for 1M context)")
+	cmd.Flags().StringSlice("trust", nil, "trust capabilities (e.g., wake allows agent to wake others)")
 	cmd.Flags().String("prompt-delivery", "", "how prompts are passed (args, stdin, tempfile)")
 	cmd.Flags().Int64("spawn-timeout", 30000, "max time in 'spawning' state (ms)")
 	cmd.Flags().Int64("idle-after", 5000, "time since activity before 'idle' (ms)")
-	cmd.Flags().Int64("min-checkin", 600000, "done-detection: idle + no fray posts = kill (ms, default 10m)")
+	cmd.Flags().Int64("min-checkin", 0, "done-detection: idle + no fray posts = kill (ms, 0 = disabled)")
 	cmd.Flags().Int64("max-runtime", 0, "zombie safety net: forced termination (ms, 0 = unlimited)")
 
 	return cmd

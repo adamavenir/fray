@@ -1,9 +1,13 @@
 package daemon
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +82,11 @@ func newTestHarness(t *testing.T) *testHarness {
 // createAgent creates a test agent.
 func (h *testHarness) createAgent(agentID string, managed bool) types.Agent {
 	h.t.Helper()
+	return h.createAgentWithTrust(agentID, managed, nil)
+}
+
+func (h *testHarness) createAgentWithTrust(agentID string, managed bool, trust []string) types.Agent {
+	h.t.Helper()
 
 	now := time.Now().Unix()
 	agent := types.Agent{
@@ -91,6 +100,7 @@ func (h *testHarness) createAgent(agentID string, managed bool) types.Agent {
 		agent.Invoke = &types.InvokeConfig{
 			Driver:         "claude",
 			PromptDelivery: types.PromptDeliveryStdin,
+			Trust:          trust,
 		}
 	}
 
@@ -243,11 +253,11 @@ func TestMatchesMention(t *testing.T) {
 
 func TestCanTriggerSpawn(t *testing.T) {
 	tests := []struct {
-		name       string
-		msgType    types.MessageType
-		fromAgent  string
+		name        string
+		msgType     types.MessageType
+		fromAgent   string
 		threadOwner *string
-		expected   bool
+		expected    bool
 	}{
 		{"human in room", types.MessageTypeUser, "adam", nil, true},
 		{"agent in room", types.MessageTypeAgent, "bob", nil, false},
@@ -266,11 +276,37 @@ func TestCanTriggerSpawn(t *testing.T) {
 			if tt.threadOwner != nil {
 				thread = &types.Thread{OwnerAgent: tt.threadOwner}
 			}
-			result := CanTriggerSpawn(msg, thread)
+			// Pass nil database - wake trust check will return false, matching legacy behavior
+			result := CanTriggerSpawn(nil, msg, thread)
 			if result != tt.expected {
 				t.Errorf("CanTriggerSpawn() = %v, want %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestCanTriggerSpawnWithWakeTrust(t *testing.T) {
+	h := newTestHarness(t)
+
+	// Create agent with wake trust
+	h.createAgentWithTrust("delegator", true, []string{"wake"})
+
+	// Agent without trust
+	h.createAgent("regular", true)
+
+	// Delegator with wake trust can trigger spawn
+	msg := types.Message{
+		Type:      types.MessageTypeAgent,
+		FromAgent: "delegator",
+	}
+	if !CanTriggerSpawn(h.db, msg, nil) {
+		t.Error("agent with wake trust should be able to trigger spawn")
+	}
+
+	// Regular agent without trust cannot
+	msg.FromAgent = "regular"
+	if CanTriggerSpawn(h.db, msg, nil) {
+		t.Error("agent without wake trust should not be able to trigger spawn")
 	}
 }
 
@@ -492,4 +528,680 @@ func TestMentionDetection_ChainReplyWakes(t *testing.T) {
 // Helper
 func strPtr(s string) *string {
 	return &s
+}
+
+// --- Mock Driver for Spawn Testing ---
+
+// SpawnRecord captures a Spawn call for verification.
+type SpawnRecord struct {
+	Agent  types.Agent
+	Prompt string
+}
+
+// MockDriver implements Driver for testing spawn flow.
+type MockDriver struct {
+	spawns     []SpawnRecord
+	spawnErr   error
+	spawnProc  *Process
+	cleanups   []string // sessionIDs cleaned up
+	cleanupErr error
+}
+
+func NewMockDriver() *MockDriver {
+	return &MockDriver{
+		spawns:   []SpawnRecord{},
+		cleanups: []string{},
+	}
+}
+
+func (d *MockDriver) Name() string { return "mock" }
+
+func (d *MockDriver) Spawn(ctx context.Context, agent types.Agent, prompt string) (*Process, error) {
+	d.spawns = append(d.spawns, SpawnRecord{Agent: agent, Prompt: prompt})
+	if d.spawnErr != nil {
+		return nil, d.spawnErr
+	}
+	if d.spawnProc != nil {
+		return d.spawnProc, nil
+	}
+	// Default: return a mock process that exits quickly (0.1s sleep)
+	// Use CommandContext so the process gets killed when daemon stops
+	cmd := exec.CommandContext(ctx, "sleep", "0.1")
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return &Process{
+		Cmd:       cmd,
+		StartedAt: time.Now(),
+		SessionID: fmt.Sprintf("mock-session-%d", len(d.spawns)),
+	}, nil
+}
+
+func (d *MockDriver) Cleanup(proc *Process) error {
+	if proc != nil {
+		d.cleanups = append(d.cleanups, proc.SessionID)
+		// Kill the sleep process
+		if proc.Cmd != nil && proc.Cmd.Process != nil {
+			proc.Cmd.Process.Kill()
+		}
+	}
+	return d.cleanupErr
+}
+
+func (d *MockDriver) SpawnCount() int {
+	return len(d.spawns)
+}
+
+func (d *MockDriver) LastSpawn() *SpawnRecord {
+	if len(d.spawns) == 0 {
+		return nil
+	}
+	return &d.spawns[len(d.spawns)-1]
+}
+
+// --- Daemon Spawn Flow Tests ---
+
+// daemonHarness extends testHarness with daemon support.
+type daemonHarness struct {
+	*testHarness
+	daemon     *Daemon
+	mockDriver *MockDriver
+}
+
+// newDaemonHarness creates a harness with a mock driver.
+func newDaemonHarness(t *testing.T) *daemonHarness {
+	h := newTestHarness(t)
+
+	project, _ := core.DiscoverProject(h.projectDir)
+
+	cfg := Config{
+		PollInterval: 50 * time.Millisecond,
+		Debug:        false,
+	}
+	daemon := New(project, h.db, cfg)
+
+	// Inject mock driver
+	mockDriver := NewMockDriver()
+	daemon.drivers["mock"] = mockDriver
+
+	return &daemonHarness{
+		testHarness: h,
+		daemon:      daemon,
+		mockDriver:  mockDriver,
+	}
+}
+
+// createManagedAgent creates a managed agent with mock driver.
+func (h *daemonHarness) createManagedAgent(agentID string) types.Agent {
+	h.t.Helper()
+
+	now := time.Now().Unix()
+	agent := types.Agent{
+		AgentID:      agentID,
+		RegisteredAt: now,
+		LastSeen:     now,
+		Managed:      true,
+		Presence:     types.PresenceOffline,
+		Invoke: &types.InvokeConfig{
+			Driver:         "mock",
+			PromptDelivery: types.PromptDeliveryArgs,
+			SpawnTimeoutMs: 5000,
+			IdleAfterMs:    100,
+			MinCheckinMs:   1000,
+		},
+	}
+
+	if err := db.CreateAgent(h.db, agent); err != nil {
+		h.t.Fatalf("create agent %s: %v", agentID, err)
+	}
+
+	created, err := db.GetAgent(h.db, agentID)
+	if err != nil {
+		h.t.Fatalf("get agent %s: %v", agentID, err)
+	}
+	return *created
+}
+
+func TestSpawnFlow_DirectMention(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create managed agent
+	alice := h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice please help", types.MessageTypeUser)
+
+	// Start daemon and let it poll
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	// Wait for spawn
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify spawn occurred
+	if h.mockDriver.SpawnCount() != 1 {
+		t.Errorf("expected 1 spawn, got %d", h.mockDriver.SpawnCount())
+	}
+
+	// Verify prompt contains trigger info
+	spawn := h.mockDriver.LastSpawn()
+	if spawn == nil {
+		t.Fatal("expected spawn record")
+	}
+	if !strings.Contains(spawn.Prompt, "@mentioned") {
+		t.Errorf("expected prompt to mention being @mentioned, got: %s", spawn.Prompt)
+	}
+	if !strings.Contains(spawn.Prompt, "fray get alice") {
+		t.Errorf("expected prompt to include 'fray get alice', got: %s", spawn.Prompt)
+	}
+
+	// Verify presence updated (may be spawning, active, or idle if process exited quickly)
+	updated, _ := db.GetAgent(h.db, alice.AgentID)
+	validPresences := map[types.PresenceState]bool{
+		types.PresenceSpawning: true,
+		types.PresenceActive:   true,
+		types.PresenceIdle:     true, // process may have exited already
+	}
+	if !validPresences[updated.Presence] {
+		t.Errorf("expected presence spawning/active/idle, got %s", updated.Presence)
+	}
+}
+
+func TestSpawnFlow_NoSpawnOnFYI(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create managed agent
+	h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Bob FYIs alice (not direct address)
+	h.postMessage("bob", "FYI @alice the build passed", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// No spawn should occur
+	if h.mockDriver.SpawnCount() != 0 {
+		t.Errorf("expected 0 spawns for FYI, got %d", h.mockDriver.SpawnCount())
+	}
+}
+
+func TestSpawnFlow_SpawnOnReply(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create agents
+	h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Alice posts something (manually set presence to offline after)
+	aliceMsg := h.postMessage("alice", "What do you think?", types.MessageTypeAgent)
+	db.UpdateAgentPresence(h.db, "alice", types.PresenceOffline)
+
+	// Bob replies (no @mention, but it's a reply to alice)
+	h.postReply("bob", "Looks good to me!", aliceMsg.ID, types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Should spawn because bob replied to alice's message
+	if h.mockDriver.SpawnCount() != 1 {
+		t.Errorf("expected 1 spawn on reply, got %d", h.mockDriver.SpawnCount())
+	}
+}
+
+func TestSpawnFlow_NoSpawnOnSelfMention(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create managed agent
+	h.createManagedAgent("alice")
+
+	// Alice mentions herself
+	h.postMessage("alice", "@alice reminder to check this later", types.MessageTypeAgent)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// No spawn - self mentions don't trigger
+	if h.mockDriver.SpawnCount() != 0 {
+		t.Errorf("expected 0 spawns for self-mention, got %d", h.mockDriver.SpawnCount())
+	}
+}
+
+func TestSpawnFlow_NoSpawnWhenActive(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create managed agent already active
+	alice := h.createManagedAgent("alice")
+	db.UpdateAgentPresence(h.db, alice.AgentID, types.PresenceActive)
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice need help", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Should queue, not spawn (agent already active)
+	if h.mockDriver.SpawnCount() != 0 {
+		t.Errorf("expected 0 spawns when active, got %d", h.mockDriver.SpawnCount())
+	}
+
+	// Verify mention was queued
+	if !h.daemon.debouncer.HasPending(alice.AgentID) {
+		t.Error("expected mention to be queued")
+	}
+}
+
+func TestSpawnFlow_WatermarkAdvances(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create agents
+	alice := h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Initial watermark is empty
+	wm := h.daemon.debouncer.GetWatermark(alice.AgentID)
+	if wm != "" {
+		t.Errorf("expected empty watermark, got %q", wm)
+	}
+
+	// Bob mentions alice
+	msg := h.postMessage("bob", "@alice hello", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Watermark should advance past the processed message
+	wm = h.daemon.debouncer.GetWatermark(alice.AgentID)
+	if wm != msg.ID {
+		t.Errorf("expected watermark %q, got %q", msg.ID, wm)
+	}
+}
+
+// --- Session Lifecycle Tests ---
+
+func TestSessionLifecycle_FreshSpawnSetsSessionID(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create agent with no session ID (fresh)
+	alice := h.createManagedAgent("alice")
+	if alice.LastSessionID != nil {
+		t.Error("expected nil LastSessionID initially")
+	}
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice hello", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Session ID should be set after spawn
+	updated, _ := db.GetAgent(h.db, alice.AgentID)
+	if updated.LastSessionID == nil || *updated.LastSessionID == "" {
+		t.Error("expected LastSessionID to be set after spawn")
+	}
+
+	// Verify spawn was a fresh spawn (prompt should match)
+	spawn := h.mockDriver.LastSpawn()
+	if spawn == nil {
+		t.Fatal("expected spawn record")
+	}
+}
+
+func TestSessionLifecycle_ResumeUsesExistingSessionID(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create agent WITH existing session ID (simulates previous spawn)
+	existingSessionID := "existing-session-abc123"
+	alice := h.createManagedAgent("alice")
+	db.UpdateAgentSessionID(h.db, alice.AgentID, existingSessionID)
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice help please", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// The mock driver receives the agent with LastSessionID set.
+	// The actual spawn flow should pass this to the driver for resume.
+	spawn := h.mockDriver.LastSpawn()
+	if spawn == nil {
+		t.Fatal("expected spawn record")
+	}
+	// Agent passed to driver should have the existing session ID
+	if spawn.Agent.LastSessionID == nil || *spawn.Agent.LastSessionID != existingSessionID {
+		t.Errorf("expected agent.LastSessionID %q, got %v", existingSessionID, spawn.Agent.LastSessionID)
+	}
+}
+
+func TestSessionLifecycle_ByeClearsSessionID(t *testing.T) {
+	h := newDaemonHarness(t)
+
+	// Create agent with session ID
+	alice := h.createManagedAgent("alice")
+	sessionID := "session-to-clear"
+	db.UpdateAgentSessionID(h.db, alice.AgentID, sessionID)
+
+	// Verify it's set
+	updated, _ := db.GetAgent(h.db, alice.AgentID)
+	if updated.LastSessionID == nil || *updated.LastSessionID != sessionID {
+		t.Fatalf("setup failed: session ID not set")
+	}
+
+	// Simulate bye: clear session ID (this is what bye command does)
+	if err := db.UpdateAgentSessionID(h.db, alice.AgentID, ""); err != nil {
+		t.Fatalf("clear session ID: %v", err)
+	}
+
+	// Session ID should be cleared
+	updated, _ = db.GetAgent(h.db, alice.AgentID)
+	if updated.LastSessionID != nil && *updated.LastSessionID != "" {
+		t.Errorf("expected empty session ID after bye, got %q", *updated.LastSessionID)
+	}
+}
+
+func TestSessionLifecycle_BackReactivatesAgent(t *testing.T) {
+	h := newDaemonHarness(t)
+
+	// Create agent that left
+	alice := h.createManagedAgent("alice")
+	now := time.Now().Unix()
+	db.UpdateAgent(h.db, alice.AgentID, db.AgentUpdates{
+		LeftAt: types.OptionalInt64{Set: true, Value: &now},
+	})
+	db.UpdateAgentPresence(h.db, alice.AgentID, types.PresenceOffline)
+
+	// Verify agent is marked as left
+	updated, _ := db.GetAgent(h.db, alice.AgentID)
+	if updated.LeftAt == nil {
+		t.Fatal("setup failed: agent should be marked as left")
+	}
+
+	// Simulate back: clear left_at (this is what back command does)
+	db.UpdateAgent(h.db, alice.AgentID, db.AgentUpdates{
+		LeftAt: types.OptionalInt64{Set: true, Value: nil},
+	})
+
+	// Agent should be reactivated
+	updated, _ = db.GetAgent(h.db, alice.AgentID)
+	if updated.LeftAt != nil {
+		t.Error("expected left_at to be nil after back")
+	}
+}
+
+func TestSessionLifecycle_IdleDoesNotPreventSpawn(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create agent in idle state (typical after session ends)
+	alice := h.createManagedAgent("alice")
+	db.UpdateAgentPresence(h.db, alice.AgentID, types.PresenceIdle)
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice are you there?", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Should spawn - idle agents can be woken
+	if h.mockDriver.SpawnCount() != 1 {
+		t.Errorf("expected 1 spawn for idle agent, got %d", h.mockDriver.SpawnCount())
+	}
+}
+
+func TestSessionLifecycle_SessionRecordedInJSONL(t *testing.T) {
+	h := newDaemonHarness(t)
+	// No defer - we stop explicitly to check JSONL, then need to avoid double-stop
+
+	// Create agents
+	h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice test session recording", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	// Stop daemon to ensure session end is recorded
+	if err := h.daemon.Stop(); err != nil {
+		t.Fatalf("stop daemon: %v", err)
+	}
+
+	// Read agents.jsonl and verify session_start was recorded
+	agentsPath := filepath.Join(h.projectDir, ".fray", "agents.jsonl")
+	data, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read agents.jsonl: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "session_start") {
+		t.Error("expected session_start record in agents.jsonl")
+	}
+}
+
+// --- Error Recovery Tests ---
+
+func TestErrorRecovery_SpawnFailureSetsErrorPresence(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Configure mock driver to fail on spawn
+	h.mockDriver.spawnErr = fmt.Errorf("simulated spawn failure")
+
+	// Create agents
+	h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice please help", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Spawn should have been attempted at least once
+	// (Note: current daemon may retry multiple times per poll interval)
+	if h.mockDriver.SpawnCount() < 1 {
+		t.Errorf("expected at least 1 spawn attempt, got %d", h.mockDriver.SpawnCount())
+	}
+
+	// Presence should be error
+	updated, _ := db.GetAgent(h.db, "alice")
+	if updated.Presence != types.PresenceError {
+		t.Errorf("expected presence 'error', got %q", updated.Presence)
+	}
+}
+
+func TestErrorRecovery_ErrorPresenceDoesNotSpawn(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create agent in error state
+	h.createManagedAgent("alice")
+	db.UpdateAgentPresence(h.db, "alice", types.PresenceError)
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice try again", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Error state blocks auto-spawn - requires manual recovery via "fray back"
+	// This prevents infinite retry loops on persistent failures
+	if h.mockDriver.SpawnCount() != 0 {
+		t.Errorf("expected 0 spawns for error agent, got %d", h.mockDriver.SpawnCount())
+	}
+}
+
+func TestErrorRecovery_BackResetsErrorPresence(t *testing.T) {
+	h := newDaemonHarness(t)
+
+	// Create agent in error state
+	h.createManagedAgent("alice")
+	db.UpdateAgentPresence(h.db, "alice", types.PresenceError)
+
+	// Verify error state
+	updated, _ := db.GetAgent(h.db, "alice")
+	if updated.Presence != types.PresenceError {
+		t.Fatalf("setup failed: expected error presence")
+	}
+
+	// Simulate back: reset presence (this is what back command does)
+	db.UpdateAgentPresence(h.db, "alice", types.PresenceOffline)
+
+	// Agent should be offline, ready for new spawn
+	updated, _ = db.GetAgent(h.db, "alice")
+	if updated.Presence != types.PresenceOffline {
+		t.Errorf("expected offline presence after back, got %q", updated.Presence)
+	}
+}
+
+func TestErrorRecovery_ProcessExitWithErrorSetsPresence(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Configure mock driver to return a process that exits with error code
+	cmd := exec.Command("sh", "-c", "exit 1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start failing process: %v", err)
+	}
+	h.mockDriver.spawnProc = &Process{
+		Cmd:       cmd,
+		StartedAt: time.Now(),
+		SessionID: "failing-session",
+	}
+
+	// Create agents
+	h.createManagedAgent("alice")
+	h.createAgent("bob", false)
+
+	// Bob mentions alice
+	h.postMessage("bob", "@alice test error exit", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	// Wait for process to exit and be detected
+	time.Sleep(400 * time.Millisecond)
+
+	// Presence should be error (non-zero exit code)
+	updated, _ := db.GetAgent(h.db, "alice")
+	if updated.Presence != types.PresenceError {
+		t.Errorf("expected presence 'error' after failed exit, got %q", updated.Presence)
+	}
+}
+
+func TestErrorRecovery_MultipleAgentsIndependentlyManaged(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create two managed agents
+	h.createManagedAgent("alice")
+	h.createManagedAgent("bob")
+	h.createAgent("carol", false)
+
+	// Put alice in active state (already running)
+	db.UpdateAgentPresence(h.db, "alice", types.PresenceActive)
+
+	// Carol mentions both
+	h.postMessage("carol", "@alice @bob help needed", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Bob should spawn, alice should be queued (already active)
+	if h.mockDriver.SpawnCount() < 1 {
+		t.Errorf("expected at least 1 spawn, got %d", h.mockDriver.SpawnCount())
+	}
+
+	// Verify bob was spawned
+	var bobSpawned bool
+	for _, spawn := range h.mockDriver.spawns {
+		if spawn.Agent.AgentID == "bob" {
+			bobSpawned = true
+			break
+		}
+	}
+	if !bobSpawned {
+		t.Error("expected bob to spawn")
+	}
 }
