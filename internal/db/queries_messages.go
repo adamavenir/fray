@@ -434,6 +434,20 @@ func GetAgentLastPostTime(database *sql.DB, agentID string) (int64, error) {
 	return ts, nil
 }
 
+// GetLastMessageByAgent returns the most recent message posted by an agent.
+// Returns nil if the agent has never posted.
+func GetLastMessageByAgent(database *sql.DB, agentID string) (*types.Message, error) {
+	row := database.QueryRow("SELECT "+messageColumns+" FROM fray_messages WHERE from_agent = ? ORDER BY ts DESC LIMIT 1", agentID)
+	msg, err := scanMessage(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
 // GetMessage returns a message by GUID.
 func GetMessage(db *sql.DB, messageID string) (*types.Message, error) {
 	row := db.QueryRow("SELECT "+messageColumns+" FROM fray_messages WHERE guid = ?", messageID)

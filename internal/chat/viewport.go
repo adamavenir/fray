@@ -1,6 +1,9 @@
 package chat
 
 import (
+	"encoding/json"
+	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/adamavenir/fray/internal/db"
@@ -8,6 +11,63 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// tokenCache caches ccusage results to avoid repeated shell calls.
+var tokenCache = struct {
+	sync.RWMutex
+	data map[string]tokenCacheEntry
+}{data: make(map[string]tokenCacheEntry)}
+
+type tokenCacheEntry struct {
+	usage     *TokenUsage
+	fetchedAt time.Time
+}
+
+const tokenCacheTTL = 30 * time.Second
+
+// getTokenUsage fetches token usage for a session ID via ccusage.
+// Returns nil if ccusage is not installed or session not found.
+func getTokenUsage(sessionID string) *TokenUsage {
+	if sessionID == "" {
+		return nil
+	}
+
+	// Check cache
+	tokenCache.RLock()
+	if entry, ok := tokenCache.data[sessionID]; ok {
+		if time.Since(entry.fetchedAt) < tokenCacheTTL {
+			tokenCache.RUnlock()
+			return entry.usage
+		}
+	}
+	tokenCache.RUnlock()
+
+	// Call ccusage
+	cmd := exec.Command("npx", "ccusage", "session", "--id", sessionID, "--json", "--offline")
+	output, err := cmd.Output()
+	if err != nil {
+		// Cache the miss to avoid repeated failed calls
+		tokenCache.Lock()
+		tokenCache.data[sessionID] = tokenCacheEntry{usage: nil, fetchedAt: time.Now()}
+		tokenCache.Unlock()
+		return nil
+	}
+
+	var usage TokenUsage
+	if err := json.Unmarshal(output, &usage); err != nil {
+		tokenCache.Lock()
+		tokenCache.data[sessionID] = tokenCacheEntry{usage: nil, fetchedAt: time.Now()}
+		tokenCache.Unlock()
+		return nil
+	}
+
+	// Cache the result
+	tokenCache.Lock()
+	tokenCache.data[sessionID] = tokenCacheEntry{usage: &usage, fetchedAt: time.Now()}
+	tokenCache.Unlock()
+
+	return &usage
+}
 
 const pollInterval = time.Second
 
@@ -18,6 +78,8 @@ type pollMsg struct {
 	questions       []types.Question
 	threads         []types.Thread
 	mentionMessages []types.Message
+	managedAgents   []types.Agent
+	agentTokenUsage map[string]*TokenUsage
 }
 
 func (m *Model) pollCmd() tea.Cmd {
@@ -113,6 +175,19 @@ func (m *Model) pollCmd() tea.Cmd {
 			mentionMessages, _ = db.GetMessagesWithMention(m.db, username, mentionOpts)
 		}
 
+		// Fetch managed agents for activity panel
+		managedAgents, _ := db.GetManagedAgents(m.db)
+
+		// Fetch token usage for active agents
+		agentTokenUsage := make(map[string]*TokenUsage)
+		for _, agent := range managedAgents {
+			if agent.LastSessionID != nil && *agent.LastSessionID != "" {
+				if usage := getTokenUsage(*agent.LastSessionID); usage != nil {
+					agentTokenUsage[agent.AgentID] = usage
+				}
+			}
+		}
+
 		return pollMsg{
 			roomMessages:    roomMessages,
 			threadMessages:  threadMessages,
@@ -120,6 +195,8 @@ func (m *Model) pollCmd() tea.Cmd {
 			questions:       questions,
 			threads:         threads,
 			mentionMessages: mentionMessages,
+			managedAgents:   managedAgents,
+			agentTokenUsage: agentTokenUsage,
 		}
 	})
 }

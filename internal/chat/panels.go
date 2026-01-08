@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
@@ -886,7 +887,8 @@ func (m *Model) renderThreadPanel() string {
 		}
 		lines = []string{headerStyle.Render(header), ""} // space after header
 	} else {
-		lines = []string{""} // single blank line at top
+		// Show filter hint at top, then blank line
+		lines = []string{itemStyle.Render(" <space> to filter"), ""}
 	}
 
 	entries := m.threadEntries()
@@ -903,12 +905,16 @@ func (m *Model) renderThreadPanel() string {
 		lines = append(lines, itemStyle.Render(" (no matches)"))
 	}
 
+	// Calculate activity section height (for reserving space at bottom)
+	activityLines, activityHeight := m.renderActivitySection(width)
+
 	// Virtual scrolling: calculate visible range
 	headerLines := 1 // blank line at top
 	if showHeader {
 		headerLines = 2 // header + blank line
 	}
-	visibleHeight := m.height - headerLines - 2 // subtract header lines + footer(1) + padding(1)
+	// Reserve space: header lines + footer(1) + padding(1) + activity section
+	visibleHeight := m.height - headerLines - 2 - activityHeight
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -1024,12 +1030,17 @@ func (m *Model) renderThreadPanel() string {
 		}
 	}
 
-	if m.height > 0 {
-		for len(lines) < m.height-1 {
+	// Pad to fill space before activity section
+	targetHeight := m.height - activityHeight
+	if targetHeight > 0 {
+		for len(lines) < targetHeight {
 			lines = append(lines, "")
 		}
 	}
-	lines = append(lines, itemStyle.Render(" Space - filter"))
+
+	// Add activity section at bottom
+	lines = append(lines, activityLines...)
+
 	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
 }
 
@@ -1769,4 +1780,225 @@ func projectFromRoot(rootPath string) (core.Project, error) {
 		return core.Project{}, fmt.Errorf("channel database not found at %s", dbPath)
 	}
 	return core.Project{Root: rootPath, DBPath: dbPath}, nil
+}
+
+// renderActivitySection renders the activity panel section showing managed agents.
+// Returns the rendered lines and the number of lines used.
+func (m *Model) renderActivitySection(width int) ([]string, int) {
+	if len(m.managedAgents) == 0 {
+		return nil, 0
+	}
+
+	var lines []string
+	staleThreshold := 4 * 60 * 60 // 4 hours in seconds
+	now := int64(0)
+	if t := time.Now().Unix(); t > 0 {
+		now = t
+	}
+
+	var activeAgents, offlineAgents []types.Agent
+	for _, agent := range m.managedAgents {
+		if agent.LeftAt != nil {
+			offlineAgents = append(offlineAgents, agent)
+			continue
+		}
+		if agent.Presence == types.PresenceOffline {
+			offlineAgents = append(offlineAgents, agent)
+			continue
+		}
+		// Presence-based active check: spawning/active/idle/error are all "active" for display
+		// Show immediately based on presence, don't wait for lastSeen update
+		if agent.Presence == types.PresenceSpawning || agent.Presence == types.PresenceActive || agent.Presence == types.PresenceError {
+			activeAgents = append(activeAgents, agent)
+			continue
+		}
+		// For idle or empty presence, use time-based threshold
+		timeSinceActive := now - agent.LastSeen
+		if timeSinceActive > int64(staleThreshold) {
+			offlineAgents = append(offlineAgents, agent)
+		} else {
+			activeAgents = append(activeAgents, agent)
+		}
+	}
+
+	// Separator line
+	lines = append(lines, strings.Repeat("─", width-1))
+
+	// Render active agents
+	for _, agent := range activeAgents {
+		line := m.renderAgentRow(agent, width)
+		lines = append(lines, line)
+	}
+
+	// Render offline summary (collapsed)
+	if len(offlineAgents) > 0 && !m.activityDrillOffline {
+		totalOfflineUnread := 0
+		for _, agent := range offlineAgents {
+			totalOfflineUnread += m.agentUnreadCounts[agent.AgentID]
+		}
+		offlineLabel := fmt.Sprintf(" · %d offline", len(offlineAgents))
+		if totalOfflineUnread > 0 {
+			offlineLabel += fmt.Sprintf(" (%d)", totalOfflineUnread)
+		}
+		if width > 0 && len(offlineLabel) > width-1 {
+			offlineLabel = offlineLabel[:width-1]
+		}
+		offlineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		lines = append(lines, offlineStyle.Render(offlineLabel))
+	}
+
+	// Render individual offline agents when drilled in
+	if m.activityDrillOffline {
+		for _, agent := range offlineAgents {
+			line := m.renderAgentRow(agent, width)
+			lines = append(lines, line)
+		}
+	}
+
+	return lines, len(lines)
+}
+
+// renderAgentRow renders a single agent row with background fill for token usage.
+// The row is wrapped in a bubblezone for click handling.
+func (m *Model) renderAgentRow(agent types.Agent, width int) string {
+	// Status icon based on presence (using unicode chars from spec)
+	icon := "▶"
+	switch agent.Presence {
+	case types.PresenceActive:
+		icon = "▶" // active
+	case types.PresenceSpawning:
+		icon = "◎" // spawning
+	case types.PresenceIdle:
+		icon = "◇" // idle
+	case types.PresenceError:
+		icon = "𝘅" // blocked/error
+	case types.PresenceOffline:
+		icon = "·" // offline
+	}
+
+	// Agent name (max 8 chars to leave room for phase)
+	name := agent.AgentID
+	if len(name) > 8 {
+		name = name[:8]
+	}
+
+	// Extract session phase from status
+	phase := extractSessionPhase(agent.Status)
+
+	// Build name + phase portion
+	namePhase := name
+	if phase != "" {
+		namePhase = fmt.Sprintf("%-8s %s", name, phase)
+	} else {
+		namePhase = fmt.Sprintf("%-8s", name)
+	}
+
+	// Unread count
+	unread := m.agentUnreadCounts[agent.AgentID]
+	unreadStr := ""
+	if unread > 0 {
+		unreadStr = fmt.Sprintf("(%d)", unread)
+	}
+
+	// Build the row text
+	rowText := fmt.Sprintf(" %s %s %s", icon, namePhase, unreadStr)
+	if width > 0 && len(rowText) > width-1 {
+		rowText = rowText[:width-1]
+	}
+	// Pad to full width for background effect
+	for len(rowText) < width-1 {
+		rowText += " "
+	}
+
+	// Get agent color
+	agentColor := m.colorForAgent(agent.AgentID)
+
+	// Calculate token fill percentage (placeholder - actual ccusage integration later)
+	// For now, use a dim version of agent color for the whole row
+	fillPercent := 0.0
+	if usage := m.agentTokenUsage[agent.AgentID]; usage != nil && usage.TotalTokens > 0 {
+		// Estimate: 200k context window, show percentage used
+		fillPercent = float64(usage.TotalTokens) / 200000.0
+		if fillPercent > 1.0 {
+			fillPercent = 1.0
+		}
+	}
+
+	// Style based on presence
+	var styledRow string
+	switch agent.Presence {
+	case types.PresenceError:
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("124")) // red bg
+		styledRow = style.Render(rowText)
+	case types.PresenceOffline:
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Background(lipgloss.Color("236")) // gray
+		styledRow = style.Render(rowText)
+	default:
+		// Active/spawning/idle: use agent color with fill
+		if fillPercent > 0 {
+			fillWidth := int(float64(width-1) * fillPercent)
+			if fillWidth < 1 {
+				fillWidth = 1
+			}
+			// Create filled portion and unfilled portion
+			filledPart := rowText
+			if fillWidth < len(rowText) {
+				filledPart = rowText[:fillWidth]
+			}
+			unfilledPart := ""
+			if fillWidth < len(rowText) {
+				unfilledPart = rowText[fillWidth:]
+			}
+			filledStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(agentColor)
+			unfilledStyle := lipgloss.NewStyle().Foreground(agentColor)
+			styledRow = filledStyle.Render(filledPart) + unfilledStyle.Render(unfilledPart)
+		} else {
+			style := lipgloss.NewStyle().Foreground(agentColor)
+			styledRow = style.Render(rowText)
+		}
+	}
+
+	// Wrap in bubblezone for click handling
+	zoneID := "agent-" + agent.AgentID
+	return m.zoneManager.Mark(zoneID, styledRow)
+}
+
+// colorForAgent returns the color for an agent (reuse from colorMap or generate).
+func (m *Model) colorForAgent(agentID string) lipgloss.Color {
+	if color, ok := m.colorMap[agentID]; ok {
+		return color
+	}
+	// Generate a color based on agent ID hash
+	hash := 0
+	for _, c := range agentID {
+		hash = hash*31 + int(c)
+	}
+	colors := []lipgloss.Color{
+		lipgloss.Color("36"),  // cyan
+		lipgloss.Color("35"),  // magenta
+		lipgloss.Color("33"),  // blue
+		lipgloss.Color("32"),  // green
+		lipgloss.Color("214"), // orange
+		lipgloss.Color("226"), // yellow
+	}
+	return colors[hash%len(colors)]
+}
+
+// extractSessionPhase extracts /fly, /hop, /land from agent status.
+func extractSessionPhase(status *string) string {
+	if status == nil {
+		return ""
+	}
+	s := *status
+	// Look for /fly, /hop, /land patterns
+	if strings.Contains(s, "/fly") {
+		return "/fly"
+	}
+	if strings.Contains(s, "/hop") {
+		return "/hop"
+	}
+	if strings.Contains(s, "/land") {
+		return "/land"
+	}
+	return ""
 }
