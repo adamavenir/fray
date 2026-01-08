@@ -29,6 +29,7 @@ func NewAgentCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		NewAgentCreateCmd(),
+		NewAgentUpdateCmd(),
 		NewAgentStartCmd(),
 		NewAgentRefreshCmd(),
 		NewAgentEndCmd(),
@@ -155,6 +156,112 @@ func NewAgentCreateCmd() *cobra.Command {
 	cmd.Flags().String("prompt-delivery", "", "how prompts are passed (args, stdin, tempfile)")
 	cmd.Flags().Int64("spawn-timeout", 30000, "max time in 'spawning' state (ms)")
 	cmd.Flags().Int64("idle-after", 5000, "time since activity before 'idle' (ms)")
+	cmd.Flags().Int64("min-checkin", 0, "done-detection: idle + no fray posts = kill (ms, 0 = disabled)")
+	cmd.Flags().Int64("max-runtime", 0, "zombie safety net: forced termination (ms, 0 = unlimited)")
+
+	return cmd
+}
+
+// NewAgentUpdateCmd updates an existing managed agent's configuration.
+func NewAgentUpdateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update <name>",
+		Short: "Update a managed agent's configuration",
+		Long: `Update configuration for an existing managed agent.
+
+Examples:
+  fray agent update opus --model sonnet-1m
+  fray agent update pm --trust wake
+  fray agent update dev --driver claude --min-checkin 600000`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, err := GetContext(cmd)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			defer ctx.DB.Close()
+
+			agentID := core.NormalizeAgentRef(args[0])
+
+			agent, err := db.GetAgent(ctx.DB, agentID)
+			if err != nil {
+				return writeCommandError(cmd, err)
+			}
+			if agent == nil {
+				return writeCommandError(cmd, fmt.Errorf("agent not found: @%s", agentID))
+			}
+
+			// Start with existing config or create new one
+			invoke := agent.Invoke
+			if invoke == nil {
+				invoke = &types.InvokeConfig{}
+			}
+
+			// Update fields if flags are set
+			if cmd.Flags().Changed("driver") {
+				driver, _ := cmd.Flags().GetString("driver")
+				invoke.Driver = driver
+			}
+			if cmd.Flags().Changed("model") {
+				model, _ := cmd.Flags().GetString("model")
+				invoke.Model = model
+			}
+			if cmd.Flags().Changed("trust") {
+				trust, _ := cmd.Flags().GetStringSlice("trust")
+				invoke.Trust = trust
+			}
+			if cmd.Flags().Changed("prompt-delivery") {
+				pd, _ := cmd.Flags().GetString("prompt-delivery")
+				invoke.PromptDelivery = types.PromptDelivery(pd)
+			}
+			if cmd.Flags().Changed("spawn-timeout") {
+				v, _ := cmd.Flags().GetInt64("spawn-timeout")
+				invoke.SpawnTimeoutMs = v
+			}
+			if cmd.Flags().Changed("idle-after") {
+				v, _ := cmd.Flags().GetInt64("idle-after")
+				invoke.IdleAfterMs = v
+			}
+			if cmd.Flags().Changed("min-checkin") {
+				v, _ := cmd.Flags().GetInt64("min-checkin")
+				invoke.MinCheckinMs = v
+			}
+			if cmd.Flags().Changed("max-runtime") {
+				v, _ := cmd.Flags().GetInt64("max-runtime")
+				invoke.MaxRuntimeMs = v
+			}
+
+			// Update in database
+			if err := updateManagedAgentConfig(ctx.DB, agentID, agent.Managed, invoke); err != nil {
+				return writeCommandError(cmd, err)
+			}
+
+			// Persist to JSONL
+			if err := db.AppendAgentUpdate(ctx.Project.DBPath, db.AgentUpdateJSONLRecord{
+				AgentID: agentID,
+				Invoke:  invoke,
+			}); err != nil {
+				return writeCommandError(cmd, err)
+			}
+
+			if ctx.JSONMode {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+					"agent_id": agentID,
+					"invoke":   invoke,
+				})
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated @%s configuration\n", agentID)
+			return nil
+		},
+	}
+
+	cmd.Flags().String("driver", "", "CLI driver (claude, codex, opencode)")
+	cmd.Flags().String("model", "", "model to use (e.g., sonnet-1m for 1M context)")
+	cmd.Flags().StringSlice("trust", nil, "trust capabilities (e.g., wake allows agent to wake others)")
+	cmd.Flags().String("prompt-delivery", "", "how prompts are passed (args, stdin, tempfile)")
+	cmd.Flags().Int64("spawn-timeout", 0, "max time in 'spawning' state (ms)")
+	cmd.Flags().Int64("idle-after", 0, "time since activity before 'idle' (ms)")
 	cmd.Flags().Int64("min-checkin", 0, "done-detection: idle + no fray posts = kill (ms, 0 = disabled)")
 	cmd.Flags().Int64("max-runtime", 0, "zombie safety net: forced termination (ms, 0 = unlimited)")
 
