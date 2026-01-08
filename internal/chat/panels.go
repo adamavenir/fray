@@ -1905,6 +1905,19 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	if agent.Status != nil && *agent.Status != "" {
 		status = *agent.Status
 	}
+
+	// Override icon based on status prefix for idle agents
+	// This adds semantic meaning on top of activity-based presence
+	if agent.Presence == types.PresenceIdle && status != "" {
+		statusLower := strings.ToLower(status)
+		if strings.HasPrefix(statusLower, "awaiting:") || strings.HasPrefix(statusLower, "waiting:") {
+			icon = "⏳"
+		} else if strings.HasPrefix(statusLower, "done:") || strings.HasPrefix(statusLower, "complete:") {
+			icon = "✓"
+		} else if strings.HasPrefix(statusLower, "blocked:") || strings.HasPrefix(statusLower, "stuck:") {
+			icon = "⚠"
+		}
+	}
 	unread := m.agentUnreadCounts[agent.AgentID]
 
 	// Build the visible text content in parts for styling
