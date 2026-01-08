@@ -96,6 +96,10 @@ func TestRewriteClickThenCommand(t *testing.T) {
 		// Not click-then-command (regular messages)
 		{"hello world", "", false},
 		{"#msg-abc hello", "", false},
+
+		// Not click-then-command (command not immediately after ID)
+		{"#msg-abc this is about /edit mode", "", false},
+		{"#msg-abc some text /mv thread", "", false},
 	}
 
 	for _, tt := range tests {

@@ -44,38 +44,33 @@ func (m *Model) handleSlashCommand(input string) (bool, tea.Cmd) {
 
 // rewriteClickThenCommand transforms "#id /command args" into "/command #id args".
 // This allows users to click a message (which prefills #id) then type a command.
+// The /command must immediately follow the #id (only whitespace allowed between).
 func rewriteClickThenCommand(input string) (string, bool) {
 	// Must start with # (clicked ID)
 	if !strings.HasPrefix(input, "#") {
 		return "", false
 	}
 
-	// Find the slash command part
-	slashIdx := strings.Index(input, " /")
-	if slashIdx == -1 {
+	// Split into fields: first should be #id, second should be /command
+	fields := strings.Fields(input)
+	if len(fields) < 2 {
 		return "", false
 	}
 
-	// Extract parts
-	clickedID := strings.TrimSpace(input[:slashIdx])
-	commandPart := strings.TrimSpace(input[slashIdx+1:])
-
-	// Parse command to insert ID after command name
-	fields := strings.Fields(commandPart)
-	if len(fields) == 0 {
+	clickedID := fields[0]
+	if !strings.HasPrefix(clickedID, "#") {
 		return "", false
 	}
 
-	cmdName := fields[0]
-	var args []string
-	if len(fields) > 1 {
-		args = fields[1:]
+	cmdName := fields[1]
+	if !strings.HasPrefix(cmdName, "/") {
+		return "", false
 	}
 
 	// Reconstruct: /command #id args...
 	result := cmdName + " " + clickedID
-	if len(args) > 0 {
-		result += " " + strings.Join(args, " ")
+	if len(fields) > 2 {
+		result += " " + strings.Join(fields[2:], " ")
 	}
 
 	return result, true
