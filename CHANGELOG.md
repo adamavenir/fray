@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `fray dashboard`: agent status dashboard showing active/offline agents, token usage, recent events
+  - Text output: agent rows with status, unread counts, current work from claims
+  - JSON output: structured data for programmatic access (e.g., PM agent)
+  - Recent events: 30-minute feed of @pm mentions and status changes
+  - Channel filtering: shows managed agents from current channel only
+
 ### Fixed
 - JSONL append now calls fsync() to ensure data is flushed to disk before returning success
 - Daemon: @mentions in threads now wake agents (was room-only)
