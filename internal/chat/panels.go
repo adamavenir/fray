@@ -1907,19 +1907,32 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	}
 	unread := m.agentUnreadCounts[agent.AgentID]
 
-	// Build the visible text content (no styling yet)
-	content := fmt.Sprintf(" %s %s", icon, name)
+	// Build the visible text content in parts for styling
+	// Bold part: " icon name"
+	boldPart := fmt.Sprintf(" %s %s", icon, name)
+	// Regular part: " status (unread)" + padding
+	regularPart := ""
 	if status != "" {
-		content += " " + status
+		regularPart += " " + status
 	}
 	if unread > 0 {
-		content += fmt.Sprintf(" (%d)", unread)
+		regularPart += fmt.Sprintf(" (%d)", unread)
 	}
 
-	// Truncate content to fit row width
+	// Track where bold portion ends (for styling split)
+	boldEndPos := len([]rune(boldPart))
+
+	// Combine for length calculation
+	content := boldPart + regularPart
 	contentRunes := []rune(content)
+
+	// Truncate content to fit row width
 	if len(contentRunes) > rowWidth {
 		contentRunes = contentRunes[:rowWidth]
+		// Adjust boldEndPos if truncation cut into bold part
+		if boldEndPos > rowWidth {
+			boldEndPos = rowWidth
+		}
 	}
 	// Pad to full row width
 	for len(contentRunes) < rowWidth {
@@ -1954,9 +1967,9 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		brightBg = lipgloss.Color("124") // dark red
 		dimBg = lipgloss.Color("124")
 	} else if agent.Presence == types.PresenceOffline {
-		// Offline: gray background
-		brightBg = lipgloss.Color("238") // dark gray
-		dimBg = lipgloss.Color("236")    // darker gray
+		// Offline: slightly brighter gray background for text readability
+		brightBg = lipgloss.Color("240") // medium gray
+		dimBg = lipgloss.Color("238")    // dark gray
 	} else if inDangerZone {
 		// Danger zone (>80%): red tones
 		// Show progress within the remaining 20% (actually 15% for buffer)
@@ -2003,25 +2016,58 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	if agent.Presence == types.PresenceError || inDangerZone {
 		textColor = lipgloss.Color("231") // white for red backgrounds
 	} else if agent.Presence == types.PresenceOffline {
-		textColor = lipgloss.Color("250") // light gray
+		textColor = lipgloss.Color("252") // brighter gray for readability on dark bg
 	}
 
-	// Build styled row: split at fill boundary
-	brightStyle := lipgloss.NewStyle().Foreground(textColor).Background(brightBg)
-	dimStyle := lipgloss.NewStyle().Foreground(textColor).Background(dimBg)
+	// Build styled row with bold icon+name and two-tone background
+	// We have two boundaries: fillChars (bright/dim bg) and boldEndPos (bold/regular text)
+	// This creates up to 4 segments depending on overlap
+	brightBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(brightBg).Bold(true)
+	brightRegStyle := lipgloss.NewStyle().Foreground(textColor).Background(brightBg)
+	dimBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(dimBg).Bold(true)
+	dimRegStyle := lipgloss.NewStyle().Foreground(textColor).Background(dimBg)
 
+	runes := []rune(paddedContent)
 	var rowText string
-	if fillChars >= rowWidth {
-		// All bright
-		rowText = brightStyle.Render(paddedContent)
-	} else if fillChars <= 0 {
-		// All dim
-		rowText = dimStyle.Render(paddedContent)
-	} else {
-		// Split: bright portion then dim portion
-		brightPart := string([]rune(paddedContent)[:fillChars])
-		dimPart := string([]rune(paddedContent)[fillChars:])
-		rowText = brightStyle.Render(brightPart) + dimStyle.Render(dimPart)
+
+	// Helper to render a range with appropriate styles
+	renderRange := func(start, end int) string {
+		if start >= end || start >= len(runes) {
+			return ""
+		}
+		if end > len(runes) {
+			end = len(runes)
+		}
+		text := string(runes[start:end])
+		// Determine which style to use based on position
+		inBright := start < fillChars
+		inBold := start < boldEndPos
+
+		if inBright && inBold {
+			return brightBoldStyle.Render(text)
+		} else if inBright && !inBold {
+			return brightRegStyle.Render(text)
+		} else if !inBright && inBold {
+			return dimBoldStyle.Render(text)
+		}
+		return dimRegStyle.Render(text)
+	}
+
+	// Build segments based on boundaries (sorted)
+	boundaries := []int{0, boldEndPos, fillChars, rowWidth}
+	// Remove duplicates and sort
+	seen := make(map[int]bool)
+	unique := make([]int, 0, len(boundaries))
+	for _, b := range boundaries {
+		if b >= 0 && b <= rowWidth && !seen[b] {
+			seen[b] = true
+			unique = append(unique, b)
+		}
+	}
+	sort.Ints(unique)
+
+	for i := 0; i < len(unique)-1; i++ {
+		rowText += renderRange(unique[i], unique[i+1])
 	}
 
 	// Wrap in bubblezone for click handling
@@ -2030,22 +2076,70 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 }
 
 // dimColor returns a dimmer version of a color for the unfilled portion.
+// Uses the actual color dimmed by ~50% to maintain the agent's color identity.
 func dimColor(c lipgloss.Color) lipgloss.Color {
-	// Map bright colors to dimmer versions
-	// This is approximate since lipgloss uses 256-color codes
-	colorMap := map[string]string{
-		"36":  "23",  // cyan -> dark cyan
-		"35":  "90",  // magenta -> dark magenta
-		"33":  "19",  // blue -> dark blue
-		"32":  "22",  // green -> dark green
-		"214": "130", // orange -> dark orange
-		"226": "142", // yellow -> dark yellow
+	code, ok := parseColorCode(c)
+	if !ok {
+		return lipgloss.Color("236") // fallback grey
 	}
-	if dim, ok := colorMap[string(c)]; ok {
-		return lipgloss.Color(dim)
+
+	// Get RGB values for the color
+	r, g, b := colorCodeToRGB(code)
+
+	// Dim by 50%
+	r = r / 2
+	g = g / 2
+	b = b / 2
+
+	// Convert back to 256-color code
+	return lipgloss.Color(fmt.Sprintf("%d", rgbTo256(r, g, b)))
+}
+
+// rgbTo256 converts RGB values to nearest 256-color code.
+func rgbTo256(r, g, b int) int {
+	// Check if it's close to a grayscale value
+	if abs(r-g) < 10 && abs(g-b) < 10 {
+		// Use grayscale ramp (232-255)
+		gray := (r + g + b) / 3
+		if gray < 8 {
+			return 16 // black
+		}
+		if gray > 238 {
+			return 231 // white
+		}
+		return 232 + (gray-8)/10
 	}
-	// Default: just return a generic dark color
-	return lipgloss.Color("236")
+
+	// Use 6x6x6 color cube (16-231)
+	toIndex := func(v int) int {
+		if v < 48 {
+			return 0
+		}
+		if v < 115 {
+			return 1
+		}
+		return (v-35)/40
+	}
+	ri := toIndex(r)
+	gi := toIndex(g)
+	bi := toIndex(b)
+	if ri > 5 {
+		ri = 5
+	}
+	if gi > 5 {
+		gi = 5
+	}
+	if bi > 5 {
+		bi = 5
+	}
+	return 16 + ri*36 + gi*6 + bi
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
 
 // truncateStyled truncates a styled string to maxLen visible characters.
