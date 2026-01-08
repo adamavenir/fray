@@ -20,6 +20,7 @@ func (d *CodexDriver) Name() string {
 
 // Spawn starts a Codex session with the given prompt.
 // Codex uses args prompt delivery by default.
+// Resume syntax: codex resume <session-id> <prompt>
 func (d *CodexDriver) Spawn(ctx context.Context, agent types.Agent, prompt string) (*Process, error) {
 	delivery := types.PromptDeliveryArgs
 	if agent.Invoke != nil && agent.Invoke.PromptDelivery != "" {
@@ -27,11 +28,23 @@ func (d *CodexDriver) Spawn(ctx context.Context, agent types.Agent, prompt strin
 	}
 
 	var cmd *exec.Cmd
-	sessionID, _ := core.GenerateGUID("sess")
+	var sessionID string
+	isResume := agent.LastSessionID != nil && *agent.LastSessionID != ""
+
+	if isResume {
+		sessionID = *agent.LastSessionID
+	} else {
+		sessionID, _ = core.GenerateGUID("sess")
+	}
 
 	switch delivery {
 	case types.PromptDeliveryArgs:
-		cmd = exec.CommandContext(ctx, "codex", prompt)
+		if isResume {
+			// codex resume <session-id> <prompt>
+			cmd = exec.CommandContext(ctx, "codex", "resume", sessionID, prompt)
+		} else {
+			cmd = exec.CommandContext(ctx, "codex", prompt)
+		}
 
 	case types.PromptDeliveryStdin:
 		return nil, fmt.Errorf("stdin delivery not yet implemented for codex driver")

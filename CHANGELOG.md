@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Daemon: `fray daemon status` now correctly detects running daemon on macOS
 - Daemon: `fray back` sets presence=active, preventing duplicate sessions over manual sessions
 - Daemon: `fray bye` sets presence=offline, allowing daemon to spawn new sessions
+- Daemon: re-fetches agent presence before spawn decisions, preventing race with external updates
+- Daemon: `fray bye` now clears session ID, ensuring next spawn starts fresh
+- Daemon: fixed resume syntax (`--resume <id>` not `--session-id <id> --resume`)
 
 ## [0.5.0]
 

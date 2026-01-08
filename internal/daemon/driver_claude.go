@@ -138,20 +138,24 @@ func (d *ClaudeDriver) Spawn(ctx context.Context, agent types.Agent, prompt stri
 	var cmd *exec.Cmd
 
 	// Use existing session ID or generate new one for this agent
-	// This ensures each agent has their own session, preventing cross-contamination
 	var sessionID string
+	var isResume bool
 	if agent.LastSessionID != nil && *agent.LastSessionID != "" {
 		sessionID = *agent.LastSessionID
+		isResume = true
 	} else {
 		sessionID = uuid.New().String()
+		isResume = false
 	}
 
-	// Build base args - always pass --session-id to control which session is used
-	// If resuming, also add --resume to continue the conversation
+	// Build args based on whether resuming or starting fresh
+	// Fresh: --session-id <new-uuid> (creates new session with our ID)
+	// Resume: --resume <existing-uuid> (loads existing session context)
 	var args []string
-	args = append(args, "--session-id", sessionID)
-	if agent.LastSessionID != nil && *agent.LastSessionID != "" {
-		args = append(args, "--resume")
+	if isResume {
+		args = append(args, "--resume", sessionID)
+	} else {
+		args = append(args, "--session-id", sessionID)
 	}
 
 	switch delivery {

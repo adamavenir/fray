@@ -332,6 +332,18 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			continue
 		}
 
+		// Re-fetch agent's current presence from DB to get fresh state.
+		// This ensures we see presence updates from external commands (e.g., fray back)
+		// that may have run since we fetched the agent at the start of poll().
+		currentAgent, err := db.GetAgent(d.database, agent.AgentID)
+		if err != nil {
+			d.debugf("    %s: error re-fetching agent: %v", msg.ID, err)
+			continue
+		}
+		if currentAgent != nil {
+			agent.Presence = currentAgent.Presence
+		}
+
 		// If we already spawned this poll, or agent is busy, queue the mention
 		// Note: Don't advance watermark for queued messages - pending is in-memory,
 		// so on restart we need to re-query and re-queue them
@@ -677,6 +689,8 @@ func (d *Daemon) handleProcessExit(agentID string, proc *Process) {
 		} else {
 			db.UpdateAgentPresence(d.database, agentID, types.PresenceError)
 		}
+		// NOTE: Do NOT clear session ID here. Session remains resumable until agent runs `fray bye`.
+		// Daemon-initiated exits (done-detection) are soft ends; session context persists on disk.
 
 		// Set left_at so fray back knows this was a proper session end (not orphaned)
 		now := time.Now().Unix()
