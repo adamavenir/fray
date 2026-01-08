@@ -57,6 +57,14 @@ func NewBackCmd() *cobra.Command {
 			if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
 				return writeCommandError(cmd, err)
 			}
+
+			// For managed agents, set presence to active so daemon doesn't spawn duplicates
+			if agent.Managed {
+				if err := db.UpdateAgentPresence(ctx.DB, agentID, types.PresenceActive); err != nil {
+					return writeCommandError(cmd, err)
+				}
+			}
+
 			if updated, err := db.GetAgent(ctx.DB, agentID); err == nil && updated != nil {
 				if err := db.AppendAgent(ctx.Project.DBPath, *updated); err != nil {
 					return writeCommandError(cmd, err)

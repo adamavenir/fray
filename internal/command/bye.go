@@ -108,6 +108,14 @@ func NewByeCmd() *cobra.Command {
 			if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
 				return writeCommandError(cmd, err)
 			}
+
+			// For managed agents, set presence to offline so daemon can spawn new sessions
+			if agent.Managed {
+				if err := db.UpdateAgentPresence(ctx.DB, agentID, types.PresenceOffline); err != nil {
+					return writeCommandError(cmd, err)
+				}
+			}
+
 			updated, err := db.GetAgent(ctx.DB, agentID)
 			if err != nil {
 				return writeCommandError(cmd, err)
