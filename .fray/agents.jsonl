@@ -475,3 +475,164 @@
 {"type":"agent_update","agent_id":"opus","mention_watermark":"msg-xi07yke4"}
 {"type":"session_start","agent_id":"designer","session_id":"sess-tftp3pf1","triggered_by":"msg-5wov1v8a","started_at":1767832501}
 {"type":"agent_update","agent_id":"designer","mention_watermark":"msg-5wov1v8a"}
+{"type":"session_end","agent_id":"designer","session_id":"sess-tftp3pf1","exit_code":0,"duration_ms":39662,"ended_at":1767832541}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"inactive","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767832681,"left_at":1767832681,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"error","mention_watermark":"msg-xi07yke4"}
+{"type":"session_end","agent_id":"opus","session_id":"sess-c8glxui9","exit_code":0,"duration_ms":220974,"ended_at":1767832691}
+{"type":"session_start","agent_id":"pm","session_id":"sess-m5bzfapj","triggered_by":"msg-vq3blj7i","started_at":1767832793}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-vq3blj7i"}
+{"type":"session_end","agent_id":"pm","session_id":"sess-m5bzfapj","exit_code":0,"duration_ms":200087,"ended_at":1767832993}
+{"type":"session_start","agent_id":"designer","session_id":"sess-54l21s54","triggered_by":"msg-rfuqoo3h","started_at":1767833205}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-rfuqoo3h"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833221,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"idle","mention_watermark":"msg-xi07yke4"}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-53qw2cha"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"inactive","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833264,"left_at":1767833264,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"idle","mention_watermark":"msg-xi07yke4"}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-l2iy4oee"}
+{"type":"session_start","agent_id":"pm","session_id":"sess-n1gbb3wk","triggered_by":"msg-lr4yz2q6","started_at":1767833266}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-lr4yz2q6"}
+{"type":"session_end","agent_id":"designer","session_id":"sess-54l21s54","exit_code":0,"duration_ms":64614,"ended_at":1767833270}
+{"type":"session_end","agent_id":"pm","session_id":"sess-n1gbb3wk","exit_code":0,"duration_ms":31476,"ended_at":1767833298}
+{"type":"session_start","agent_id":"opus","session_id":"sess-ja41htib","triggered_by":"msg-qb1xetgc","started_at":1767833305}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-qb1xetgc"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833319,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-qb1xetgc"}
+{"type":"session_start","agent_id":"opus","session_id":"sess-jjf7p5fm","triggered_by":"msg-2mt4uwnx","started_at":1767833449}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-2mt4uwnx"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833476,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-2mt4uwnx"}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-q0lm2uyr"}
+{"type":"session_end","agent_id":"opus","session_id":"sess-jjf7p5fm","exit_code":0,"duration_ms":44278,"ended_at":1767833493}
+{"type":"session_start","agent_id":"opus","session_id":"sess-115j1wkp","triggered_by":"msg-fr26ty3f","started_at":1767833498}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-fr26ty3f"}
+{"type":"session_end","agent_id":"opus","session_id":"sess-ja41htib","exit_code":0,"duration_ms":198121,"ended_at":1767833503}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833511,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-fr26ty3f"}
+{"type":"session_end","agent_id":"opus","session_id":"sess-115j1wkp","exit_code":0,"duration_ms":24002,"ended_at":1767833522}
+{"type":"session_start","agent_id":"opus","session_id":"sess-7mq2bjwd","triggered_by":"msg-hqbc600r","started_at":1767833540}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-hqbc600r"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833555,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-hqbc600r"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-xglqo6di"}
+{"type":"session_end","agent_id":"opus","session_id":"sess-7mq2bjwd","exit_code":0,"duration_ms":27402,"ended_at":1767833567}
+{"type":"session_start","agent_id":"opus","session_id":"sess-yv2lg0r2","triggered_by":"msg-cm91w86r","started_at":1767833631}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-cm91w86r"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833643,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-cm91w86r"}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-c7o5vry6"}
+{"type":"session_start","agent_id":"opus","session_id":"sess-ww6c6w90","triggered_by":"msg-h7rmsnuz","started_at":1767833684}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-h7rmsnuz"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833702,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-h7rmsnuz"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-qsudbtxd"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-3lyrrluf"}
+{"type":"session_end","agent_id":"opus","session_id":"sess-yv2lg0r2","exit_code":0,"duration_ms":192161,"ended_at":1767833823}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-80emwbs0"}
+{"type":"session_start","agent_id":"opus","session_id":"sess-9792a04c","triggered_by":"msg-mextde1w","started_at":1767833880}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-mextde1w"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767833892,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-mextde1w"}
+{"type":"session_end","agent_id":"opus","session_id":"sess-ww6c6w90","exit_code":0,"duration_ms":295716,"ended_at":1767833980}
+{"type":"session_end","agent_id":"opus","session_id":"sess-9792a04c","exit_code":-1,"duration_ms":124276,"ended_at":1767834004}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-j6pxq5uf","started_at":1767835989}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-j6pxq5uf"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":508,"ended_at":1767835989}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-75reew3o","started_at":1767835990}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-75reew3o"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":492,"ended_at":1767835990}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-czyfuduy","started_at":1767836041}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-czyfuduy"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":501,"ended_at":1767836041}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-8jxstq7r","started_at":1767836146}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-8jxstq7r"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":550,"ended_at":1767836146}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767836419,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"error","mention_watermark":"msg-8jxstq7r"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"inactive","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767836615,"left_at":1767836615,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"error","mention_watermark":"msg-8jxstq7r"}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-t27m92hk","started_at":1767836729}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-t27m92hk"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":524,"ended_at":1767836729}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767836838,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"error","mention_watermark":"msg-t27m92hk"}
+{"type":"agent_update","agent_id":"architect","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"dev","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"gpt52","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"reviewer","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"test-d1","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"test-d2","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"test-d3","mention_watermark":"msg-2auvj9gy"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-q3j19h5m"}
+{"type":"agent_update","agent_id":"architect","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"dev","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"gpt52","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"reviewer","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"test-d1","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"test-d2","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"test-d3","mention_watermark":"msg-1mbcufs9"}
+{"type":"agent_update","agent_id":"architect","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"designer","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"dev","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"gpt52","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"reviewer","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"test-d1","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"test-d2","mention_watermark":"msg-uz1s1ls7"}
+{"type":"agent_update","agent_id":"test-d3","mention_watermark":"msg-uz1s1ls7"}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-zj0f55lm","started_at":1767838400}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-zj0f55lm"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":575,"ended_at":1767838400}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-8d7djr3b","started_at":1767838494}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-8d7djr3b"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":508,"ended_at":1767838494}
+{"type":"session_start","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","triggered_by":"msg-065ici8u","started_at":1767838574}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-065ici8u"}
+{"type":"session_end","agent_id":"opus","session_id":"022a7092-f004-4e08-8fa3-dfc23dabff20","exit_code":1,"duration_ms":521,"ended_at":1767838574}
+{"type":"session_start","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","triggered_by":"msg-rx53e9qt","started_at":1767838624}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-rx53e9qt"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767838643,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"spawning","mention_watermark":"msg-rx53e9qt"}
+{"type":"session_end","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","exit_code":0,"duration_ms":27821,"ended_at":1767838652}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767838731,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"idle","mention_watermark":"msg-rx53e9qt"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"inactive","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767839236,"left_at":1767839236,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"offline","mention_watermark":"msg-rx53e9qt"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767839240,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"active","mention_watermark":"msg-rx53e9qt"}
+{"type":"ghost_cursor","agent_id":"opus","home":"thrd-36azb3xr","message_guid":"msg-96h5iomv","must_read":true,"set_at":1767839630702}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"inactive","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767839646,"left_at":1767839646,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"offline","mention_watermark":"msg-rx53e9qt"}
+{"type":"session_start","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","triggered_by":"msg-eeh6renw","started_at":1767839647}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-ryy6i91v"}
+{"type":"session_end","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","exit_code":1,"duration_ms":505,"ended_at":1767839647}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-fk5z174a"}
+{"type":"session_start","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","triggered_by":"msg-x6lxo80n","started_at":1767841199}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-ryy6i91v"}
+{"type":"session_end","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","exit_code":1,"duration_ms":506,"ended_at":1767841199}
+{"type":"session_start","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","triggered_by":"msg-x6lxo80n","started_at":1767841200}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-x6lxo80n"}
+{"type":"session_end","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","exit_code":1,"duration_ms":505,"ended_at":1767841200}
+{"type":"session_start","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","triggered_by":"msg-l4y1dl20","started_at":1767841273}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-l4y1dl20"}
+{"type":"session_end","agent_id":"opus","session_id":"7af90995-5b29-4cf3-9684-3e56b3c88f85","exit_code":1,"duration_ms":574,"ended_at":1767841273}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767841456,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"active","mention_watermark":"msg-l4y1dl20"}
+{"type":"agent_update","agent_id":"opus","mention_watermark":"msg-uj9vjwa1"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"inactive","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767841493,"left_at":1767841493,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"offline","mention_watermark":"msg-uj9vjwa1"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"active","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767841562,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"active","mention_watermark":"msg-uj9vjwa1"}
+{"type":"session_start","agent_id":"test-d1","session_id":"7c1270bd-1a34-4881-b850-1cb8c9e133b3","triggered_by":"msg-st2v70z5","started_at":1767842061}
+{"type":"agent_update","agent_id":"test-d1","mention_watermark":"msg-st2v70z5"}
+{"type":"session_end","agent_id":"test-d1","session_id":"7c1270bd-1a34-4881-b850-1cb8c9e133b3","exit_code":0,"duration_ms":19811,"ended_at":1767842081}
+{"type":"session_start","agent_id":"pm","session_id":"faca4351-6332-42d5-ac92-112a121d9bc2","triggered_by":"msg-cdtlq70q","started_at":1767842132}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-cdtlq70q"}
+{"type":"session_end","agent_id":"pm","session_id":"faca4351-6332-42d5-ac92-112a121d9bc2","exit_code":1,"duration_ms":494,"ended_at":1767842132}
+{"type":"session_start","agent_id":"pm","session_id":"5998c05a-6f3f-4e96-b1dd-0934dcddbfea","triggered_by":"msg-rlugmdpx","started_at":1767842401}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-rlugmdpx"}
+{"type":"agent","id":"usr-7vkdvufg","name":"pm","global_name":"fray-pm","home_channel":"ch-xkzte3i1","created_at":"2026-01-02T16:24:49Z","active_status":"active","agent_id":"pm","avatar":"🅿","registered_at":1767371089,"last_seen":1767842449,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"active","mention_watermark":"msg-rlugmdpx"}
+{"type":"session_end","agent_id":"pm","session_id":"5998c05a-6f3f-4e96-b1dd-0934dcddbfea","exit_code":0,"duration_ms":55405,"ended_at":1767842457}
+{"type":"session_start","agent_id":"pm","session_id":"5998c05a-6f3f-4e96-b1dd-0934dcddbfea","triggered_by":"msg-8dl0qerj","started_at":1767843620}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-8dl0qerj"}
+{"type":"session_end","agent_id":"pm","session_id":"5998c05a-6f3f-4e96-b1dd-0934dcddbfea","exit_code":1,"duration_ms":512,"ended_at":1767843621}
+{"type":"session_start","agent_id":"pm","session_id":"fed5b396-c237-4ab3-9b09-c5bb867e081f","triggered_by":"msg-o1f3bufc","started_at":1767843681}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-o1f3bufc"}
+{"type":"session_end","agent_id":"pm","session_id":"fed5b396-c237-4ab3-9b09-c5bb867e081f","exit_code":0,"duration_ms":57208,"ended_at":1767843738}
+{"type":"session_start","agent_id":"pm","session_id":"fed5b396-c237-4ab3-9b09-c5bb867e081f","triggered_by":"msg-oiqdklpn","started_at":1767843884}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-oiqdklpn"}
+{"type":"session_end","agent_id":"pm","session_id":"fed5b396-c237-4ab3-9b09-c5bb867e081f","exit_code":1,"duration_ms":508,"ended_at":1767843885}
+{"type":"agent","id":"usr-45anjczz","name":"testy","global_name":"fray-testy","home_channel":"ch-xkzte3i1","created_at":"2026-01-08T04:13:22Z","active_status":"active","agent_id":"testy","registered_at":1767845602,"last_seen":1767845602,"left_at":null,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"offline"}
+{"type":"session_start","agent_id":"testy","session_id":"14d94234-4152-4d61-b872-be2980cbc907","triggered_by":"msg-t3ldudfh","started_at":1767845724}
+{"type":"agent_update","agent_id":"testy","mention_watermark":"msg-t3ldudfh"}
+{"type":"agent_update","agent_id":"testy","mention_watermark":"msg-4ygn8yfc"}
+{"type":"session_end","agent_id":"testy","session_id":"14d94234-4152-4d61-b872-be2980cbc907","exit_code":-1,"duration_ms":228681,"ended_at":1767845953}
+{"type":"session_start","agent_id":"pm","session_id":"874c4fb5-ac97-44f6-af27-4c607b0a2460","triggered_by":"msg-hlz50w4a","started_at":1767846003}
+{"type":"agent_update","agent_id":"pm","mention_watermark":"msg-hlz50w4a"}
+{"type":"agent","id":"usr-na579glt","name":"opus","global_name":"fray-opus","home_channel":"ch-xkzte3i1","created_at":"2025-12-30T23:28:41Z","active_status":"inactive","agent_id":"opus","status":"completed fray-adj6 (knowledge hierarchy) and closed parent epic fray-1mch (Roles \u0026 Knowledge System)","registered_at":1767137321,"last_seen":1767846026,"left_at":1767846026,"managed":true,"invoke":{"driver":"claude","prompt_delivery":"stdin","spawn_timeout_ms":30000,"idle_after_ms":5000,"min_checkin_ms":600000},"presence":"offline","mention_watermark":"msg-uj9vjwa1"}
