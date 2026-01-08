@@ -109,3 +109,28 @@
 {"type":"question","guid":"qstn-m1qxtwp8","re":"Should routing be visible to agents? ('You were invoked in deep-work mode')","from_agent":"designer","status":"open","thread_guid":"thrd-sajl2wzz","asked_in":"msg-61atjtdu","created_at":1767766541}
 {"type":"question","guid":"qstn-i9v1wqoh","re":"Should routing decisions be logged to a fray thread?","from_agent":"designer","status":"open","thread_guid":"thrd-sajl2wzz","asked_in":"msg-61atjtdu","created_at":1767766541}
 {"type":"question","guid":"qstn-urc2ttcu","re":"What's the fallback if haiku routing fails?","from_agent":"designer","status":"open","thread_guid":"thrd-sajl2wzz","asked_in":"msg-61atjtdu","created_at":1767766541}
+{"type":"question","guid":"qstn-2txh5wuc","re":"Should PM vigilance be opt-in per session or always-on for @pm agent?","from_agent":"designer","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-xl6age8h","created_at":1767854633}
+{"type":"question","guid":"qstn-rienof9u","re":"Do we want PM to auto-delegate (\"opus is blocked, waking architect\") or just report?","from_agent":"designer","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-xl6age8h","created_at":1767854633}
+{"type":"question","guid":"qstn-d0f3qebw","re":"Should silence alarms be per-agent config or global?","from_agent":"designer","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-xl6age8h","created_at":1767854633}
+{"type":"question","guid":"qstn-oogfw0zm","re":"**Priority:** Should we start with dashboard (Phase 2) before finishing visual panel (Phase 1)?","from_agent":"opus","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-4cwl2lli","created_at":1767857278}
+{"type":"question","guid":"qstn-3hu4g0ur","re":"**Crash detection:** Do we want PID-based crash detection, or is silence alert enough?","from_agent":"opus","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-4cwl2lli","created_at":1767857278}
+{"type":"question","guid":"qstn-mwazg7nb","re":"**PM acknowledgment:** Should PM explicitly ack wakes, or is any fray activity sufficient?","from_agent":"opus","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-4cwl2lli","created_at":1767857278}
+{"type":"question","guid":"qstn-n3xaazu2","re":"**Token thresholds:** At what % should we wake PM? (80%? 90%?)","from_agent":"opus","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-4cwl2lli","created_at":1767857278}
+{"type":"question","guid":"qstn-i2ts6uyi","re":"**Standup timing:** Should /land always require standup, or only for sessions \u003e30 minutes?","from_agent":"opus","status":"open","thread_guid":"thrd-81gulr3u","asked_in":"msg-4cwl2lli","created_at":1767857278}
+{"type":"question","guid":"qstn-tgcu053b","re":"Should mlld integration (Phase 2) happen before daemon hardening (Phase 3)? It's more strategic but less critical.","from_agent":"pm","status":"open","asked_in":"msg-2hetrzjv","created_at":1767908048}
+{"type":"question","guid":"qstn-8zv6wz07","re":"Any P1 issues in feat-reqs thread that should be promoted to Phase 1/2?","from_agent":"pm","status":"open","asked_in":"msg-2hetrzjv","created_at":1767908048}
+{"type":"question","guid":"qstn-kdmxlg9q","re":"Codex driver (fray-ej3j) - is this blocking anyone? Can it be P1 instead of P0?","from_agent":"pm","status":"open","asked_in":"msg-2hetrzjv","created_at":1767908048}
+{"type":"question_update","guid":"qstn-tgcu053b","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-8zv6wz07","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-kdmxlg9q","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-oogfw0zm","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-3hu4g0ur","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-mwazg7nb","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-n3xaazu2","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-i2ts6uyi","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-2txh5wuc","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-rienof9u","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-d0f3qebw","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-m1qxtwp8","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-i9v1wqoh","status":"answered","answered_in":"msg-3nrewbij"}
+{"type":"question_update","guid":"qstn-urc2ttcu","status":"answered","answered_in":"msg-3nrewbij"}
