@@ -763,3 +763,21 @@ func GetUnreadCountForAgent(db *sql.DB, agentID string) (int, error) {
 	}
 	return count, nil
 }
+
+// GetRecentMessages returns messages from the last N seconds.
+func GetRecentMessages(db *sql.DB, sinceSeconds int) ([]types.Message, error) {
+	cutoff := time.Now().Unix() - int64(sinceSeconds)
+	rows, err := db.Query(`
+		SELECT guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions
+		FROM fray_messages
+		WHERE ts >= ?
+		AND archived_at IS NULL
+		ORDER BY ts DESC
+	`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanMessages(rows)
+}

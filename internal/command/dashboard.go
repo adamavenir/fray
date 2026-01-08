@@ -70,18 +70,96 @@ func NewDashboardCmd() *cobra.Command {
 				claimsByAgent[claim.AgentID] = append(claimsByAgent[claim.AgentID], claim)
 			}
 
-			if ctx.JSONMode {
-				return renderDashboardJSON(cmd, activeAgents, offlineAgents, unreadCounts, claimsByAgent)
+			// Get recent events (last 30 minutes)
+			recentMessages, err := db.GetRecentMessages(ctx.DB, 30*60)
+			if err != nil {
+				return writeCommandError(cmd, err)
 			}
 
-			return renderDashboardText(cmd, activeAgents, offlineAgents, unreadCounts, claimsByAgent)
+			// Filter to relevant events
+			events := filterRelevantEvents(recentMessages)
+
+			if ctx.JSONMode {
+				return renderDashboardJSON(cmd, activeAgents, offlineAgents, unreadCounts, claimsByAgent, events)
+			}
+
+			return renderDashboardText(cmd, activeAgents, offlineAgents, unreadCounts, claimsByAgent, events)
 		},
 	}
 
 	return cmd
 }
 
-func renderDashboardText(cmd *cobra.Command, activeAgents, offlineAgents []types.Agent, unreadCounts map[string]int, claimsByAgent map[string][]types.Claim) error {
+// DashboardEvent represents a relevant event for the dashboard.
+type DashboardEvent struct {
+	Timestamp   int64
+	AgentID     string
+	EventType   string // "message", "status", "session_start", "session_end"
+	Description string
+}
+
+func filterRelevantEvents(messages []types.Message) []DashboardEvent {
+	var events []DashboardEvent
+
+	for _, msg := range messages {
+		// Include messages with @pm mentions (blocked/done/standup)
+		if containsMention(msg.Mentions, "pm") {
+			eventType := "message"
+			if containsPrefix(msg.Body, "blocked:") {
+				eventType = "blocked"
+			} else if containsPrefix(msg.Body, "done:") {
+				eventType = "done"
+			}
+
+			events = append(events, DashboardEvent{
+				Timestamp:   msg.TS,
+				AgentID:     msg.FromAgent,
+				EventType:   eventType,
+				Description: truncate(msg.Body, 60),
+			})
+			continue
+		}
+
+		// Include status messages (active:, blocked:, done:)
+		if containsPrefix(msg.Body, "active:") ||
+		   containsPrefix(msg.Body, "blocked:") ||
+		   containsPrefix(msg.Body, "done:") {
+			eventType := "status"
+			if containsPrefix(msg.Body, "blocked:") {
+				eventType = "blocked"
+			} else if containsPrefix(msg.Body, "done:") {
+				eventType = "done"
+			}
+
+			events = append(events, DashboardEvent{
+				Timestamp:   msg.TS,
+				AgentID:     msg.FromAgent,
+				EventType:   eventType,
+				Description: truncate(msg.Body, 60),
+			})
+		}
+	}
+
+	return events
+}
+
+func containsMention(mentions []string, agent string) bool {
+	for _, m := range mentions {
+		if m == agent {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPrefix(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	return s[:len(prefix)] == prefix
+}
+
+func renderDashboardText(cmd *cobra.Command, activeAgents, offlineAgents []types.Agent, unreadCounts map[string]int, claimsByAgent map[string][]types.Claim, events []DashboardEvent) error {
 	out := cmd.OutOrStdout()
 
 	fmt.Fprintln(out, "FRAY DASHBOARD")
@@ -122,9 +200,17 @@ func renderDashboardText(cmd *cobra.Command, activeAgents, offlineAgents []types
 	}
 	fmt.Fprintln(out)
 
-	// Recent events placeholder
+	// Recent events section
 	fmt.Fprintln(out, "Recent Events (last 30m):")
-	fmt.Fprintln(out, "  (coming soon)")
+	if len(events) == 0 {
+		fmt.Fprintln(out, "  (none)")
+	} else {
+		now := time.Now().Unix()
+		for _, event := range events {
+			relTime := formatRelativeTime(now - event.Timestamp)
+			fmt.Fprintf(out, "  %8s - @%s: %s\n", relTime, event.AgentID, event.Description)
+		}
+	}
 	fmt.Fprintln(out)
 
 	fmt.Fprintf(out, "Last updated: %s\n", time.Now().Format("2006-01-02 15:04:05"))
@@ -132,14 +218,14 @@ func renderDashboardText(cmd *cobra.Command, activeAgents, offlineAgents []types
 	return nil
 }
 
-func renderDashboardJSON(cmd *cobra.Command, activeAgents, offlineAgents []types.Agent, unreadCounts map[string]int, claimsByAgent map[string][]types.Claim) error {
+func renderDashboardJSON(cmd *cobra.Command, activeAgents, offlineAgents []types.Agent, unreadCounts map[string]int, claimsByAgent map[string][]types.Claim, events []DashboardEvent) error {
 	now := time.Now()
 
 	payload := map[string]any{
 		"timestamp": now.Format(time.RFC3339),
 		"active_agents": buildActiveAgentsPayload(activeAgents, unreadCounts, claimsByAgent),
 		"offline_agents": buildOfflineAgentsPayload(offlineAgents, now.Unix()),
-		"recent_events": []any{}, // TODO: implement in fray-h0ro
+		"recent_events": buildEventsPayload(events),
 	}
 
 	return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
@@ -193,6 +279,19 @@ func buildOfflineAgentsPayload(agents []types.Agent, now int64) []map[string]any
 		result = append(result, map[string]any{
 			"agent_id": agent.AgentID,
 			"offline_duration_h": offlineDuration.Hours(),
+		})
+	}
+	return result
+}
+
+func buildEventsPayload(events []DashboardEvent) []map[string]any {
+	result := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		result = append(result, map[string]any{
+			"timestamp": time.Unix(event.Timestamp, 0).Format(time.RFC3339),
+			"agent_id": event.AgentID,
+			"event_type": event.EventType,
+			"description": event.Description,
 		})
 	}
 	return result
@@ -298,4 +397,30 @@ func findInString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func formatRelativeTime(seconds int64) string {
+	d := time.Duration(seconds) * time.Second
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1m ago"
+		}
+		return fmt.Sprintf("%dm ago", m)
+	}
+	if d < 24*time.Hour {
+		h := int(d.Hours())
+		if h == 1 {
+			return "1h ago"
+		}
+		return fmt.Sprintf("%dh ago", h)
+	}
+	days := int(d.Hours() / 24)
+	if days == 1 {
+		return "1d ago"
+	}
+	return fmt.Sprintf("%dd ago", days)
 }
