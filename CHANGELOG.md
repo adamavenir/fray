@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fray daemon status`: shows agents in error state with session UUIDs for debugging
 
 ### Fixed
+- Activity panel: idle agents no longer incorrectly shown as offline
+- Activity panel: token usage background now displays correctly (ccusage JSON parsing fix)
+- Activity panel: white text on red backgrounds for better readability
 - JSONL append now calls fsync() to ensure data is flushed to disk before returning success
 - Daemon: @mentions in threads now wake agents (was room-only)
 - Daemon: replies to agent messages wake the agent (even without explicit @mention)
