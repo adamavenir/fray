@@ -53,6 +53,7 @@ func NewBackCmd() *cobra.Command {
 			updates := db.AgentUpdates{
 				LastSeen: types.OptionalInt64{Set: true, Value: &now},
 				LeftAt:   types.OptionalInt64{Set: true, Value: nil},
+				Status:   types.OptionalString{Set: true, Value: nil}, // Clear status for clean slate
 			}
 			if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
 				return writeCommandError(cmd, err)

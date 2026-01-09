@@ -104,6 +104,7 @@ func NewByeCmd() *cobra.Command {
 			updates := db.AgentUpdates{
 				LeftAt:   types.OptionalInt64{Set: true, Value: &now},
 				LastSeen: types.OptionalInt64{Set: true, Value: &now},
+				Status:   types.OptionalString{Set: true, Value: nil}, // Clear status for fresh start next session
 			}
 			if err := db.UpdateAgent(ctx.DB, agentID, updates); err != nil {
 				return writeCommandError(cmd, err)

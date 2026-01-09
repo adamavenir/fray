@@ -2022,8 +2022,10 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	unread := m.agentUnreadCounts[agent.AgentID]
 
 	// Build the visible text content in parts for styling
-	// Bold part: " icon name"
-	boldPart := fmt.Sprintf(" %s %s", icon, name)
+	// Icon part: " icon" (gets presence-based color)
+	iconPart := fmt.Sprintf(" %s", icon)
+	// Name part: " name" (gets agent color)
+	namePart := fmt.Sprintf(" %s", name)
 	// Italic part: " status (unread)" + padding
 	italicPart := ""
 	if status != "" {
@@ -2033,11 +2035,12 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		italicPart += fmt.Sprintf(" (%d)", unread)
 	}
 
-	// Track where bold portion ends (for styling split)
-	boldEndPos := len([]rune(boldPart))
+	// Track positions for styling splits
+	iconEndPos := len([]rune(iconPart))
+	boldEndPos := iconEndPos + len([]rune(namePart)) // icon + name are both bold
 
 	// Combine for length calculation
-	content := boldPart + italicPart
+	content := iconPart + namePart + italicPart
 	contentRunes := []rune(content)
 
 	// Truncate content to fit row width
@@ -2056,6 +2059,23 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 
 	// Get agent color
 	agentColor := m.colorForAgent(agent.AgentID)
+
+	// Presence-based icon color (independent of agent color)
+	var iconColor lipgloss.Color
+	switch agent.Presence {
+	case types.PresenceSpawning, types.PresencePrompting, types.PresencePrompted:
+		iconColor = lipgloss.Color("231") // white - pre-active states
+	case types.PresenceActive:
+		iconColor = lipgloss.Color("46") // green - active
+	case types.PresenceIdle:
+		iconColor = lipgloss.Color("226") // yellow - idle
+	case types.PresenceOffline:
+		iconColor = lipgloss.Color("240") // gray - offline
+	case types.PresenceError:
+		iconColor = lipgloss.Color("196") // red - error
+	default:
+		iconColor = lipgloss.Color("240") // gray fallback
+	}
 
 	// Calculate token usage percentage
 	// Target: 80% of 200k = 160k tokens is "full"
@@ -2138,13 +2158,15 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		fillChars = rowWidth
 	}
 
-	// Build styled row with bold icon+name and italic status
-	// Four style combinations: used/unused bg × bold/italic text
-	// Bold uses textColor (agent color), italic uses statusColor (dim grey)
-	usedBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(usedBg).Bold(true)
-	usedItalicStyle := lipgloss.NewStyle().Foreground(statusColor).Background(usedBg).Italic(true)
-	unusedBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(unusedBg).Bold(true)
-	unusedItalicStyle := lipgloss.NewStyle().Foreground(statusColor).Background(unusedBg).Italic(true)
+	// Build styled row with three zones: icon, name, status
+	// Icon uses iconColor (presence-based), name uses textColor (agent), status uses statusColor (dim)
+	// Each zone can be in used (progress bar) or unused background
+	usedIconStyle := lipgloss.NewStyle().Foreground(iconColor).Background(usedBg).Bold(true)
+	usedNameStyle := lipgloss.NewStyle().Foreground(textColor).Background(usedBg).Bold(true)
+	usedStatusStyle := lipgloss.NewStyle().Foreground(statusColor).Background(usedBg).Italic(true)
+	unusedIconStyle := lipgloss.NewStyle().Foreground(iconColor).Background(unusedBg).Bold(true)
+	unusedNameStyle := lipgloss.NewStyle().Foreground(textColor).Background(unusedBg).Bold(true)
+	unusedStatusStyle := lipgloss.NewStyle().Foreground(statusColor).Background(unusedBg).Italic(true)
 
 	runes := []rune(paddedContent)
 	var rowText string
@@ -2158,22 +2180,30 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 			end = len(runes)
 		}
 		text := string(runes[start:end])
-		// Determine which style to use based on position
+		// Determine which zone and background based on position
 		inUsed := start < fillChars
-		inBold := start < boldEndPos
+		inIcon := start < iconEndPos
+		inName := start >= iconEndPos && start < boldEndPos
 
-		if inUsed && inBold {
-			return usedBoldStyle.Render(text)
-		} else if inUsed && !inBold {
-			return usedItalicStyle.Render(text)
-		} else if !inUsed && inBold {
-			return unusedBoldStyle.Render(text)
+		if inUsed {
+			if inIcon {
+				return usedIconStyle.Render(text)
+			} else if inName {
+				return usedNameStyle.Render(text)
+			}
+			return usedStatusStyle.Render(text)
 		}
-		return unusedItalicStyle.Render(text)
+		// Unused background
+		if inIcon {
+			return unusedIconStyle.Render(text)
+		} else if inName {
+			return unusedNameStyle.Render(text)
+		}
+		return unusedStatusStyle.Render(text)
 	}
 
 	// Build segments based on boundaries (sorted)
-	boundaries := []int{0, boldEndPos, fillChars, rowWidth}
+	boundaries := []int{0, iconEndPos, boldEndPos, fillChars, rowWidth}
 	// Remove duplicates and sort
 	seen := make(map[int]bool)
 	unique := make([]int, 0, len(boundaries))
