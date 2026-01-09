@@ -1787,7 +1787,7 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 	}
 
 	var lines []string
-	staleThreshold := 4 * 60 * 60 // 4 hours in seconds
+	staleThreshold := 1 * 60 * 60 // 1 hour in seconds
 	now := int64(0)
 	if t := time.Now().Unix(); t > 0 {
 		now = t
@@ -1833,9 +1833,6 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 		}
 	}
 
-	// Separator line
-	lines = append(lines, strings.Repeat("─", width-1))
-
 	// Render active agents
 	for _, agent := range activeAgents {
 		line := m.renderAgentRow(agent, width)
@@ -1870,15 +1867,18 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 	return lines, len(lines)
 }
 
-// renderAgentRow renders a single agent row with two-tone background for token usage.
-// The entire row has a background: bright portion = used tokens, dim portion = remaining.
-// Format: [icon] [name] status  where icon+name are bold, status is italic
-// Text is black for readability against bright backgrounds.
+// renderAgentRow renders a single agent row with token usage progress bar.
+// Design:
+// - Icon + agent name: bold, in agent's color
+// - Status: italic, dim grey
+// - Background: black (used/progress) | sidebar default (unused)
+// - Danger zone (>80%): red (used) | sidebar default (unused), white text
+// - Offline: no background, grey icon + agent name
 func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	if width <= 0 {
 		width = 30
 	}
-	rowWidth := width - 1
+	rowWidth := width - 3 // extra padding from sidebar edge
 
 	// Status icon based on presence
 	icon := "▶"
@@ -1923,20 +1923,20 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	// Build the visible text content in parts for styling
 	// Bold part: " icon name"
 	boldPart := fmt.Sprintf(" %s %s", icon, name)
-	// Regular part: " status (unread)" + padding
-	regularPart := ""
+	// Italic part: " status (unread)" + padding
+	italicPart := ""
 	if status != "" {
-		regularPart += " " + status
+		italicPart += " " + status
 	}
 	if unread > 0 {
-		regularPart += fmt.Sprintf(" (%d)", unread)
+		italicPart += fmt.Sprintf(" (%d)", unread)
 	}
 
 	// Track where bold portion ends (for styling split)
 	boldEndPos := len([]rune(boldPart))
 
 	// Combine for length calculation
-	content := boldPart + regularPart
+	content := boldPart + italicPart
 	contentRunes := []rune(content)
 
 	// Truncate content to fit row width
@@ -1972,29 +1972,39 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	}
 
 	// Determine colors based on state
-	var brightBg, dimBg lipgloss.Color
 	inDangerZone := tokenPercent > dangerThreshold
+	isOffline := agent.Presence == types.PresenceOffline
+	isError := agent.Presence == types.PresenceError
 
-	if agent.Presence == types.PresenceError {
-		// Error state: full red background
-		brightBg = lipgloss.Color("124") // dark red
-		dimBg = lipgloss.Color("124")
-	} else if agent.Presence == types.PresenceOffline {
-		// Offline: slightly brighter gray background for text readability
-		brightBg = lipgloss.Color("240") // medium gray
-		dimBg = lipgloss.Color("238")    // dark gray
+	// Background colors: black for progress (used), transparent for unused (sidebar default)
+	usedBg := lipgloss.Color("16")   // black (progress bar)
+	unusedBg := lipgloss.Color("")   // transparent (sidebar default)
+
+	// Text colors: agent color for icon+name, dim grey for status
+	textColor := agentColor
+	statusColor := lipgloss.Color("240") // dim grey for status
+
+	if isError {
+		// Error state: red background throughout
+		usedBg = lipgloss.Color("196")  // bright red
+		unusedBg = lipgloss.Color("52") // dark red
+		textColor = lipgloss.Color("231") // white text
+		statusColor = lipgloss.Color("231") // white status too
+	} else if isOffline {
+		// Offline: no background, grey text
+		usedBg = lipgloss.Color("")      // transparent
+		unusedBg = lipgloss.Color("")    // transparent
+		textColor = lipgloss.Color("240") // grey
+		statusColor = lipgloss.Color("240") // grey
 	} else if inDangerZone {
-		// Danger zone (>80%): red tones
-		// Show progress within the remaining 20% (actually 15% for buffer)
-		brightBg = lipgloss.Color("196") // bright red
-		dimBg = lipgloss.Color("52")     // dark red
-	} else {
-		// Normal: two tones of agent color
-		brightBg = agentColor
-		dimBg = dimColor(agentColor)
+		// Danger zone (>80%): red for progress portion, transparent for unused
+		usedBg = lipgloss.Color("196")   // bright red
+		unusedBg = lipgloss.Color("")    // transparent
+		textColor = lipgloss.Color("231") // white text
+		statusColor = lipgloss.Color("231") // white status too
 	}
 
-	// Calculate fill width (how many chars get bright background)
+	// Calculate fill width (how many chars get "used" background)
 	var fillRatio float64
 	if inDangerZone {
 		// In danger zone: show progress within the remaining 20%
@@ -2003,9 +2013,13 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		if fillRatio > 1.0 {
 			fillRatio = 1.0
 		}
-	} else if agent.Presence == types.PresenceError || agent.Presence == types.PresenceOffline {
-		// Error/offline: no fill progression
-		fillRatio = 0
+	} else if isError || isOffline {
+		// Error: full red, Offline: no fill (all black)
+		if isError {
+			fillRatio = 1.0
+		} else {
+			fillRatio = 0
+		}
 	} else {
 		// Normal: map 0-80% to 0-100% of row
 		fillRatio = tokenPercent / targetPercent
@@ -2023,22 +2037,13 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		fillChars = rowWidth
 	}
 
-	// Text color: black for readability against bright backgrounds
-	// Exceptions: red backgrounds (error/danger) use white, offline uses gray
-	textColor := lipgloss.Color("16") // black
-	if agent.Presence == types.PresenceError || inDangerZone {
-		textColor = lipgloss.Color("231") // white for red backgrounds
-	} else if agent.Presence == types.PresenceOffline {
-		textColor = lipgloss.Color("252") // brighter gray for readability on dark bg
-	}
-
-	// Build styled row with bold icon+name and two-tone background
-	// We have two boundaries: fillChars (bright/dim bg) and boldEndPos (bold/regular text)
-	// This creates up to 4 segments depending on overlap
-	brightBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(brightBg).Bold(true)
-	brightRegStyle := lipgloss.NewStyle().Foreground(textColor).Background(brightBg)
-	dimBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(dimBg).Bold(true)
-	dimRegStyle := lipgloss.NewStyle().Foreground(textColor).Background(dimBg)
+	// Build styled row with bold icon+name and italic status
+	// Four style combinations: used/unused bg × bold/italic text
+	// Bold uses textColor (agent color), italic uses statusColor (dim grey)
+	usedBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(usedBg).Bold(true)
+	usedItalicStyle := lipgloss.NewStyle().Foreground(statusColor).Background(usedBg).Italic(true)
+	unusedBoldStyle := lipgloss.NewStyle().Foreground(textColor).Background(unusedBg).Bold(true)
+	unusedItalicStyle := lipgloss.NewStyle().Foreground(statusColor).Background(unusedBg).Italic(true)
 
 	runes := []rune(paddedContent)
 	var rowText string
@@ -2053,17 +2058,17 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		}
 		text := string(runes[start:end])
 		// Determine which style to use based on position
-		inBright := start < fillChars
+		inUsed := start < fillChars
 		inBold := start < boldEndPos
 
-		if inBright && inBold {
-			return brightBoldStyle.Render(text)
-		} else if inBright && !inBold {
-			return brightRegStyle.Render(text)
-		} else if !inBright && inBold {
-			return dimBoldStyle.Render(text)
+		if inUsed && inBold {
+			return usedBoldStyle.Render(text)
+		} else if inUsed && !inBold {
+			return usedItalicStyle.Render(text)
+		} else if !inUsed && inBold {
+			return unusedBoldStyle.Render(text)
 		}
-		return dimRegStyle.Render(text)
+		return unusedItalicStyle.Render(text)
 	}
 
 	// Build segments based on boundaries (sorted)
