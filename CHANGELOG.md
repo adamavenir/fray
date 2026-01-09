@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/prune` in a thread prunes current thread
   - `/prune main` prunes room
 - Chat: tombstone messages render with ⏏︎ icon and dimmed styling
+- Chat: status.mld customization for activity panel display
+  - `.fray/llm/status.mld` transforms agent status messages
+  - Override icon, colors, message text based on status patterns
+  - Default template handles blocked/awaiting/done prefixes
+  - Created on `fray init` alongside router.mld
 
 ### Changed
 - Chat: edit mode redesigned - up arrow shows message body only with blue background, Esc cancels, Enter saves
