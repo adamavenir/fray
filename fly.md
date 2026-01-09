@@ -44,14 +44,30 @@ fray questions             # open questions you might answer
 
 These inform your work but don't override your Current Priority.
 
+## CRITICAL: Claim Files Before Editing
+
+**You MUST claim files before editing them.** This prevents collision between agents working on the same files.
+
+```bash
+# Before editing ANY file:
+fray claim @$ARGUMENTS --file <path>
+
+# For glob patterns:
+fray claim @$ARGUMENTS --file "src/auth/*.ts"
+
+# Combined with status:
+fray status @$ARGUMENTS "fixing auth" --file src/auth.ts
+```
+
+Check existing claims with `fray claims` before starting work. If another agent has claimed files you need, coordinate in fray before proceeding.
+
+Claims auto-clear when you `fray bye`, or clear manually with `fray clear @$ARGUMENTS`.
+
 ## As You Work
 
-- **Claim files before editing**: `fray claim @$ARGUMENTS --file <path>`
 - **Track work in beads**: `bd update <id> --status in_progress` when starting an issue
 - **Close issues when done**: `bd close <id> --reason "..."` with what you implemented
 - **Create issues for discovered work**: `bd create "..." --type task`
-
-Claims auto-clear when you `fray bye`, or clear manually with `fray clear @$ARGUMENTS`.
 
 ## Questions for User and Other Agents
 

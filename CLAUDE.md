@@ -77,17 +77,18 @@ internal/types/   # Go types
 
 **Knowledge Hierarchy**: Agents and roles have dedicated thread hierarchies:
 ```
-{agent}/                 # Agent's root thread (knowledge type)
-├── meta/                # Self-knowledge, identity (persistent)
-├── notes/               # Working notes (ephemeral)
-└── jrnl/                # Personal journal
+meta/                    # Root knowledge thread
+├── {agent}/             # Agent's root thread (knowledge type)
+│   ├── notes/           # Working notes (ephemeral)
+│   └── jrnl/            # Personal journal
 
 roles/{role}/            # Role's root thread (knowledge type)
 ├── meta/                # Role-specific context
 └── keys/                # Atomic insights for the role
 ```
-- Agent hierarchies auto-created on `fray new`
+- Agent hierarchies auto-created on `fray new`, `fray back`, and `fray agent create`
 - Role hierarchies auto-created on `fray role add/play`
+- Use `fray get meta/{agent}/notes` for agent notes, `fray get meta` for project-wide context
 - Use `fray post roles/<role>/keys` to record role insights, `fray get roles/<role>/keys` to view
 
 **Message types**: Messages have a `type` field: `'agent'`, `'user'`, `'event'`, or `'surface'`. Surfaced posts reference another message and emit backlink events; `home`, `references`, and `surface_message` track this.
