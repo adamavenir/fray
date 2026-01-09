@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat: click-to-reply changed - double-click on message ID inserts reply prefix, single-click copies ID
 
 ### Fixed
+- Daemon: direct @mentions and chained replies now spawn immediately (no longer routed through Haiku which was causing false negatives)
+- Daemon: FYI/CC patterns skip spawn entirely (handled before router check)
 - Chat: `/n` command works from message input when viewing a thread (no longer requires sidebar focus)
 - Chat: messages now marked as read when arriving while viewing (not just on navigation)
 - Chat: own messages no longer show as unread immediately after posting
