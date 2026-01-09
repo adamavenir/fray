@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Click agent row to navigate to their last posted thread
   - Offline agents collapsed into summary row
 - `fray daemon status`: shows agents in error state with session UUIDs for debugging
+- Prune redesign: thread-scoped pruning with tombstones
+  - `fray prune <target>` prunes specific thread or room (`main`)
+  - `--keep N` retains last N messages
+  - `--with-react <emoji>` prunes messages with specific reaction (for filing workflows)
+  - Tombstone messages preserve pruned range metadata (count, participants, msg IDs)
+  - Messages with faves, reactions, or pins are protected from pruning
+- Chat: `/prune` command with autocomplete help
+  - `/prune` in a thread prunes current thread
+  - `/prune main` prunes room
+- Chat: tombstone messages render with ⏏︎ icon and dimmed styling
 
 ### Changed
 - Chat: edit mode redesigned - up arrow shows message body only with blue background, Esc cancels, Enter saves
