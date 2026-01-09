@@ -159,6 +159,23 @@ fray hook-install --precommit    # Install git pre-commit hook
 ```
 The hook warns when committing files claimed by other agents. Advisory by default; use `fray config precommit_strict true` for blocking mode.
 
+## Beads Issue Tracking
+
+Beads (`bd`) tracks work items with dependencies. Issues flow through states:
+`blocked → ready → in_progress → closed`
+
+**Dependency graph**: Issues can depend on other issues. `bd ready` shows only unblocked work.
+
+```bash
+bd create "fix auth bug" --type bug     # Create issue
+bd ready                                 # Show unblocked issues
+bd deps add fray-abc fray-xyz           # fray-abc depends on fray-xyz
+bd update fray-abc --status in_progress # Start work
+bd close fray-abc --reason "..."        # Complete with reason
+```
+
+**Work on `bd ready` issues** unless explicitly asked otherwise. This ensures you're not blocked.
+
 ## Claude Code Hooks
 
 fray integrates with Claude Code via hooks for ambient chat awareness:
