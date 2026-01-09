@@ -357,12 +357,39 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 		isDirectAddress := IsDirectAddress(msg, agent.AgentID)
 		isReplyToAgent := IsReplyToAgent(d.database, msg, agent.AgentID)
 
-		if !isDirectAddress && !isReplyToAgent {
-			d.debugf("    %s: skip (not direct address or reply) - body: %q", msg.ID, truncate(msg.Body, 50))
+		// FYI patterns (fyi @agent, cc @agent, etc) are informational - skip entirely
+		if IsFYIPattern(msg) {
+			d.debugf("    %s: skip (FYI pattern)", msg.ID)
 			if !hasQueued && !spawned {
 				lastProcessedID = msg.ID
 			}
 			continue
+		}
+
+		// Ambiguous mention: not direct address and not reply to agent
+		// Route through Haiku to decide if agent should be woken
+		isAmbiguousMention := !isDirectAddress && !isReplyToAgent
+		if isAmbiguousMention {
+			var threadHome *string
+			if msg.Home != "" && msg.Home != "room" {
+				threadHome = &msg.Home
+			}
+			routerResult := d.router.Route(router.RouterPayload{
+				Message: msg.Body,
+				From:    msg.FromAgent,
+				Agent:   agent.AgentID,
+				Thread:  threadHome,
+			})
+			d.debugf("    %s: ambiguous mention - router says shouldSpawn=%v (confidence=%.2f)",
+				msg.ID, routerResult.ShouldSpawn, routerResult.Confidence)
+
+			if !routerResult.ShouldSpawn {
+				d.debugf("    %s: skip (router: wait)", msg.ID)
+				if !hasQueued && !spawned {
+					lastProcessedID = msg.ID
+				}
+				continue
+			}
 		}
 
 		// Check who can trigger spawn: human, agent with wake trust, or thread owner
@@ -438,30 +465,12 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			continue
 		}
 
-		// Route the mention to determine response mode
-		var threadHome *string
-		if msg.Home != "" && msg.Home != "room" {
-			threadHome = &msg.Home
+		// Direct addresses, chained replies, and router-approved ambiguous mentions spawn
+		if isAmbiguousMention {
+			d.debugf("    %s: ambiguous mention approved by router - triggering spawn", msg.ID)
+		} else {
+			d.debugf("    %s: direct=%v reply=%v - triggering spawn", msg.ID, isDirectAddress, isReplyToAgent)
 		}
-		routerResult := d.router.Route(router.RouterPayload{
-			Message: msg.Body,
-			From:    msg.FromAgent,
-			Agent:   agent.AgentID,
-			Thread:  threadHome,
-		})
-		d.debugf("    %s: router result: mode=%s, shouldSpawn=%v, confidence=%.2f",
-			msg.ID, routerResult.Mode, routerResult.ShouldSpawn, routerResult.Confidence)
-
-		// Skip spawn if router says acknowledge (FYI messages)
-		if !routerResult.ShouldSpawn {
-			d.debugf("    %s: skip (router: acknowledge mode)", msg.ID)
-			if !hasQueued {
-				lastProcessedID = msg.ID
-			}
-			continue
-		}
-
-		d.debugf("    %s: triggering spawn (mode=%s)", msg.ID, routerResult.Mode)
 
 		// Try to spawn - spawnAgent returns the last msgID included in wake prompt
 		lastIncluded, err := d.spawnAgent(ctx, agent, msg.ID)

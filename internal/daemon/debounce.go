@@ -164,6 +164,19 @@ func matchesMention(mention, agentID string) bool {
 	return false
 }
 
+// IsFYIPattern returns true if the message starts with an FYI/CC pattern.
+// These are informational mentions that don't require immediate attention.
+func IsFYIPattern(msg types.Message) bool {
+	bodyLower := strings.ToLower(strings.TrimSpace(msg.Body))
+	fyiPrefixes := []string{"fyi ", "fyi:", "cc ", "cc:", "heads up ", "just so you know "}
+	for _, prefix := range fyiPrefixes {
+		if strings.HasPrefix(bodyLower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // CanTriggerSpawn returns true if the message author can trigger a spawn for the agent.
 // Rules:
 // - Human (non-agent) can always trigger
