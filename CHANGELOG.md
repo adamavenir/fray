@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Chat: `/pin <msg-id>` and `/unpin <msg-id>` commands
+- CLI: `fray get <thread> --anchors` shows anchor messages from child threads
 - `fray dashboard`: agent status dashboard showing active/offline agents, token usage, recent events
   - Text output: agent rows with status, unread counts, current work from claims
   - JSON output: structured data for programmatic access (e.g., PM agent)
@@ -24,7 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Offline agents collapsed into summary row
 - `fray daemon status`: shows agents in error state with session UUIDs for debugging
 
+### Changed
+- Chat: edit mode redesigned - up arrow shows message body only with blue background, Esc cancels, Enter saves
+
 ### Fixed
+- Chat: `/n` command works from message input when viewing a thread (no longer requires sidebar focus)
 - Chat: messages now marked as read when arriving while viewing (not just on navigation)
 - Chat: own messages no longer show as unread immediately after posting
 - Chat: `#msg-id /command` parsing no longer triggers when `/command` appears later in message
