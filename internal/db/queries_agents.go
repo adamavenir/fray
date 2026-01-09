@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/adamavenir/fray/internal/types"
 )
@@ -137,6 +138,26 @@ func UpdateAgentWatermark(db *sql.DB, agentID, msgID string) error {
 func UpdateAgentPresence(db *sql.DB, agentID string, presence types.PresenceState) error {
 	_, err := db.Exec(`UPDATE fray_agents SET presence = ? WHERE agent_id = ?`, string(presence), agentID)
 	return err
+}
+
+// UpdateAgentPresenceWithAudit updates presence and writes an audit trail event.
+// This should be used when you want to track the presence change in JSONL.
+func UpdateAgentPresenceWithAudit(db *sql.DB, projectPath string, agentID string, from, to types.PresenceState, reason, source string, status *string) error {
+	// Update SQLite
+	if err := UpdateAgentPresence(db, agentID, to); err != nil {
+		return err
+	}
+
+	// Write audit trail
+	return AppendPresenceEvent(projectPath, PresenceEventJSONLRecord{
+		AgentID: agentID,
+		From:    string(from),
+		To:      string(to),
+		Status:  status,
+		Reason:  reason,
+		Source:  source,
+		TS:      time.Now().Unix(),
+	})
 }
 
 // UpdateAgentHeartbeat updates the last heartbeat timestamp for an agent.

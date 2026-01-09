@@ -246,10 +246,19 @@ func (d *Daemon) cleanupStalePresence() {
 		}
 
 		// Agent has a "busy" presence but daemon just started (no tracked processes)
-		// Reset to idle so mentions can spawn fresh
+		// Reset to idle so mentions can spawn fresh, and set LeftAt to indicate session ended
 		d.debugf("startup cleanup: @%s was %s, resetting to idle", agent.AgentID, agent.Presence)
-		if err := db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceIdle); err != nil {
-			d.debugf("startup cleanup: error updating @%s: %v", agent.AgentID, err)
+		if err := db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, agent.Presence, types.PresenceIdle, "startup_cleanup", "startup", agent.Status); err != nil {
+			d.debugf("startup cleanup: error updating @%s presence: %v", agent.AgentID, err)
+		}
+		// Also set LeftAt if not already set, to indicate the orphaned session ended
+		if agent.LeftAt == nil {
+			now := time.Now().Unix()
+			if err := db.UpdateAgent(d.database, agent.AgentID, db.AgentUpdates{
+				LeftAt: types.OptionalInt64{Set: true, Value: &now},
+			}); err != nil {
+				d.debugf("startup cleanup: error updating @%s left_at: %v", agent.AgentID, err)
+			}
 		}
 	}
 }
@@ -451,7 +460,7 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			// Orphaned state: presence says busy but no tracked process
 			// Reset to idle and proceed to spawn
 			d.debugf("    %s: orphaned presence detected (was %s), resetting to idle", msg.ID, agent.Presence)
-			db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceIdle)
+			db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, agent.Presence, types.PresenceIdle, "orphaned_reset", "daemon", agent.Status)
 			agent.Presence = types.PresenceIdle
 		}
 
@@ -528,7 +537,8 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 	d.debugf("  spawning @%s with driver %s", agent.AgentID, agent.Invoke.Driver)
 
 	// Update presence to spawning
-	if err := db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceSpawning); err != nil {
+	prevPresence := agent.Presence
+	if err := db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, prevPresence, types.PresenceSpawning, "spawn", "daemon", agent.Status); err != nil {
 		return "", err
 	}
 
@@ -540,7 +550,7 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 	proc, err := driver.Spawn(ctx, agent, prompt)
 	if err != nil {
 		d.debugf("  spawn error: %v", err)
-		db.UpdateAgentPresence(d.database, agent.AgentID, types.PresenceError)
+		db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, types.PresenceSpawning, types.PresenceError, "spawn_error", "daemon", agent.Status)
 		return "", err
 	}
 
@@ -771,12 +781,14 @@ func (d *Daemon) updatePresence() {
 					// Agent is generating response (new output tokens)
 					if agent.Presence != types.PresencePrompted {
 						d.debugf("  @%s: prompting→prompted (new output tokens: %d)", agentID, newOutput)
+						// Note: Not auditing prompting→prompted as it's a high-frequency internal transition
 						db.UpdateAgentPresence(d.database, agentID, types.PresencePrompted)
 					}
 				} else if newInput > 0 {
 					// Context being sent to API (new input tokens)
 					if agent.Presence == types.PresenceSpawning {
 						d.debugf("  @%s: spawning→prompting (new input tokens: %d)", agentID, newInput)
+						// Note: Not auditing spawning→prompting as it's a high-frequency internal transition
 						db.UpdateAgentPresence(d.database, agentID, types.PresencePrompting)
 					}
 				}
@@ -784,7 +796,7 @@ func (d *Daemon) updatePresence() {
 
 			// Check spawn timeout (applies to spawning state only)
 			if agent.Presence == types.PresenceSpawning && elapsed > spawnTimeout {
-				db.UpdateAgentPresence(d.database, agentID, types.PresenceError)
+				db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agentID, agent.Presence, types.PresenceError, "spawn_timeout", "daemon", agent.Status)
 			}
 
 		case types.PresenceActive:
@@ -792,7 +804,7 @@ func (d *Daemon) updatePresence() {
 			pid := proc.Cmd.Process.Pid
 			lastActivity := d.detector.LastActivityTime(pid)
 			if time.Since(lastActivity).Milliseconds() > idleAfter {
-				db.UpdateAgentPresence(d.database, agentID, types.PresenceIdle)
+				db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agentID, agent.Presence, types.PresenceIdle, "idle_timeout", "daemon", agent.Status)
 			}
 
 		case types.PresenceIdle:
@@ -875,24 +887,48 @@ func (d *Daemon) handleProcessExit(agentID string, proc *Process) {
 
 	// Only update presence and remove from map if this is the current process
 	if isCurrentProc {
-		if exitCode == 0 {
-			db.UpdateAgentPresence(d.database, agentID, types.PresenceIdle)
-		} else if exitCode == -1 {
-			// Signal kill (SIGTERM/SIGINT) - treat as idle, not error
-			// This handles: user Ctrl-C, daemon restart, network interruption
-			d.debugf("@%s: exit_code=-1 (signal kill) → idle (not error)", agentID)
-			db.UpdateAgentPresence(d.database, agentID, types.PresenceIdle)
-		} else {
-			db.UpdateAgentPresence(d.database, agentID, types.PresenceError)
+		// Check current presence - if agent already ran `fray bye`, presence is offline
+		// and we should respect that rather than overwriting with idle
+		agent, _ := db.GetAgent(d.database, agentID)
+		alreadyOffline := agent != nil && agent.Presence == types.PresenceOffline
+		prevPresence := types.PresenceState("")
+		if agent != nil {
+			prevPresence = agent.Presence
+		}
+
+		if !alreadyOffline {
+			var reason string
+			var newPresence types.PresenceState
+			if exitCode == 0 {
+				reason = "exit_ok"
+				newPresence = types.PresenceIdle
+			} else if exitCode == -1 {
+				// Signal kill (SIGTERM/SIGINT) - treat as idle, not error
+				// This handles: user Ctrl-C, daemon restart, network interruption
+				d.debugf("@%s: exit_code=-1 (signal kill) → idle (not error)", agentID)
+				reason = "signal_kill"
+				newPresence = types.PresenceIdle
+			} else {
+				reason = "exit_error"
+				newPresence = types.PresenceError
+			}
+			var status *string
+			if agent != nil {
+				status = agent.Status
+			}
+			db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agentID, prevPresence, newPresence, reason, "daemon", status)
 		}
 		// NOTE: Do NOT clear session ID here. Session remains resumable until agent runs `fray bye`.
 		// Daemon-initiated exits (done-detection) are soft ends; session context persists on disk.
 
 		// Set left_at so fray back knows this was a proper session end (not orphaned)
-		now := time.Now().Unix()
-		db.UpdateAgent(d.database, agentID, db.AgentUpdates{
-			LeftAt: types.OptionalInt64{Set: true, Value: &now},
-		})
+		// (only if not already set by fray bye)
+		if agent == nil || agent.LeftAt == nil {
+			now := time.Now().Unix()
+			db.UpdateAgent(d.database, agentID, db.AgentUpdates{
+				LeftAt: types.OptionalInt64{Set: true, Value: &now},
+			})
+		}
 
 		delete(d.processes, agentID)
 	}

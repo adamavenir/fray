@@ -208,6 +208,17 @@ func AppendSessionHeartbeat(projectPath string, event types.SessionHeartbeat) er
 	return nil
 }
 
+// AppendPresenceEvent appends a presence state transition to JSONL for audit trail.
+func AppendPresenceEvent(projectPath string, event PresenceEventJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	event.Type = "presence_event"
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), event); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
 // AppendQuestion appends a question record to JSONL.
 func AppendQuestion(projectPath string, question types.Question) error {
 	frayDir := resolveFrayDir(projectPath)

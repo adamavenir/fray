@@ -60,7 +60,7 @@ func NewBackCmd() *cobra.Command {
 
 			// For managed agents, set presence to active so daemon doesn't spawn duplicates
 			if agent.Managed {
-				if err := db.UpdateAgentPresence(ctx.DB, agentID, types.PresenceActive); err != nil {
+				if err := db.UpdateAgentPresenceWithAudit(ctx.DB, ctx.Project.DBPath, agentID, agent.Presence, types.PresenceActive, "back", "command", agent.Status); err != nil {
 					return writeCommandError(cmd, err)
 				}
 			}

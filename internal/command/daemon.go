@@ -157,7 +157,7 @@ instead of resumes on next @mention.`,
 			resetCount := 0
 			sessionsCleared := 0
 			for _, agent := range managedAgents {
-				if err := db.UpdateAgentPresence(cmdCtx.DB, agent.AgentID, types.PresenceOffline); err != nil {
+				if err := db.UpdateAgentPresenceWithAudit(cmdCtx.DB, cmdCtx.Project.DBPath, agent.AgentID, agent.Presence, types.PresenceOffline, "reset", "command", agent.Status); err != nil {
 					if !cmdCtx.JSONMode {
 						fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to reset @%s: %v\n", agent.AgentID, err)
 					}

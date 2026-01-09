@@ -260,6 +260,19 @@ type SessionHeartbeatJSONLRecord struct {
 	At        int64  `json:"at"`
 }
 
+// PresenceEventJSONLRecord represents a presence state transition in JSONL.
+// This provides an audit trail of all presence changes for debugging.
+type PresenceEventJSONLRecord struct {
+	Type    string  `json:"type"`     // "presence_event"
+	AgentID string  `json:"agent_id"` // Agent whose presence changed
+	From    string  `json:"from"`     // Previous presence state (or empty if first)
+	To      string  `json:"to"`       // New presence state
+	Status  *string `json:"status,omitempty"` // Agent status at time of change (for status_update events)
+	Reason  string  `json:"reason"`   // Why: spawn, bye, back, exit_ok, exit_error, signal_kill, startup_cleanup, reset, status_update
+	Source  string  `json:"source"`   // Who: daemon, command, startup, status
+	TS      int64   `json:"ts"`       // Unix timestamp of the change
+}
+
 // GhostCursorJSONLRecord represents a ghost cursor event in JSONL.
 type GhostCursorJSONLRecord struct {
 	Type        string `json:"type"` // "ghost_cursor"
