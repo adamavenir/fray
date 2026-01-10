@@ -77,7 +77,16 @@ func formatMessageWithOptions(msg types.Message, projectName string, agentBases 
 	if msg.Edited || msg.EditCount > 0 || msg.EditedAt != nil {
 		editedSuffix = " (edited)"
 	}
-	idBlock := fmt.Sprintf("%s[%s#%s%s %s]%s", dim, bold, projectName, reset, dim+msg.ID+editedSuffix, reset)
+	// Build session ID suffix if present (abbreviated to first 8 chars)
+	sessionSuffix := ""
+	if msg.SessionID != nil && *msg.SessionID != "" {
+		sessID := *msg.SessionID
+		if len(sessID) > 8 {
+			sessID = sessID[:8]
+		}
+		sessionSuffix = " sess:" + sessID
+	}
+	idBlock := fmt.Sprintf("%s[%s#%s%s %s]%s", dim, bold, projectName, reset, dim+msg.ID+editedSuffix+sessionSuffix, reset)
 
 	// Check for answer message format
 	if strings.HasPrefix(msg.Body, "answered @") {

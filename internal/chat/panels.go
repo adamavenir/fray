@@ -1088,8 +1088,12 @@ func (m *Model) renderThreadPanel() string {
 		for i, wrappedLine := range wrappedLines {
 			line := wrappedLine
 			if needsFullWidthBg {
-				// Pad to full width for background color
-				line = lipgloss.NewStyle().Width(width).Render(line)
+				// Pad to width-3 for background color (3-char margin on right, matching left)
+				bgWidth := width - 3
+				if bgWidth < 1 {
+					bgWidth = 1
+				}
+				line = lipgloss.NewStyle().Width(bgWidth).Render(line)
 			}
 			if i == 0 {
 				lines = append(lines, style.Render(line))
@@ -2013,9 +2017,15 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	}
 	rowWidth := width - 3 // extra padding from sidebar edge
 
-	// Status icon based on presence
+	// Use debounced display presence to suppress flicker from rapid state changes
+	displayPresence := agent.Presence
+	if dp, ok := m.agentDisplayPresence[agent.AgentID]; ok {
+		displayPresence = dp
+	}
+
+	// Status icon based on (debounced) presence
 	icon := "▶"
-	switch agent.Presence {
+	switch displayPresence {
 	case types.PresenceActive:
 		icon = "▶"
 	case types.PresenceSpawning:
@@ -2041,7 +2051,7 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 
 	// Override icon based on status prefix for idle agents
 	// This adds semantic meaning on top of activity-based presence
-	if agent.Presence == types.PresenceIdle && status != "" {
+	if displayPresence == types.PresenceIdle && status != "" {
 		statusLower := strings.ToLower(status)
 		if strings.HasPrefix(statusLower, "awaiting:") || strings.HasPrefix(statusLower, "waiting:") {
 			icon = "⧗"
@@ -2110,9 +2120,9 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	// Get agent color
 	agentColor := m.colorForAgent(agent.AgentID)
 
-	// Presence-based icon color (independent of agent color)
+	// Presence-based icon color (uses debounced display presence)
 	var iconColor lipgloss.Color
-	switch agent.Presence {
+	switch displayPresence {
 	case types.PresenceSpawning, types.PresencePrompting, types.PresencePrompted:
 		iconColor = lipgloss.Color("231") // white - pre-active states
 	case types.PresenceActive:
@@ -2142,14 +2152,15 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		}
 	}
 
-	// Determine colors based on state
+	// Determine colors based on (debounced) state
 	inDangerZone := tokenPercent > dangerThreshold
-	isOffline := agent.Presence == types.PresenceOffline
-	isError := agent.Presence == types.PresenceError
+	isOffline := displayPresence == types.PresenceOffline
+	isError := displayPresence == types.PresenceError
 
-	// Background colors: black for progress (used), transparent for unused (sidebar default)
-	usedBg := lipgloss.Color("16")   // black (progress bar)
-	unusedBg := lipgloss.Color("")   // transparent (sidebar default)
+	// Background colors: dim grey for progress (used), explicit dark for unused
+	// Using explicit color instead of transparent to prevent flicker from layout shifts
+	usedBg := lipgloss.Color("236")   // dim grey (progress bar)
+	unusedBg := lipgloss.Color("233") // very dark grey (nearly black, matches terminal bg)
 
 	// Text colors: agent color for icon+name, dim grey for status
 	textColor := agentColor
@@ -2162,15 +2173,15 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 		textColor = lipgloss.Color("231") // white text
 		statusColor = lipgloss.Color("231") // white status too
 	} else if isOffline {
-		// Offline: no background, grey text
-		usedBg = lipgloss.Color("")      // transparent
-		unusedBg = lipgloss.Color("")    // transparent
+		// Offline: explicit dark background, grey text
+		usedBg = lipgloss.Color("233")    // very dark grey (consistent with unused)
+		unusedBg = lipgloss.Color("233")  // very dark grey
 		textColor = lipgloss.Color("240") // grey
 		statusColor = lipgloss.Color("240") // grey
 	} else if inDangerZone {
-		// Danger zone (>80%): red for progress portion, transparent for unused
+		// Danger zone (>80%): red for progress portion, dark for unused
 		usedBg = lipgloss.Color("196")   // bright red
-		unusedBg = lipgloss.Color("")    // transparent
+		unusedBg = lipgloss.Color("233") // very dark grey (consistent)
 		textColor = lipgloss.Color("231") // white text
 		statusColor = lipgloss.Color("231") // white status too
 	}
