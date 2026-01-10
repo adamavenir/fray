@@ -82,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Daemon: `fray daemon reset` command to clear stale presence states
 - Activity panel: idle agents no longer incorrectly shown as offline
 - Activity panel: token usage background now displays correctly (ccusage JSON parsing fix)
+- Activity panel: presence state debounce (1s) to prevent rapid icon/color flicker
+- Activity panel: stable backgrounds (explicit dark grey) to prevent flicker from layout shifts
 - Activity panel: white text on red backgrounds for better readability
 - Activity panel: token percentage now shows context window usage (~54%) instead of cumulative billing tokens (was showing 100%+ for all agents)
 - Activity panel: two-tone background now uses proper dimmed agent color instead of generic grey
