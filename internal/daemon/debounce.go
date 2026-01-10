@@ -241,6 +241,51 @@ func HasWakeTrust(database *sql.DB, agentID string) bool {
 	return false
 }
 
+// IsAllMentionOnly returns true if the agent is mentioned only via @all expansion.
+// This means the message body contains @all but not a direct @agentid mention.
+// Used to suppress daemon spawns for @all (ambient notification, not action request).
+func IsAllMentionOnly(msg types.Message, agentID string) bool {
+	// Check if @all is in mentions
+	hasAll := false
+	for _, m := range msg.Mentions {
+		if m == "all" {
+			hasAll = true
+			break
+		}
+	}
+	if !hasAll {
+		return false
+	}
+
+	// Check if this agent is directly mentioned (not via @all)
+	// Look for @agentid in the message body
+	body := msg.Body
+	// Direct mention would be @agentid or @agentid.suffix
+	directPattern := "@" + agentID
+	if strings.Contains(body, directPattern) {
+		// Could be @agentid or @agentid.something - check for exact match or prefix
+		// e.g., "@opus" should match "@opus" or "@opus.1" but not "@opusX"
+		idx := strings.Index(body, directPattern)
+		if idx >= 0 {
+			end := idx + len(directPattern)
+			if end >= len(body) {
+				// @agentid at end of body - direct mention
+				return false
+			}
+			nextChar := body[end]
+			// Valid continuation chars for mentions: ., space, punctuation
+			if nextChar == '.' || nextChar == ' ' || nextChar == ',' ||
+				nextChar == ':' || nextChar == '!' || nextChar == '?' ||
+				nextChar == '\n' || nextChar == '\t' {
+				return false
+			}
+		}
+	}
+
+	// Agent is only in mentions because of @all expansion
+	return true
+}
+
 // IsReplyToAgent returns true if the message is a reply to a message from the given agent.
 // This requires database access to look up the parent message.
 func IsReplyToAgent(database *sql.DB, msg types.Message, agentID string) bool {

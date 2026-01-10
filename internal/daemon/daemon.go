@@ -364,6 +364,16 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			continue
 		}
 
+		// Skip @all mentions - they're ambient notifications, not action requests.
+		// The mention is tracked (watermark advances) but no spawn is triggered.
+		if IsAllMentionOnly(msg, agent.AgentID) {
+			d.debugf("    %s: skip (@all only - ambient notification)", msg.ID)
+			if !hasQueued && !spawned {
+				lastProcessedID = msg.ID
+			}
+			continue
+		}
+
 		// Check if this is a direct address OR a reply to the agent's message
 		// Direct address: @agent at start of message
 		// Reply to agent: threaded reply to something the agent wrote

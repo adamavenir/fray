@@ -186,6 +186,46 @@ func TestIsSelfMention(t *testing.T) {
 	}
 }
 
+func TestIsAllMentionOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		mentions []string
+		agentID  string
+		expected bool
+	}{
+		// @all only cases - should skip spawn
+		{"all only", "@all hey everyone", []string{"all", "alice", "bob"}, "alice", true},
+		{"all only bob", "@all hey everyone", []string{"all", "alice", "bob"}, "bob", true},
+		{"all with text after", "@all please review this", []string{"all", "opus"}, "opus", true},
+
+		// Direct mention - should NOT skip spawn
+		{"direct mention", "@alice hey", []string{"alice"}, "alice", false},
+		{"all plus direct", "@all @alice hey you specifically", []string{"all", "alice", "bob"}, "alice", false},
+		{"direct without all", "@alice @bob hey", []string{"alice", "bob"}, "alice", false},
+
+		// No @all in mentions - should NOT skip spawn
+		{"no all", "@alice hey", []string{"alice"}, "alice", false},
+
+		// Edge cases
+		{"email not mention", "contact test@alice.com", []string{}, "alice", false},
+		{"all only with punctuation", "@all!", []string{"all", "alice"}, "alice", true},
+		{"agent name substring", "@all @alicebot hey", []string{"all", "alice", "alicebot"}, "alice", true},
+		{"direct with dot suffix", "@alice.1 hey", []string{"alice.1"}, "alice", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := types.Message{Body: tt.body, Mentions: tt.mentions}
+			result := IsAllMentionOnly(msg, tt.agentID)
+			if result != tt.expected {
+				t.Errorf("IsAllMentionOnly(body=%q, mentions=%v, agent=%q) = %v, want %v",
+					tt.body, tt.mentions, tt.agentID, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestIsDirectAddress(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -756,6 +796,64 @@ func TestSpawnFlow_NoSpawnOnFYI(t *testing.T) {
 	// No spawn should occur
 	if h.mockDriver.SpawnCount() != 0 {
 		t.Errorf("expected 0 spawns for FYI, got %d", h.mockDriver.SpawnCount())
+	}
+}
+
+func TestSpawnFlow_NoSpawnOnAllMention(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create multiple managed agents
+	h.createManagedAgent("alice")
+	h.createManagedAgent("bob")
+	h.createAgent("carol", false)
+
+	// Carol broadcasts to @all
+	h.postMessage("carol", "@all the meeting starts in 5 minutes", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// No spawn should occur - @all is ambient notification only
+	if h.mockDriver.SpawnCount() != 0 {
+		t.Errorf("expected 0 spawns for @all mention, got %d", h.mockDriver.SpawnCount())
+	}
+}
+
+func TestSpawnFlow_SpawnOnAllPlusDirectMention(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create multiple managed agents
+	h.createManagedAgent("alice")
+	h.createManagedAgent("bob")
+	h.createAgent("carol", false)
+
+	// Carol broadcasts to @all but specifically addresses @alice
+	h.postMessage("carol", "@all @alice can you lead the meeting?", types.MessageTypeUser)
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Only alice should spawn (direct mention), not bob (@all only)
+	if h.mockDriver.SpawnCount() != 1 {
+		t.Errorf("expected 1 spawn for direct mention, got %d", h.mockDriver.SpawnCount())
+	}
+
+	// Verify alice was spawned
+	spawn := h.mockDriver.LastSpawn()
+	if spawn == nil || spawn.Agent.AgentID != "alice" {
+		t.Errorf("expected alice to spawn, got %v", spawn)
 	}
 }
 
