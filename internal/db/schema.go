@@ -273,13 +273,18 @@ CREATE TABLE IF NOT EXISTS fray_wake_conditions (
   guid TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,              -- agent to wake
   set_by TEXT NOT NULL,                -- agent who set this condition
-  type TEXT NOT NULL,                  -- 'on_mention', 'after', 'pattern'
+  type TEXT NOT NULL,                  -- 'on_mention', 'after', 'pattern', 'prompt'
   pattern TEXT,                        -- regex for pattern type
   on_agents TEXT DEFAULT '[]',         -- JSON array for on_mention type
   in_thread TEXT,                      -- scope to thread (null = anywhere except meta/)
   after_ms INTEGER,                    -- delay for after type
   use_router INTEGER NOT NULL DEFAULT 0, -- use haiku router for assessment
   prompt TEXT,                         -- context passed on wake
+  prompt_text TEXT,                    -- LLM prompt for prompt type
+  poll_interval_ms INTEGER,            -- poll interval for prompt type
+  last_polled_at INTEGER,              -- last time prompt condition was polled
+  persist_mode TEXT DEFAULT '',        -- '', 'persist', 'persist_until_bye', 'persist_restore_back'
+  paused INTEGER NOT NULL DEFAULT 0,   -- true when paused (for restore-on-back)
   created_at INTEGER NOT NULL,
   expires_at INTEGER                   -- null = no expiry
 );
@@ -803,6 +808,29 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(threadColumns, "type") {
 			if _, err := db.Exec("ALTER TABLE fray_threads ADD COLUMN type TEXT DEFAULT 'standard'"); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Add wake condition prompt columns if missing
+	wakeColumns, err := getTableInfo(db, "fray_wake_conditions")
+	if err != nil {
+		return err
+	}
+	if len(wakeColumns) > 0 {
+		if !hasColumn(wakeColumns, "prompt_text") {
+			if _, err := db.Exec("ALTER TABLE fray_wake_conditions ADD COLUMN prompt_text TEXT"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(wakeColumns, "poll_interval_ms") {
+			if _, err := db.Exec("ALTER TABLE fray_wake_conditions ADD COLUMN poll_interval_ms INTEGER"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(wakeColumns, "last_polled_at") {
+			if _, err := db.Exec("ALTER TABLE fray_wake_conditions ADD COLUMN last_polled_at INTEGER"); err != nil {
 				return err
 			}
 		}

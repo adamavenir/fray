@@ -33,13 +33,16 @@ Examples:
   fray wake --pattern "build (failed|succeeded)"
 
   # Wake self on pattern with haiku assessment
-  fray wake --pattern "error" --router
+  fray wake --pattern "error" --prompt "Wake for real errors only"
 
   # Wake another agent (requires trust)
   fray wake @other-agent --on @user1
 
   # Wake with context prompt
-  fray wake --after 1h "Check on build status"`,
+  fray wake --after 1h "Check on build status"
+
+  # Wake based on LLM evaluation with polling (requires --poll)
+  fray wake --prompt "Wake if dev or designer idle >10min without done status" --poll 1m --as pm`,
 		Args: cobra.MaximumNArgs(2), // [agent] [prompt]
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, err := GetContext(cmd)
@@ -118,13 +121,37 @@ Examples:
 			onAgents, _ := cmd.Flags().GetStringSlice("on")
 			afterDuration, _ := cmd.Flags().GetString("after")
 			pattern, _ := cmd.Flags().GetString("pattern")
+			promptText, _ := cmd.Flags().GetString("prompt")
+			pollDuration, _ := cmd.Flags().GetString("poll")
 			inThread, _ := cmd.Flags().GetString("in")
-			useRouter, _ := cmd.Flags().GetBool("router")
+			persist, _ := cmd.Flags().GetBool("persist")
+			persistUntilBye, _ := cmd.Flags().GetBool("persist-until-bye")
+			persistRestoreOnBack, _ := cmd.Flags().GetBool("persist-restore-on-back")
+
+			// Determine persist mode (only one can be set)
+			var persistMode types.WakePersistMode
+			persistCount := 0
+			if persist {
+				persistCount++
+				persistMode = types.WakePersist
+			}
+			if persistUntilBye {
+				persistCount++
+				persistMode = types.WakePersistUntilBye
+			}
+			if persistRestoreOnBack {
+				persistCount++
+				persistMode = types.WakePersistRestoreOnBack
+			}
+			if persistCount > 1 {
+				return writeCommandError(cmd, fmt.Errorf("only one persist mode can be specified"))
+			}
 
 			// Determine wake type
 			var wakeType types.WakeConditionType
 			var afterMs *int64
 			var expiresAt *int64
+			var pollIntervalMs *int64
 
 			switch {
 			case len(onAgents) > 0:
@@ -145,8 +172,25 @@ Examples:
 				if _, err := regexp.Compile(pattern); err != nil {
 					return writeCommandError(cmd, fmt.Errorf("invalid regex pattern: %w", err))
 				}
+				// --prompt with --pattern enables haiku assessment (old --router behavior)
+			case promptText != "":
+				wakeType = types.WakeConditionPrompt
+				// --poll is required for standalone --prompt conditions
+				if pollDuration == "" {
+					return writeCommandError(cmd, fmt.Errorf("--poll is required with --prompt (without --pattern)"))
+				}
+				pollSeconds, err := parseDuration(pollDuration)
+				if err != nil {
+					return writeCommandError(cmd, fmt.Errorf("invalid poll duration: %w", err))
+				}
+				// Minimum poll interval is 1 minute
+				if pollSeconds < 60 {
+					return writeCommandError(cmd, fmt.Errorf("--poll minimum is 1m"))
+				}
+				pollMs := pollSeconds * 1000
+				pollIntervalMs = &pollMs
 			default:
-				return writeCommandError(cmd, fmt.Errorf("must specify --on, --after, or --pattern"))
+				return writeCommandError(cmd, fmt.Errorf("must specify --on, --after, --pattern, or --prompt"))
 			}
 
 			// Resolve thread if specified
@@ -174,18 +218,28 @@ Examples:
 
 			// Create wake condition
 			input := types.WakeConditionInput{
-				AgentID:   targetAgentID,
-				SetBy:     setterID,
-				Type:      wakeType,
-				OnAgents:  normalizedOnAgents,
-				InThread:  threadGUID,
-				AfterMs:   afterMs,
-				UseRouter: useRouter,
-				Prompt:    prompt,
+				AgentID:        targetAgentID,
+				SetBy:          setterID,
+				Type:           wakeType,
+				OnAgents:       normalizedOnAgents,
+				InThread:       threadGUID,
+				AfterMs:        afterMs,
+				Prompt:         prompt,
+				PersistMode:    persistMode,
+				PollIntervalMs: pollIntervalMs,
 			}
 
 			if pattern != "" {
 				input.Pattern = &pattern
+			}
+
+			// --prompt text is used for both pattern assessment and standalone prompt conditions
+			if promptText != "" {
+				input.PromptText = &promptText
+				// For pattern type, UseRouter=true enables haiku assessment
+				if wakeType == types.WakeConditionPattern {
+					input.UseRouter = true
+				}
 			}
 
 			condition, err := db.CreateWakeCondition(ctx.DB, ctx.Project.DBPath, input)
@@ -212,15 +266,22 @@ Examples:
 				fmt.Fprintf(out, "  Trigger: in %s\n", afterDuration)
 			case types.WakeConditionPattern:
 				fmt.Fprintf(out, "  Trigger: pattern /%s/\n", pattern)
-				if useRouter {
-					fmt.Fprintf(out, "  Router: enabled (haiku assessment)\n")
+				if promptText != "" {
+					fmt.Fprintf(out, "  Prompt: %s (haiku assessment)\n", promptText)
 				}
+			case types.WakeConditionPrompt:
+				fmt.Fprintf(out, "  Trigger: LLM evaluation\n")
+				fmt.Fprintf(out, "  Prompt: %s\n", promptText)
+				fmt.Fprintf(out, "  Poll: %s\n", pollDuration)
 			}
 			if inThread != "" {
 				fmt.Fprintf(out, "  Scope: %s\n", inThread)
 			}
 			if prompt != nil {
 				fmt.Fprintf(out, "  Context: %s\n", *prompt)
+			}
+			if persistMode != "" {
+				fmt.Fprintf(out, "  Persist: %s\n", persistMode)
 			}
 
 			return nil
@@ -230,9 +291,17 @@ Examples:
 	cmd.Flags().StringSlice("on", nil, "wake when these agents post (e.g., --on @user1 --on @user2)")
 	cmd.Flags().String("after", "", "wake after duration (e.g., 30m, 2h, 1d)")
 	cmd.Flags().String("pattern", "", "wake on regex pattern match")
-	cmd.Flags().Bool("router", false, "use haiku router for pattern assessment")
+	cmd.Flags().String("prompt", "", "LLM prompt for haiku assessment (with --pattern) or periodic polling (with --poll)")
+	cmd.Flags().String("poll", "", "poll interval for --prompt mode (e.g., 1m, 5m) - min 1m")
 	cmd.Flags().String("in", "", "scope to specific thread")
 	cmd.Flags().String("as", "", "agent identity (uses FRAY_AGENT_ID if not set)")
+	cmd.Flags().Bool("persist", false, "condition survives trigger, manual clear required")
+	cmd.Flags().Bool("persist-until-bye", false, "condition survives trigger, auto-clears on bye")
+	cmd.Flags().Bool("persist-restore-on-back", false, "condition pauses on bye, restores on back")
+
+	// Add subcommands
+	cmd.AddCommand(NewWakeListCmd())
+	cmd.AddCommand(NewWakeClearCmd())
 
 	return cmd
 }
@@ -289,8 +358,17 @@ func NewWakeListCmd() *cobra.Command {
 					}
 				case types.WakeConditionPattern:
 					fmt.Fprintf(out, "  when: /%s/\n", *c.Pattern)
-					if c.UseRouter {
-						fmt.Fprintf(out, "  router: enabled\n")
+					if c.PromptText != nil {
+						fmt.Fprintf(out, "  prompt: %s (haiku assessment)\n", *c.PromptText)
+					}
+				case types.WakeConditionPrompt:
+					fmt.Fprintf(out, "  when: LLM evaluation\n")
+					if c.PromptText != nil {
+						fmt.Fprintf(out, "  prompt: %s\n", *c.PromptText)
+					}
+					if c.PollIntervalMs != nil {
+						pollDur := time.Duration(*c.PollIntervalMs) * time.Millisecond
+						fmt.Fprintf(out, "  poll: %s\n", pollDur)
 					}
 				}
 				if c.InThread != nil {
@@ -298,6 +376,12 @@ func NewWakeListCmd() *cobra.Command {
 				}
 				if c.Prompt != nil {
 					fmt.Fprintf(out, "  context: %s\n", *c.Prompt)
+				}
+				if c.PersistMode != "" {
+					fmt.Fprintf(out, "  persist: %s\n", c.PersistMode)
+				}
+				if c.Paused {
+					fmt.Fprintf(out, "  status: paused\n")
 				}
 			}
 

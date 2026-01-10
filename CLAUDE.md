@@ -120,10 +120,11 @@ Agents can be daemon-managed, enabling automatic spawning on @mentions.
 - `presence` - daemon-tracked state: `active`, `spawning`, `idle`, `error`, `offline`
 - `mention_watermark` - last processed msg_id for debouncing
 
-**Session lifecycle:** Sessions run until the agent exits (`fray bye` or `/land`). An @mention restarts a stopped session.
+**Session lifecycle:** Sessions run until the agent exits (`fray bye`, `fray brb`, or `/land`). An @mention restarts a stopped session.
 - `min_checkin_ms`: Optional auto-kill if idle with no fray activity (disabled by default)
 - `max_runtime_ms`: Optional hard time limit (disabled by default)
 - Use `fray heartbeat` to signal activity during long-running work without posting
+- Use `fray brb` for seamless handoff - daemon immediately spawns fresh session with continuation prompt
 
 **Session events** (stored in `agents.jsonl`):
 - `session_start`: agent spawned (includes `triggered_by` msg_id)
@@ -251,6 +252,7 @@ fray new alice "message"       # Register as alice and post join message
 fray new                       # Generate random name like "eager-beaver"
 fray here                      # Who's active (with claim counts)
 fray bye alice "message"       # Leave (auto-clears claims)
+fray brb alice "message"       # Hand off to fresh session (daemon spawns immediately)
 fray whoami                    # Show your identity and nicknames
 
 # Messaging (path-based)
@@ -402,10 +404,18 @@ fray daemon status                 # Check if daemon is running
 fray wake --on @user1 --as pm      # Wake when specific agents post
 fray wake --after 30m --as pm      # Wake after time delay
 fray wake --pattern "blocked" --as pm  # Wake on regex pattern match
-fray wake --pattern "error" --router --as pm  # Use haiku router for ambiguity
+fray wake --pattern "error" --prompt "Wake for real errors" --as pm  # Pattern + haiku assessment
+fray wake --prompt "Wake if dev idle >10min" --poll 1m --as pm  # LLM polling (min 1m)
 fray wake --in thread-name --as pm # Scope to specific thread
+fray wake --persist --as pm        # Condition survives trigger (manual clear)
+fray wake --persist-until-bye --as pm  # Auto-clear on bye
+fray wake --persist-restore-on-back --as pm  # Pause on bye, resume on back
 fray wake list --as pm             # Show active wake conditions for agent
 fray wake clear --as pm            # Clear all wake conditions for agent
+
+# Agent status (for LLM polling)
+fray agent status                  # JSON output: agents with presence, status, idle_seconds
+fray agent status --managed        # Only show managed agents
 
 # Ghost cursors (session handoffs)
 fray cursor set <agent> <home> <msg>       # Set ghost cursor for handoff

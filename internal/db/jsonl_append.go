@@ -548,19 +548,23 @@ func AppendRoleStop(projectPath, agentID, roleName string, stoppedAt int64) erro
 func AppendWakeCondition(projectPath string, condition types.WakeCondition) error {
 	frayDir := resolveFrayDir(projectPath)
 	record := WakeConditionJSONLRecord{
-		Type:      "wake_condition",
-		GUID:      condition.GUID,
-		AgentID:   condition.AgentID,
-		SetBy:     condition.SetBy,
-		CondType:  string(condition.Type),
-		Pattern:   condition.Pattern,
-		OnAgents:  condition.OnAgents,
-		InThread:  condition.InThread,
-		AfterMs:   condition.AfterMs,
-		UseRouter: condition.UseRouter,
-		Prompt:    condition.Prompt,
-		CreatedAt: condition.CreatedAt,
-		ExpiresAt: condition.ExpiresAt,
+		Type:           "wake_condition",
+		GUID:           condition.GUID,
+		AgentID:        condition.AgentID,
+		SetBy:          condition.SetBy,
+		CondType:       string(condition.Type),
+		Pattern:        condition.Pattern,
+		OnAgents:       condition.OnAgents,
+		InThread:       condition.InThread,
+		AfterMs:        condition.AfterMs,
+		UseRouter:      condition.UseRouter,
+		Prompt:         condition.Prompt,
+		PromptText:     condition.PromptText,
+		PollIntervalMs: condition.PollIntervalMs,
+		PersistMode:    string(condition.PersistMode),
+		Paused:         condition.Paused,
+		CreatedAt:      condition.CreatedAt,
+		ExpiresAt:      condition.ExpiresAt,
 	}
 	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
 		return err
@@ -591,6 +595,67 @@ func AppendWakeConditionDelete(projectPath, guid string) error {
 		Type:      "wake_condition_delete",
 		GUID:      guid,
 		DeletedAt: time.Now().Unix(),
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendWakeConditionPause appends a wake condition pause record to JSONL.
+func AppendWakeConditionPause(projectPath, agentID string) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := WakeConditionPauseJSONLRecord{
+		Type:     "wake_condition_pause",
+		AgentID:  agentID,
+		PausedAt: time.Now().Unix(),
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendWakeConditionResume appends a wake condition resume record to JSONL.
+func AppendWakeConditionResume(projectPath, agentID string) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := WakeConditionResumeJSONLRecord{
+		Type:      "wake_condition_resume",
+		AgentID:   agentID,
+		ResumedAt: time.Now().Unix(),
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendWakeConditionClearByBye appends a wake condition clear-by-bye record to JSONL.
+func AppendWakeConditionClearByBye(projectPath, agentID string) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := WakeConditionClearByByeJSONLRecord{
+		Type:      "wake_condition_clear_by_bye",
+		AgentID:   agentID,
+		ClearedAt: time.Now().Unix(),
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendWakeConditionReset appends a wake condition reset record to JSONL.
+func AppendWakeConditionReset(projectPath, guid string, expiresAt int64) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := WakeConditionResetJSONLRecord{
+		Type:      "wake_condition_reset",
+		GUID:      guid,
+		ExpiresAt: expiresAt,
+		ResetAt:   time.Now().Unix(),
 	}
 	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
 		return err

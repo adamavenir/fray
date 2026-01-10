@@ -181,6 +181,10 @@ type Model struct {
 	agentTokenUsage      map[string]*TokenUsage // token usage per agent (by session ID)
 	activityDrillOffline bool                   // true when viewing offline agents only
 	statusInvoker        *StatusInvoker         // mlld invoker for status display customization
+	// Presence debounce state (suppress flicker from rapid presence changes)
+	agentDisplayPresence map[string]types.PresenceState // presence currently being displayed
+	agentActualPresence  map[string]types.PresenceState // actual presence from last poll
+	agentPresenceChanged map[string]time.Time      // when actual presence last changed
 	// Peek mode state (view thread without changing posting context)
 	peekThread       *types.Thread // thread being peeked (nil if not peeking)
 	peekPseudo       pseudoThreadKind // pseudo-thread being peeked (empty if not peeking)
@@ -338,9 +342,12 @@ func NewModel(opts Options) (*Model, error) {
 		mutedThreads:       make(map[string]bool),
 		threadNicknames:    make(map[string]string),
 		avatarMap:          make(map[string]string),
-		agentUnreadCounts:  make(map[string]int),
-		managedAgents:      managedAgents,
-		agentTokenUsage:    agentTokenUsage,
+		agentUnreadCounts:    make(map[string]int),
+		agentDisplayPresence: make(map[string]types.PresenceState),
+		agentActualPresence:  make(map[string]types.PresenceState),
+		agentPresenceChanged: make(map[string]time.Time),
+		managedAgents:        managedAgents,
+		agentTokenUsage:      agentTokenUsage,
 		statusInvoker:      NewStatusInvoker(filepath.Join(opts.ProjectRoot, ".fray")),
 		zoneManager:        zone.New(),
 		channels:        channels,
@@ -668,6 +675,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activityPollMsg:
 		// Fast poll for activity panel updates (250ms)
 		if msg.managedAgents != nil {
+			// Track presence changes for debouncing (suppress flicker)
+			now := time.Now()
+			const presenceDebounceMs = 1000 // 1 second debounce
+			for i := range msg.managedAgents {
+				agent := &msg.managedAgents[i]
+				actualPresence, hasActual := m.agentActualPresence[agent.AgentID]
+				if !hasActual {
+					// First time seeing this agent - initialize both to current
+					m.agentActualPresence[agent.AgentID] = agent.Presence
+					m.agentDisplayPresence[agent.AgentID] = agent.Presence
+					m.agentPresenceChanged[agent.AgentID] = now
+				} else if agent.Presence != actualPresence {
+					// Actual presence changed - record change time
+					m.agentActualPresence[agent.AgentID] = agent.Presence
+					m.agentPresenceChanged[agent.AgentID] = now
+				}
+				// Update display presence if debounce period has passed
+				changedAt := m.agentPresenceChanged[agent.AgentID]
+				if now.Sub(changedAt).Milliseconds() >= presenceDebounceMs {
+					m.agentDisplayPresence[agent.AgentID] = m.agentActualPresence[agent.AgentID]
+				}
+			}
 			m.managedAgents = msg.managedAgents
 		}
 		if msg.agentTokenUsage != nil {

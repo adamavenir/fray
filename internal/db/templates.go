@@ -15,3 +15,6 @@ var StatusTemplate []byte
 
 //go:embed templates/wake-router.mld
 var WakeRouterTemplate []byte
+
+//go:embed templates/wake-prompt.mld
+var WakePromptTemplate []byte

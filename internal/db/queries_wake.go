@@ -18,17 +18,21 @@ func CreateWakeCondition(db *sql.DB, projectPath string, input types.WakeConditi
 
 	now := time.Now().Unix()
 	condition := &types.WakeCondition{
-		GUID:      guid,
-		AgentID:   input.AgentID,
-		SetBy:     input.SetBy,
-		Type:      input.Type,
-		Pattern:   input.Pattern,
-		OnAgents:  input.OnAgents,
-		InThread:  input.InThread,
-		AfterMs:   input.AfterMs,
-		UseRouter: input.UseRouter,
-		Prompt:    input.Prompt,
-		CreatedAt: now,
+		GUID:           guid,
+		AgentID:        input.AgentID,
+		SetBy:          input.SetBy,
+		Type:           input.Type,
+		Pattern:        input.Pattern,
+		OnAgents:       input.OnAgents,
+		InThread:       input.InThread,
+		AfterMs:        input.AfterMs,
+		UseRouter:      input.UseRouter,
+		Prompt:         input.Prompt,
+		PromptText:     input.PromptText,
+		PollIntervalMs: input.PollIntervalMs,
+		PersistMode:    input.PersistMode,
+		Paused:         false,
+		CreatedAt:      now,
 	}
 
 	// Calculate expiry for "after" conditions
@@ -47,8 +51,8 @@ func CreateWakeCondition(db *sql.DB, projectPath string, input types.WakeConditi
 	_, err = db.Exec(`
 		INSERT INTO fray_wake_conditions (
 			guid, agent_id, set_by, type, pattern, on_agents, in_thread,
-			after_ms, use_router, prompt, created_at, expires_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			after_ms, use_router, prompt, prompt_text, poll_interval_ms, persist_mode, paused, created_at, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		condition.GUID,
 		condition.AgentID,
@@ -60,6 +64,10 @@ func CreateWakeCondition(db *sql.DB, projectPath string, input types.WakeConditi
 		condition.AfterMs,
 		condition.UseRouter,
 		condition.Prompt,
+		condition.PromptText,
+		condition.PollIntervalMs,
+		string(condition.PersistMode),
+		condition.Paused,
 		condition.CreatedAt,
 		condition.ExpiresAt,
 	)
@@ -76,14 +84,25 @@ func CreateWakeCondition(db *sql.DB, projectPath string, input types.WakeConditi
 }
 
 // GetWakeConditions retrieves wake conditions, optionally filtered by agent.
+// By default excludes paused conditions; use includePaused=true to include them.
 func GetWakeConditions(db *sql.DB, agentID string) ([]types.WakeCondition, error) {
+	return GetWakeConditionsFiltered(db, agentID, false)
+}
+
+// GetWakeConditionsFiltered retrieves wake conditions with optional paused filter.
+func GetWakeConditionsFiltered(db *sql.DB, agentID string, includePaused bool) ([]types.WakeCondition, error) {
 	query := `
 		SELECT guid, agent_id, set_by, type, pattern, on_agents, in_thread,
-		       after_ms, use_router, prompt, created_at, expires_at
+		       after_ms, use_router, prompt, prompt_text, poll_interval_ms, last_polled_at,
+		       persist_mode, paused, created_at, expires_at
 		FROM fray_wake_conditions
 		WHERE (expires_at IS NULL OR expires_at > ?)
 	`
 	args := []any{time.Now().Unix()}
+
+	if !includePaused {
+		query += " AND paused = 0"
+	}
 
 	if agentID != "" {
 		query += " AND agent_id = ?"
@@ -103,8 +122,8 @@ func GetWakeConditions(db *sql.DB, agentID string) ([]types.WakeCondition, error
 		var c types.WakeCondition
 		var condType string
 		var onAgentsJSON string
-		var pattern, inThread, prompt sql.NullString
-		var afterMs, expiresAt sql.NullInt64
+		var pattern, inThread, prompt, promptText, persistMode sql.NullString
+		var afterMs, pollIntervalMs, lastPolledAt, expiresAt sql.NullInt64
 
 		err := rows.Scan(
 			&c.GUID,
@@ -117,6 +136,11 @@ func GetWakeConditions(db *sql.DB, agentID string) ([]types.WakeCondition, error
 			&afterMs,
 			&c.UseRouter,
 			&prompt,
+			&promptText,
+			&pollIntervalMs,
+			&lastPolledAt,
+			&persistMode,
+			&c.Paused,
 			&c.CreatedAt,
 			&expiresAt,
 		)
@@ -137,6 +161,18 @@ func GetWakeConditions(db *sql.DB, agentID string) ([]types.WakeCondition, error
 		}
 		if prompt.Valid {
 			c.Prompt = &prompt.String
+		}
+		if promptText.Valid {
+			c.PromptText = &promptText.String
+		}
+		if pollIntervalMs.Valid {
+			c.PollIntervalMs = &pollIntervalMs.Int64
+		}
+		if lastPolledAt.Valid {
+			c.LastPolledAt = &lastPolledAt.Int64
+		}
+		if persistMode.Valid {
+			c.PersistMode = types.WakePersistMode(persistMode.String)
 		}
 		if expiresAt.Valid {
 			c.ExpiresAt = &expiresAt.Int64
@@ -159,12 +195,13 @@ func GetWakeCondition(db *sql.DB, guid string) (*types.WakeCondition, error) {
 	var c types.WakeCondition
 	var condType string
 	var onAgentsJSON string
-	var pattern, inThread, prompt sql.NullString
-	var afterMs, expiresAt sql.NullInt64
+	var pattern, inThread, prompt, promptText, persistMode sql.NullString
+	var afterMs, pollIntervalMs, lastPolledAt, expiresAt sql.NullInt64
 
 	err := db.QueryRow(`
 		SELECT guid, agent_id, set_by, type, pattern, on_agents, in_thread,
-		       after_ms, use_router, prompt, created_at, expires_at
+		       after_ms, use_router, prompt, prompt_text, poll_interval_ms, last_polled_at,
+		       persist_mode, paused, created_at, expires_at
 		FROM fray_wake_conditions
 		WHERE guid = ?
 	`, guid).Scan(
@@ -178,6 +215,11 @@ func GetWakeCondition(db *sql.DB, guid string) (*types.WakeCondition, error) {
 		&afterMs,
 		&c.UseRouter,
 		&prompt,
+		&promptText,
+		&pollIntervalMs,
+		&lastPolledAt,
+		&persistMode,
+		&c.Paused,
 		&c.CreatedAt,
 		&expiresAt,
 	)
@@ -201,6 +243,18 @@ func GetWakeCondition(db *sql.DB, guid string) (*types.WakeCondition, error) {
 	}
 	if prompt.Valid {
 		c.Prompt = &prompt.String
+	}
+	if promptText.Valid {
+		c.PromptText = &promptText.String
+	}
+	if pollIntervalMs.Valid {
+		c.PollIntervalMs = &pollIntervalMs.Int64
+	}
+	if lastPolledAt.Valid {
+		c.LastPolledAt = &lastPolledAt.Int64
+	}
+	if persistMode.Valid {
+		c.PersistMode = types.WakePersistMode(persistMode.String)
 	}
 	if expiresAt.Valid {
 		c.ExpiresAt = &expiresAt.Int64
@@ -252,9 +306,10 @@ func DeleteWakeCondition(db *sql.DB, projectPath string, guid string) error {
 func GetPatternWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 	rows, err := db.Query(`
 		SELECT guid, agent_id, set_by, type, pattern, on_agents, in_thread,
-		       after_ms, use_router, prompt, created_at, expires_at
+		       after_ms, use_router, prompt, persist_mode, paused, created_at, expires_at
 		FROM fray_wake_conditions
 		WHERE type = ?
+		  AND paused = 0
 		  AND (expires_at IS NULL OR expires_at > ?)
 	`, string(types.WakeConditionPattern), time.Now().Unix())
 	if err != nil {
@@ -267,7 +322,7 @@ func GetPatternWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 		var c types.WakeCondition
 		var condType string
 		var onAgentsJSON string
-		var pattern, inThread, prompt sql.NullString
+		var pattern, inThread, prompt, persistMode sql.NullString
 		var afterMs, expiresAt sql.NullInt64
 
 		err := rows.Scan(
@@ -281,6 +336,8 @@ func GetPatternWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 			&afterMs,
 			&c.UseRouter,
 			&prompt,
+			&persistMode,
+			&c.Paused,
 			&c.CreatedAt,
 			&expiresAt,
 		)
@@ -301,6 +358,9 @@ func GetPatternWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 		}
 		if prompt.Valid {
 			c.Prompt = &prompt.String
+		}
+		if persistMode.Valid {
+			c.PersistMode = types.WakePersistMode(persistMode.String)
 		}
 		if expiresAt.Valid {
 			c.ExpiresAt = &expiresAt.Int64
@@ -322,7 +382,7 @@ func GetPatternWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 func GetExpiredWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 	rows, err := db.Query(`
 		SELECT guid, agent_id, set_by, type, pattern, on_agents, in_thread,
-		       after_ms, use_router, prompt, created_at, expires_at
+		       after_ms, use_router, prompt, persist_mode, paused, created_at, expires_at
 		FROM fray_wake_conditions
 		WHERE expires_at IS NOT NULL AND expires_at <= ?
 	`, time.Now().Unix())
@@ -336,7 +396,7 @@ func GetExpiredWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 		var c types.WakeCondition
 		var condType string
 		var onAgentsJSON string
-		var pattern, inThread, prompt sql.NullString
+		var pattern, inThread, prompt, persistMode sql.NullString
 		var afterMs, expiresAt sql.NullInt64
 
 		err := rows.Scan(
@@ -350,6 +410,8 @@ func GetExpiredWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 			&afterMs,
 			&c.UseRouter,
 			&prompt,
+			&persistMode,
+			&c.Paused,
 			&c.CreatedAt,
 			&expiresAt,
 		)
@@ -370,6 +432,9 @@ func GetExpiredWakeConditions(db *sql.DB) ([]types.WakeCondition, error) {
 		}
 		if prompt.Valid {
 			c.Prompt = &prompt.String
+		}
+		if persistMode.Valid {
+			c.PersistMode = types.WakePersistMode(persistMode.String)
 		}
 		if expiresAt.Valid {
 			c.ExpiresAt = &expiresAt.Int64
@@ -397,4 +462,106 @@ func PruneExpiredWakeConditions(db *sql.DB) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+// PauseWakeConditions pauses all persist-restore-on-back conditions for an agent.
+// Called when agent lands (bye).
+func PauseWakeConditions(db *sql.DB, projectPath string, agentID string) (int64, error) {
+	result, err := db.Exec(`
+		UPDATE fray_wake_conditions
+		SET paused = 1
+		WHERE agent_id = ? AND persist_mode = ?
+	`, agentID, string(types.WakePersistRestoreOnBack))
+	if err != nil {
+		return 0, err
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if count > 0 {
+		if err := AppendWakeConditionPause(projectPath, agentID); err != nil {
+			return count, err
+		}
+	}
+
+	return count, nil
+}
+
+// ResumeWakeConditions resumes all paused conditions for an agent.
+// Called when agent returns (back).
+func ResumeWakeConditions(db *sql.DB, projectPath string, agentID string) (int64, error) {
+	result, err := db.Exec(`
+		UPDATE fray_wake_conditions
+		SET paused = 0
+		WHERE agent_id = ? AND paused = 1
+	`, agentID)
+	if err != nil {
+		return 0, err
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if count > 0 {
+		if err := AppendWakeConditionResume(projectPath, agentID); err != nil {
+			return count, err
+		}
+	}
+
+	return count, nil
+}
+
+// ClearPersistUntilByeConditions removes all persist-until-bye conditions for an agent.
+// Called when agent lands (bye).
+func ClearPersistUntilByeConditions(db *sql.DB, projectPath string, agentID string) (int64, error) {
+	result, err := db.Exec(`
+		DELETE FROM fray_wake_conditions
+		WHERE agent_id = ? AND persist_mode = ?
+	`, agentID, string(types.WakePersistUntilBye))
+	if err != nil {
+		return 0, err
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if count > 0 {
+		if err := AppendWakeConditionClearByBye(projectPath, agentID); err != nil {
+			return count, err
+		}
+	}
+
+	return count, nil
+}
+
+// ResetTimerCondition resets a timer-based wake condition for re-triggering.
+// Called when a persistent timer condition fires.
+func ResetTimerCondition(db *sql.DB, projectPath string, guid string, newExpiresAt int64) error {
+	_, err := db.Exec(`
+		UPDATE fray_wake_conditions
+		SET expires_at = ?, created_at = ?
+		WHERE guid = ?
+	`, newExpiresAt, time.Now().Unix(), guid)
+	if err != nil {
+		return err
+	}
+
+	return AppendWakeConditionReset(projectPath, guid, newExpiresAt)
+}
+
+// UpdateLastPolledAt updates the last_polled_at timestamp for a prompt condition.
+func UpdateLastPolledAt(db *sql.DB, guid string, polledAt int64) error {
+	_, err := db.Exec(`
+		UPDATE fray_wake_conditions
+		SET last_polled_at = ?
+		WHERE guid = ?
+	`, polledAt, guid)
+	return err
 }

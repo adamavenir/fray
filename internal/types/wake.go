@@ -9,35 +9,54 @@ const (
 	WakeConditionOnMention WakeConditionType = "on_mention" // Wake when specific users post
 	WakeConditionAfter     WakeConditionType = "after"      // Wake after time delay
 	WakeConditionPattern   WakeConditionType = "pattern"    // Wake on regex pattern match
+	WakeConditionPrompt    WakeConditionType = "prompt"     // Wake based on LLM evaluation with polling
+)
+
+// WakePersistMode controls how wake conditions survive triggers.
+type WakePersistMode string
+
+const (
+	WakePersistNone           WakePersistMode = ""                     // Default: clears after trigger (one-shot)
+	WakePersist               WakePersistMode = "persist"              // Survives trigger, manual clear required
+	WakePersistUntilBye       WakePersistMode = "persist_until_bye"    // Survives trigger, auto-clears on bye
+	WakePersistRestoreOnBack  WakePersistMode = "persist_restore_back" // Pauses on bye, restores on back
 )
 
 // WakeCondition represents a condition that can trigger an agent wake.
 type WakeCondition struct {
-	GUID      string            `json:"guid"`
-	AgentID   string            `json:"agent_id"`             // Agent to wake
-	SetBy     string            `json:"set_by"`               // Agent who set this condition
-	Type      WakeConditionType `json:"type"`                 // on_mention, after, pattern
-	Pattern   *string           `json:"pattern,omitempty"`    // Regex pattern for pattern type
-	OnAgents  []string          `json:"on_agents,omitempty"`  // Agents to watch for on_mention type
-	InThread  *string           `json:"in_thread,omitempty"`  // Scope to specific thread (nil = anywhere except meta/)
-	AfterMs   *int64            `json:"after_ms,omitempty"`   // Delay for after type
-	UseRouter bool              `json:"use_router,omitempty"` // Use haiku router for ambiguous patterns
-	Prompt    *string           `json:"prompt,omitempty"`     // Context passed on wake
-	CreatedAt int64             `json:"created_at"`
-	ExpiresAt *int64            `json:"expires_at,omitempty"` // For after type
+	GUID           string            `json:"guid"`
+	AgentID        string            `json:"agent_id"`                // Agent to wake
+	SetBy          string            `json:"set_by"`                  // Agent who set this condition
+	Type           WakeConditionType `json:"type"`                    // on_mention, after, pattern, prompt
+	Pattern        *string           `json:"pattern,omitempty"`       // Regex pattern for pattern type
+	OnAgents       []string          `json:"on_agents,omitempty"`     // Agents to watch for on_mention type
+	InThread       *string           `json:"in_thread,omitempty"`     // Scope to specific thread (nil = anywhere except meta/)
+	AfterMs        *int64            `json:"after_ms,omitempty"`      // Delay for after type
+	UseRouter      bool              `json:"use_router,omitempty"`    // Use haiku router for ambiguous patterns
+	Prompt         *string           `json:"prompt,omitempty"`        // Context passed on wake
+	PromptText     *string           `json:"prompt_text,omitempty"`   // LLM prompt for prompt type
+	PollIntervalMs *int64            `json:"poll_interval_ms,omitempty"` // Poll interval for prompt type
+	LastPolledAt   *int64            `json:"last_polled_at,omitempty"` // Last time prompt condition was polled
+	PersistMode    WakePersistMode   `json:"persist_mode,omitempty"`  // How condition survives triggers
+	Paused         bool              `json:"paused,omitempty"`        // True when condition is paused (for restore-on-back)
+	CreatedAt      int64             `json:"created_at"`
+	ExpiresAt      *int64            `json:"expires_at,omitempty"`    // For after type
 }
 
 // WakeConditionInput represents new wake condition data.
 type WakeConditionInput struct {
-	AgentID   string            `json:"agent_id"`
-	SetBy     string            `json:"set_by"`
-	Type      WakeConditionType `json:"type"`
-	Pattern   *string           `json:"pattern,omitempty"`
-	OnAgents  []string          `json:"on_agents,omitempty"`
-	InThread  *string           `json:"in_thread,omitempty"`
-	AfterMs   *int64            `json:"after_ms,omitempty"`
-	UseRouter bool              `json:"use_router,omitempty"`
-	Prompt    *string           `json:"prompt,omitempty"`
+	AgentID        string            `json:"agent_id"`
+	SetBy          string            `json:"set_by"`
+	Type           WakeConditionType `json:"type"`
+	Pattern        *string           `json:"pattern,omitempty"`
+	OnAgents       []string          `json:"on_agents,omitempty"`
+	InThread       *string           `json:"in_thread,omitempty"`
+	AfterMs        *int64            `json:"after_ms,omitempty"`
+	UseRouter      bool              `json:"use_router,omitempty"`
+	Prompt         *string           `json:"prompt,omitempty"`
+	PromptText     *string           `json:"prompt_text,omitempty"`
+	PollIntervalMs *int64            `json:"poll_interval_ms,omitempty"`
+	PersistMode    WakePersistMode   `json:"persist_mode,omitempty"`
 }
 
 // CompiledPattern holds a pre-compiled regex for efficient matching.
@@ -99,6 +118,29 @@ type WakeRouterPayload struct {
 
 // WakeRouterResult is the output from the wake router.
 type WakeRouterResult struct {
+	ShouldWake bool    `json:"shouldWake"`
+	Reason     string  `json:"reason,omitempty"`
+	Confidence float64 `json:"confidence"`
+}
+
+// AgentStatusForPrompt represents agent status for wake prompt evaluation.
+type AgentStatusForPrompt struct {
+	Name        string  `json:"name"`
+	Presence    string  `json:"presence"`
+	Status      *string `json:"status,omitempty"`
+	IdleSeconds int64   `json:"idle_seconds"`
+}
+
+// WakePromptPayload is the input to the wake prompt mlld script.
+type WakePromptPayload struct {
+	Agent      string                 `json:"agent"`       // Agent that set this condition
+	Prompt     string                 `json:"prompt"`      // User-provided prompt/criteria
+	Agents     []AgentStatusForPrompt `json:"agents"`      // Current agent statuses
+	InThread   *string                `json:"in_thread"`   // Thread scope if any
+}
+
+// WakePromptResult is the output from the wake prompt script.
+type WakePromptResult struct {
 	ShouldWake bool    `json:"shouldWake"`
 	Reason     string  `json:"reason,omitempty"`
 	Confidence float64 `json:"confidence"`
