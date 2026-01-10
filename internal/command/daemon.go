@@ -27,6 +27,13 @@ The daemon:
 - Spawns agent sessions via configured drivers (claude, codex, opencode)
 - Tracks agent presence (spawning, active, idle, error, offline)
 - Records session lifecycle events to agents.jsonl
+- Enforces 30s cooldown after clean exits (prevents rapid restart loops)
+
+Interrupt Syntax (bypasses cooldown):
+  !@agent     - interrupt + resume same session
+  !!@agent    - interrupt + start fresh session (clears context)
+  !@agent!    - interrupt, don't spawn after
+  !!@agent!   - force end, don't restart
 
 Only one daemon can run per project (enforced via lock file).
 Use Ctrl+C or SIGTERM to gracefully shut down.`,

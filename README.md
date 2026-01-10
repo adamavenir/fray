@@ -238,6 +238,39 @@ fray hook-install --precommit  # Add git pre-commit hook for claims
 
 When an agent leaves with `fray bye`, their claims are automatically cleared.
 
+## Managed Agents (Daemon)
+
+The daemon automatically spawns managed agents when they receive @mentions. After a clean exit, agents enter a 30-second cooldown before they can be re-spawned.
+
+```bash
+fray daemon                    # start daemon (watches @mentions)
+fray daemon --debug            # enable debug logging
+fray agent create alice --driver claude  # create managed agent
+fray agent list                # show agents with presence
+```
+
+### Interrupt Syntax
+
+When you need immediate attention or an agent is stuck, use interrupt syntax to bypass cooldown and force actions:
+
+| Syntax | Behavior |
+|--------|----------|
+| `!@agent` | Interrupt + resume same session |
+| `!!@agent` | Interrupt + start fresh session (clears context) |
+| `!@agent!` | Interrupt, don't spawn after |
+| `!!@agent!` | Force end, don't restart |
+
+```bash
+fray post "!@alice need this now" --as bob    # interrupt + resume
+fray post "!!@alice start fresh" --as bob     # interrupt + fresh session
+fray post "!@alice! stop" --as bob            # just stop, don't spawn
+```
+
+Interrupts:
+- Bypass the 30s cooldown period
+- Kill any running process for that agent
+- Clear session context when using `!!` prefix
+
 ## Commands
 
 ```

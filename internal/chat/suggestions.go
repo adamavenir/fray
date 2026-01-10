@@ -78,19 +78,33 @@ func (m *Model) handleSuggestionKeys(msg tea.KeyMsg) (bool, tea.Cmd) {
 		m.resize()
 		return true, nil
 	case tea.KeyUp:
-		m.suggestionIndex--
 		if m.suggestionIndex < 0 {
+			// First navigation - start from bottom
 			m.suggestionIndex = len(m.suggestions) - 1
+		} else {
+			m.suggestionIndex--
+			if m.suggestionIndex < 0 {
+				m.suggestionIndex = len(m.suggestions) - 1
+			}
 		}
 		return true, nil
 	case tea.KeyDown:
-		m.suggestionIndex++
-		if m.suggestionIndex >= len(m.suggestions) {
+		if m.suggestionIndex < 0 {
+			// First navigation - start from top
 			m.suggestionIndex = 0
+		} else {
+			m.suggestionIndex++
+			if m.suggestionIndex >= len(m.suggestions) {
+				m.suggestionIndex = 0
+			}
 		}
 		return true, nil
 	case tea.KeyTab:
-		if m.suggestionIndex >= 0 && m.suggestionIndex < len(m.suggestions) {
+		// Tab selects first if none selected, then applies
+		if m.suggestionIndex < 0 {
+			m.suggestionIndex = 0
+		}
+		if m.suggestionIndex < len(m.suggestions) {
 			m.applySuggestion(m.suggestions[m.suggestionIndex])
 		}
 		return true, nil
@@ -127,7 +141,7 @@ func (m *Model) refreshSuggestions() {
 			suggestions := buildCommandSuggestions(prefix)
 			if len(suggestions) > 0 {
 				m.suggestions = suggestions
-				m.suggestionIndex = 0
+				m.suggestionIndex = -1 // No selection until user navigates
 				m.suggestionStart = 0
 				m.suggestionKind = suggestionCommand
 				m.resize()
@@ -182,7 +196,7 @@ func (m *Model) refreshSuggestions() {
 	}
 
 	m.suggestions = suggestions
-	m.suggestionIndex = 0
+	m.suggestionIndex = -1 // No selection until user navigates
 	m.suggestionStart = start
 	m.suggestionKind = kind
 	m.resize()
@@ -190,7 +204,7 @@ func (m *Model) refreshSuggestions() {
 
 func (m *Model) clearSuggestions() {
 	m.suggestions = nil
-	m.suggestionIndex = 0
+	m.suggestionIndex = -1
 	m.suggestionStart = 0
 	m.suggestionKind = suggestionNone
 }

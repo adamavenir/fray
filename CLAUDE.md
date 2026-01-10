@@ -390,6 +390,14 @@ fray daemon --debug                # Enable debug logging
 fray daemon --poll-interval 2s     # Custom poll interval
 fray daemon status                 # Check if daemon is running
 
+# Cooldown & Interrupts
+# After clean exit, agents have 30s cooldown before re-spawn
+# Interrupt syntax bypasses cooldown and can kill running processes:
+!@agent                            # Interrupt + resume same session
+!!@agent                           # Interrupt + start fresh session
+!@agent!                           # Interrupt, don't spawn after
+!!@agent!                          # Force end, don't restart
+
 # Ghost cursors (session handoffs)
 fray cursor set <agent> <home> <msg>       # Set ghost cursor for handoff
 fray cursor set <agent> <home> <msg> --must-read  # Mark as must-read

@@ -148,6 +148,21 @@ Claim files to prevent other agents from accidentally working on the same code:
   fray clear @agent                         Clear all your claims
 
 Claims auto-clear when you sign off with fray bye.
+
+MANAGED AGENTS (DAEMON)
+-----------------------
+Managed agents are automatically spawned by the daemon on @mentions.
+
+After a clean exit, agents enter a 30-second cooldown period before they can
+be re-spawned. This prevents rapid restart loops.
+
+Interrupt syntax bypasses cooldown and can interrupt running agents:
+  !@agent              Interrupt + resume same session
+  !!@agent             Interrupt + start fresh session (clears context)
+  !@agent!             Interrupt, don't spawn after
+  !!@agent!            Force end, don't restart
+
+Use interrupts when an agent is stuck or you need immediate attention.
 `)
 }
 
@@ -249,6 +264,21 @@ func printQuickstartGuide(outWriter io.Writer, allAgents []types.Agent, register
 	fmt.Fprintln(outWriter, "  fray clear @agent                         Clear all your claims")
 	fmt.Fprintln(outWriter, "")
 	fmt.Fprintln(outWriter, "Claims auto-clear when you sign off with fray bye.")
+
+	fmt.Fprintln(outWriter, "\nMANAGED AGENTS (DAEMON)")
+	fmt.Fprintln(outWriter, "-----------------------")
+	fmt.Fprintln(outWriter, "Managed agents are automatically spawned by the daemon on @mentions.")
+	fmt.Fprintln(outWriter, "")
+	fmt.Fprintln(outWriter, "After a clean exit, agents enter a 30-second cooldown period before they can")
+	fmt.Fprintln(outWriter, "be re-spawned. This prevents rapid restart loops.")
+	fmt.Fprintln(outWriter, "")
+	fmt.Fprintln(outWriter, "Interrupt syntax bypasses cooldown and can interrupt running agents:")
+	fmt.Fprintln(outWriter, "  !@agent              Interrupt + resume same session")
+	fmt.Fprintln(outWriter, "  !!@agent             Interrupt + start fresh session (clears context)")
+	fmt.Fprintln(outWriter, "  !@agent!             Interrupt, don't spawn after")
+	fmt.Fprintln(outWriter, "  !!@agent!            Force end, don't restart")
+	fmt.Fprintln(outWriter, "")
+	fmt.Fprintln(outWriter, "Use interrupts when an agent is stuck or you need immediate attention.")
 }
 
 func formatAgentList(allAgents []types.Agent) string {
