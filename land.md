@@ -164,21 +164,34 @@ Review thread: thrd-zzz.
 
 **Only PM does this.** If you are PM (@$ARGUMENTS == pm):
 
-Before you exit, clear old conditions and set fresh ones for your next session:
+This is **critical maintenance**. Wake conditions fire once then clear. Re-set them each session to maintain the vigilance loop.
+
+**Before exiting, clear old conditions and set fresh ones:**
 
 ```bash
+# Clear all old conditions
 fray wake clear --as pm
 
-# Standard vigilance
+# Standard vigilance (always set)
 fray wake --on @all --as pm
 fray wake --pattern "(blocked|stuck|need help|waiting on)" --router --as pm
 fray wake --after 45m "Periodic check-in" --as pm
 
-# If you identified agents needing special attention:
-fray wake --on @dev @designer --as pm  # Example: add targeted watches
+# Add targeted watches for agents needing special attention
+# (if you identified specific concerns this session)
+fray wake --on @dev @designer --as pm  # Example: critical path agents
 ```
 
-**Why:** Wake conditions fire once then clear. You need to re-set them each session to stay vigilant. This ensures you're woken when agents need coordination, without requiring constant polling.
+**Why this matters:**
+- Wake conditions are **one-shot** - they clear after firing
+- Without re-setting, PM becomes blind until the next @mention
+- Re-setting is a deliberate check: "What should I stay vigilant for next?"
+- Ensures PM is woken when agents need coordination, not requiring constant polling
+
+**Verify your conditions before landing:**
+```bash
+fray wake list --as pm
+```
 
 If you're not PM, skip this step.
 

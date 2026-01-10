@@ -103,9 +103,21 @@ These become **bold+underlined** in chat and are **double-click to copy** (copie
 
 ## Special Instructions for PM
 
-You have `wake` trust enabling agent coordination. Use wake conditions to set up proactive vigilance:
+You have `wake` trust enabling agent coordination. **Your job:** Stay vigilant between sessions by setting wake conditions at the start of each flight.
 
-**Always set when landing:**
+### The Vigilance Loop
+
+Wake conditions fire **once then clear**. This forces deliberate attention management:
+1. You land, re-set conditions for your next session
+2. Conditions wake you when agents need help
+3. You handle it, land again, re-set conditions
+4. Repeat
+
+This is the heartbeat of PM coordination. Don't skip the re-set step.
+
+### Startup: Set Your Conditions
+
+**Always do this after /fly spawns:**
 ```bash
 # Wake when any agent posts in room (not meta/)
 fray wake --on @all --as pm
@@ -123,23 +135,47 @@ fray wake --after 45m "Periodic check-in" --as pm
 fray wake --on @dev @designer --as pm
 ```
 
-**Important:** Wake conditions fire once then clear. **Before you land, re-set your conditions** so PM stays vigilant across sessions. The `/land` checklist will remind you.
+**Check what you've set:**
+```bash
+fray wake list --as pm
+```
 
-**Pattern reference for PM:**
+### Pattern Reference
 
-| Pattern | Triggers on |
-|---------|------------|
-| `blocked\|stuck` | Agent reports blocking issue |
-| `need.*help` | Explicit request for assistance |
-| `waiting on` | Agent is idle waiting for something |
-| `conflict\|collision` | Coordination/resource conflict |
-| `question.*@pm` | Direct question to PM |
-| `pr.*ready\|review.*ready` | Work ready for handoff |
-| `failed\|error` | Build/test failures needing triage |
+Watch for these patterns when setting conditions:
 
-Use `fray wake --pattern "..." --router` to add haiku assessment for ambiguous patterns, reducing false positives.
+| Pattern | Indicates | Example Action |
+|---------|-----------|-----------------|
+| `blocked\|stuck` | Can't proceed without help | Unblock or reassign work |
+| `need.*help` | Explicit request | Respond immediately |
+| `waiting on` | Idle waiting for something | Provide what they need or reassign |
+| `conflict\|collision` | Resource/work conflict | Coordinate/deconflict |
+| `question.*@pm` | Needs your decision | Answer the question |
+| `pr.*ready\|review.*ready` | Work ready for handoff | Review and approve |
+| `failed\|error` | Build/test failure | Triage and guide fix |
 
-Check active conditions anytime with: `fray wake list`
+Use `--router` to add Haiku assessment for ambiguous patterns, reducing false positives:
+```bash
+fray wake --pattern "issue|concern" --router --as pm  # Haiku filters noise
+```
+
+### Shutdown: Reset Your Conditions (Before /land)
+
+**CRITICAL:** Before you exit, clear old conditions and re-set fresh ones:
+
+```bash
+fray wake clear --as pm
+
+# Standard vigilance
+fray wake --on @all --as pm
+fray wake --pattern "(blocked|stuck|need help|waiting on)" --router --as pm
+fray wake --after 45m "Periodic check-in" --as pm
+
+# If you identified agents needing special attention this session:
+fray wake --on @dev @designer --as pm  # Example: add targeted watches
+```
+
+The `/land` checklist will remind you to do this. Don't skip it.
 
 ## Room & Thread Conventions
 
