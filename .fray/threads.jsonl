@@ -1908,3 +1908,9 @@
 {"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"desktop.1","subscribed_at":1768013263}
 {"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"desktop.2","subscribed_at":1768013263}
 {"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"opus","subscribed_at":1768013387}
+{"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"opus","subscribed_at":1768013522}
+{"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"desktop.1","subscribed_at":1768013522}
+{"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"desktop.2","subscribed_at":1768013522}
+{"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"architect","subscribed_at":1768013914}
+{"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"designer","subscribed_at":1768013970}
+{"type":"thread_subscribe","thread_guid":"thrd-m9r6xav6","agent_id":"opus","subscribed_at":1768014017}
