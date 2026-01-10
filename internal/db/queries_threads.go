@@ -690,6 +690,54 @@ func GetUnreadCountsForAgent(db *sql.DB, agentID string, threadGUIDs []string) (
 	return counts, nil
 }
 
+// GetThreadMessageCount returns the total message count for a thread.
+func GetThreadMessageCount(db *sql.DB, threadGUID string) (int, error) {
+	var count int
+	row := db.QueryRow(`
+		SELECT COUNT(*) FROM fray_messages
+		WHERE home = ? AND archived_at IS NULL
+	`, threadGUID)
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// GetChildThreadsWithStats returns child threads of a parent with message counts.
+// Returns threads sorted by last_activity_at DESC (most recent first).
+func GetChildThreadsWithStats(db *sql.DB, parentGUID string) ([]types.ThreadWithStats, error) {
+	rows, err := db.Query(`
+		SELECT t.guid, t.name, t.parent_thread, t.status, t.type, t.created_at,
+		       t.anchor_message_guid, t.anchor_hidden, t.last_activity_at,
+		       (SELECT COUNT(*) FROM fray_messages m WHERE m.home = t.guid AND m.archived_at IS NULL) as msg_count,
+		       (SELECT COUNT(*) FROM fray_threads c WHERE c.parent_thread = t.guid AND c.status = 'open') as child_count
+		FROM fray_threads t
+		WHERE t.parent_thread = ? AND t.status = ?
+		ORDER BY COALESCE(t.last_activity_at, t.created_at) DESC
+	`, parentGUID, string(types.ThreadStatusOpen))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []types.ThreadWithStats
+	for rows.Next() {
+		var row threadRow
+		var msgCount, childCount int
+		if err := rows.Scan(&row.GUID, &row.Name, &row.ParentThread, &row.Status, &row.Type,
+			&row.CreatedAt, &row.AnchorMessageGUID, &row.AnchorHidden, &row.LastActivityAt,
+			&msgCount, &childCount); err != nil {
+			return nil, err
+		}
+		results = append(results, types.ThreadWithStats{
+			Thread:       row.toThread(),
+			MessageCount: msgCount,
+			ChildCount:   childCount,
+		})
+	}
+	return results, rows.Err()
+}
+
 // GetRoomUnreadCount returns unread count for the main room for an agent.
 func GetRoomUnreadCount(db *sql.DB, agentID string) (int, error) {
 	// Get watermark for room (empty home = room)

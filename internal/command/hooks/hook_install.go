@@ -100,6 +100,15 @@ Examples:
 							}},
 						},
 					},
+					"SessionEnd": []any{
+						map[string]any{
+							"hooks": []any{map[string]any{
+								"type":    "command",
+								"command": "fray hook-sessionend",
+								"timeout": 5,
+							}},
+						},
+					},
 				},
 			}
 
@@ -143,6 +152,7 @@ Examples:
 			fmt.Fprintln(out, "  SessionStart (startup/resume) - prompts agent registration or injects context")
 			fmt.Fprintln(out, "  UserPromptSubmit - injects room messages and @mentions before each prompt")
 			fmt.Fprintln(out, "  PreCompact - reminds to preserve work before context compaction")
+			fmt.Fprintln(out, "  SessionEnd - records session end for presence tracking")
 
 			if precommit {
 				installPrecommitHook(projectDir, false, out)

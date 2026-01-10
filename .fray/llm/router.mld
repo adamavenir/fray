@@ -8,6 +8,14 @@
 The agent was mentioned but NOT directly addressed (not "@agent message" at start).
 Should they be woken up to read this, or can they wait until they're next online?
 
+IMPORTANT: Return {"wake": false} for these patterns:
+- Assignment indicators: "open @agent", "assigned: @agent", "assignee: @agent"
+- Bead/issue listings showing status: "[P1] [feature] open @agent - Title"
+- Code blocks or structured data referencing agents
+- Reference context: "see @agent's work", "like @agent said"
+
+Only return {"wake": true} if the agent is being asked a question or requested to take action.
+
 Return JSON: {"wake": true} or {"wake": false}
 
 Message: @text`

@@ -110,6 +110,7 @@ func NewRootCmd(version string) *cobra.Command {
 		hooks.NewHookPromptCmd(),
 		hooks.NewHookPrecommitCmd(),
 		hooks.NewHookPrecompactCmd(),
+		hooks.NewHookSessionEndCmd(),
 		hooks.NewHookStatuslineCmd(),
 	)
 

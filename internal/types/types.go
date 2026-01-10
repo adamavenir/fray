@@ -291,6 +291,13 @@ type Thread struct {
 	LastActivityAt    *int64       `json:"last_activity_at,omitempty"`
 }
 
+// ThreadWithStats extends Thread with computed statistics.
+type ThreadWithStats struct {
+	Thread
+	MessageCount int `json:"message_count"`
+	ChildCount   int `json:"child_count"`
+}
+
 // ThreadSubscription records a thread subscription.
 type ThreadSubscription struct {
 	ThreadGUID   string `json:"thread_guid"`

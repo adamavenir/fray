@@ -191,6 +191,7 @@ fray hook-install --safety --global  # Install safety globally (~/.claude)
 - **SessionStart**: Prompts unregistered agents to join, or injects room context
 - **UserPromptSubmit**: Injects latest messages before each prompt
 - **PreCompact**: Reminds to preserve work before context compaction
+- **SessionEnd**: Records session end for presence tracking
 
 **Safety guards** (installed with `--safety`):
 Protects `.fray/` data from destructive git commands:
