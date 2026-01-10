@@ -12,16 +12,37 @@ import (
 
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
+	"github.com/adamavenir/fray/internal/types"
 	"github.com/spf13/cobra"
 )
 
 type initResult struct {
-	Initialized    bool   `json:"initialized"`
-	AlreadyExisted bool   `json:"already_existed"`
-	ChannelID      string `json:"channel_id"`
-	ChannelName    string `json:"channel_name"`
-	Path           string `json:"path"`
-	Error          string `json:"error,omitempty"`
+	Initialized    bool     `json:"initialized"`
+	AlreadyExisted bool     `json:"already_existed"`
+	ChannelID      string   `json:"channel_id"`
+	ChannelName    string   `json:"channel_name"`
+	Path           string   `json:"path"`
+	IssueTracker   string   `json:"issue_tracker,omitempty"`
+	AgentsCreated  []string `json:"agents_created,omitempty"`
+	Error          string   `json:"error,omitempty"`
+}
+
+// stockAgent represents a suggested agent for interactive init.
+type stockAgent struct {
+	Name        string
+	Description string
+	Driver      string // default driver
+}
+
+// stockAgents is the default set of agents to suggest during init.
+var stockAgents = []stockAgent{
+	{Name: "dev", Description: "development work", Driver: "claude"},
+	{Name: "desi", Description: "design review", Driver: "claude"},
+	{Name: "arch", Description: "architecture review/plans", Driver: "codex"},
+	{Name: "qa", Description: "testing and quality checks", Driver: "codex"},
+	{Name: "pm", Description: "project coordination", Driver: "claude"},
+	{Name: "knit", Description: "knowledge organization", Driver: "claude"},
+	{Name: "party", Description: "workparty coordinator, fray advisor", Driver: "claude"},
 }
 
 // NewInitCmd creates the init command.
@@ -161,11 +182,38 @@ func NewInitCmd() *cobra.Command {
 					fmt.Fprintf(out, "✓ Registered channel %s as '%s'\n", channelID, channelName)
 				}
 				fmt.Fprintln(out, "Initialized .fray/")
-				fmt.Fprintln(out, "")
-				fmt.Fprintln(out, "Next steps:")
-				fmt.Fprintln(out, "  fray new <name>                # Join as an agent")
-				fmt.Fprintln(out, "  fray hook-install              # Install Claude Code hooks")
-				fmt.Fprintln(out, "  fray hook-install --precommit  # Add git pre-commit hook for claims")
+
+				// Interactive setup (only if TTY and not using defaults)
+				if !useDefaults && isTTY(os.Stdin) {
+					fmt.Fprintln(out, "")
+
+					// Issue tracker selection
+					issueTracker := promptIssueTracker()
+					if issueTracker != "" && issueTracker != "none" {
+						result.IssueTracker = issueTracker
+						fmt.Fprintf(out, "✓ Issue tracker: %s\n", issueTracker)
+					}
+
+					// Agent selection
+					agentsCreated := promptAndCreateAgents(project.DBPath)
+					if len(agentsCreated) > 0 {
+						result.AgentsCreated = agentsCreated
+						fmt.Fprintf(out, "✓ Created %d managed agents\n", len(agentsCreated))
+					}
+
+					// Offer to install hooks
+					if promptYesNo("Install Claude Code hooks?", true) {
+						fmt.Fprintln(out, "")
+						fmt.Fprintln(out, "Run: fray hook-install")
+						fmt.Fprintln(out, "  (restart Claude Code after installing)")
+					}
+				} else {
+					fmt.Fprintln(out, "")
+					fmt.Fprintln(out, "Next steps:")
+					fmt.Fprintln(out, "  fray new <name>                # Join as an agent")
+					fmt.Fprintln(out, "  fray hook-install              # Install Claude Code hooks")
+					fmt.Fprintln(out, "  fray hook-install --precommit  # Add git pre-commit hook for claims")
+				}
 			}
 
 			return nil
@@ -209,6 +257,187 @@ func isTTY(file *os.File) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// promptIssueTracker asks the user to select an issue tracker.
+func promptIssueTracker() string {
+	if !isTTY(os.Stdin) {
+		return ""
+	}
+
+	fmt.Println("Issue tracker:")
+	fmt.Println("  1. bd (beads - built-in)")
+	fmt.Println("  2. gh (GitHub Issues)")
+	fmt.Println("  3. tk (tickets)")
+	fmt.Println("  4. md (markdown files in todo/)")
+	fmt.Println("  5. none")
+	fmt.Print("Select [1-5, default=1]: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	text, _ := reader.ReadString('\n')
+	trimmed := strings.TrimSpace(text)
+
+	switch trimmed {
+	case "", "1":
+		return "bd"
+	case "2":
+		return "gh"
+	case "3":
+		return "tk"
+	case "4":
+		return "md"
+	case "5":
+		return "none"
+	default:
+		return "bd"
+	}
+}
+
+// promptYesNo asks a yes/no question with a default.
+func promptYesNo(question string, defaultYes bool) bool {
+	if !isTTY(os.Stdin) {
+		return defaultYes
+	}
+
+	suffix := "[Y/n]"
+	if !defaultYes {
+		suffix = "[y/N]"
+	}
+	fmt.Printf("%s %s: ", question, suffix)
+
+	reader := bufio.NewReader(os.Stdin)
+	text, _ := reader.ReadString('\n')
+	trimmed := strings.ToLower(strings.TrimSpace(text))
+
+	if trimmed == "" {
+		return defaultYes
+	}
+	return trimmed == "y" || trimmed == "yes"
+}
+
+// promptAndCreateAgents shows stock agents and creates selected ones.
+func promptAndCreateAgents(dbPath string) []string {
+	if !isTTY(os.Stdin) {
+		return nil
+	}
+
+	fmt.Println("")
+	fmt.Println("Suggested agents (select with numbers, e.g., 1,2,5 or 'all' or 'none'):")
+	for i, agent := range stockAgents {
+		driverNote := ""
+		if agent.Driver == "codex" {
+			driverNote = " [codex]"
+		}
+		fmt.Printf("  %d. %s - %s%s\n", i+1, agent.Name, agent.Description, driverNote)
+	}
+	fmt.Print("Select [default=all]: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	text, _ := reader.ReadString('\n')
+	trimmed := strings.TrimSpace(strings.ToLower(text))
+
+	var selectedIndices []int
+	if trimmed == "" || trimmed == "all" {
+		for i := range stockAgents {
+			selectedIndices = append(selectedIndices, i)
+		}
+	} else if trimmed == "none" {
+		return nil
+	} else {
+		parts := strings.Split(trimmed, ",")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			var idx int
+			if _, err := fmt.Sscanf(part, "%d", &idx); err == nil && idx >= 1 && idx <= len(stockAgents) {
+				selectedIndices = append(selectedIndices, idx-1)
+			}
+		}
+	}
+
+	if len(selectedIndices) == 0 {
+		return nil
+	}
+
+	// Ask about driver customization
+	fmt.Println("")
+	fmt.Println("Default drivers: claude for most, codex for arch/qa")
+	if !promptYesNo("Use defaults?", true) {
+		// Let user customize per-agent
+		for _, idx := range selectedIndices {
+			agent := &stockAgents[idx]
+			fmt.Printf("Driver for %s [claude/codex, default=%s]: ", agent.Name, agent.Driver)
+			driverText, _ := reader.ReadString('\n')
+			driverTrimmed := strings.TrimSpace(strings.ToLower(driverText))
+			if driverTrimmed == "claude" || driverTrimmed == "codex" {
+				agent.Driver = driverTrimmed
+			}
+		}
+	}
+
+	// Create the agents
+	var created []string
+	for _, idx := range selectedIndices {
+		agent := stockAgents[idx]
+		if err := createManagedAgent(dbPath, agent.Name, agent.Driver); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create agent %s: %v\n", agent.Name, err)
+			continue
+		}
+		created = append(created, agent.Name)
+	}
+
+	return created
+}
+
+// createManagedAgent creates a managed agent configuration.
+func createManagedAgent(dbPath string, name string, driver string) error {
+	project, err := core.DiscoverProject("")
+	if err != nil {
+		return err
+	}
+
+	dbConn, err := db.OpenDatabase(project)
+	if err != nil {
+		return err
+	}
+	defer dbConn.Close()
+
+	// Check if agent already exists
+	existing, _ := db.GetAgent(dbConn, name)
+	if existing != nil {
+		return nil // Already exists, skip
+	}
+
+	// Create the managed agent
+	agentGUID, err := core.GenerateGUID("usr")
+	if err != nil {
+		return err
+	}
+
+	config, err := db.ReadProjectConfig(dbPath)
+	if err != nil {
+		return err
+	}
+
+	channelID := ""
+	if config != nil {
+		channelID = config.ChannelID
+	}
+
+	now := time.Now().Unix()
+	agent := types.Agent{
+		GUID:         agentGUID,
+		AgentID:      name,
+		RegisteredAt: now,
+		LastSeen:     now,
+		Managed:      true,
+		Presence:     types.PresenceOffline,
+		Invoke: &types.InvokeConfig{
+			Driver: driver,
+		},
+	}
+	_ = channelID // used by AppendAgent internally
+
+	return db.AppendAgent(dbPath, agent)
 }
 
 // ensureLLMRouter creates the .fray/llm/ directory and stock mlld templates.
