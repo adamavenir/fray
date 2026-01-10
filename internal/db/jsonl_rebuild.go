@@ -305,14 +305,23 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 
 	insertMessage := `
 		INSERT OR REPLACE INTO fray_messages (
-			guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			guid, ts, channel_id, home, from_agent, session_id, body, mentions, fork_sessions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, message := range messages {
 		mentionsJSON, err := json.Marshal(message.Mentions)
 		if err != nil {
 			return err
+		}
+		var forkSessionsJSON *string
+		if len(message.ForkSessions) > 0 {
+			data, err := json.Marshal(message.ForkSessions)
+			if err != nil {
+				return err
+			}
+			s := string(data)
+			forkSessionsJSON = &s
 		}
 		reactionsJSON, err := json.Marshal(normalizeReactionsLegacy(message.Reactions))
 		if err != nil {
@@ -334,8 +343,10 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 			message.ChannelID,
 			home,
 			message.FromAgent,
+			message.SessionID,
 			message.Body,
 			string(mentionsJSON),
+			forkSessionsJSON,
 			msgType,
 			message.References,
 			message.SurfaceMessage,

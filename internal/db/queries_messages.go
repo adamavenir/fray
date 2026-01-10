@@ -12,10 +12,10 @@ import (
 
 // messageColumns is the explicit column list for SELECT queries.
 // This prevents column order issues when migrations add columns via ALTER TABLE.
-const messageColumns = `guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions`
+const messageColumns = `guid, ts, channel_id, home, from_agent, session_id, body, mentions, fork_sessions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions`
 
 // messageColumnsAliased is the same but with m. prefix for JOINs.
-const messageColumnsAliased = `m.guid, m.ts, m.channel_id, m.home, m.from_agent, m.body, m.mentions, m.type, m."references", m.surface_message, m.reply_to, m.quote_message_guid, m.edited_at, m.archived_at, m.reactions`
+const messageColumnsAliased = `m.guid, m.ts, m.channel_id, m.home, m.from_agent, m.session_id, m.body, m.mentions, m.fork_sessions, m.type, m."references", m.surface_message, m.reply_to, m.quote_message_guid, m.edited_at, m.archived_at, m.reactions`
 
 // CreateMessage inserts a new message.
 func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
@@ -40,6 +40,14 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 		return types.Message{}, err
 	}
 
+	var forkSessionsJSON []byte
+	if len(message.ForkSessions) > 0 {
+		forkSessionsJSON, err = json.Marshal(message.ForkSessions)
+		if err != nil {
+			return types.Message{}, err
+		}
+	}
+
 	// New messages don't have reactions yet. Write empty JSON for legacy column.
 	reactionsJSON := []byte("{}")
 
@@ -58,10 +66,16 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 		home = "room"
 	}
 
+	var forkSessionsStr *string
+	if forkSessionsJSON != nil {
+		s := string(forkSessionsJSON)
+		forkSessionsStr = &s
+	}
+
 	_, err = db.Exec(`
-		INSERT INTO fray_messages (guid, ts, channel_id, home, from_agent, body, mentions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
-	`, guid, ts, channelID, home, message.FromAgent, message.Body, string(mentionsJSON), msgType, message.References, message.SurfaceMessage, message.ReplyTo, message.QuoteMessageGUID, string(reactionsJSON))
+		INSERT INTO fray_messages (guid, ts, channel_id, home, from_agent, session_id, body, mentions, fork_sessions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+	`, guid, ts, channelID, home, message.FromAgent, message.SessionID, message.Body, string(mentionsJSON), forkSessionsStr, msgType, message.References, message.SurfaceMessage, message.ReplyTo, message.QuoteMessageGUID, string(reactionsJSON))
 	if err != nil {
 		return types.Message{}, err
 	}
@@ -75,8 +89,10 @@ func CreateMessage(db *sql.DB, message types.Message) (types.Message, error) {
 		ChannelID:        channelID,
 		Home:             home,
 		FromAgent:        message.FromAgent,
+		SessionID:        message.SessionID,
 		Body:             message.Body,
 		Mentions:         message.Mentions,
+		ForkSessions:     message.ForkSessions,
 		Reactions:        reactions,
 		Type:             msgType,
 		References:       message.References,
@@ -647,8 +663,10 @@ type messageRow struct {
 	ChannelID        sql.NullString
 	Home             sql.NullString
 	FromAgent        string
+	SessionID        sql.NullString
 	Body             string
 	Mentions         string
+	ForkSessions     sql.NullString
 	Reactions        string
 	MsgType          sql.NullString
 	References       sql.NullString
@@ -666,6 +684,14 @@ func (row messageRow) toMessage() (types.Message, error) {
 			return types.Message{}, err
 		}
 	}
+
+	var forkSessions map[string]string
+	if row.ForkSessions.Valid && row.ForkSessions.String != "" {
+		if err := json.Unmarshal([]byte(row.ForkSessions.String), &forkSessions); err != nil {
+			return types.Message{}, err
+		}
+	}
+
 	// Legacy reactions are stored as map[string][]string in the JSON column.
 	// Convert them to the new format with ReactionEntry (with timestamp=0 for legacy).
 	legacyReactions := map[string][]string{}
@@ -691,8 +717,10 @@ func (row messageRow) toMessage() (types.Message, error) {
 		ChannelID:        nullStringPtr(row.ChannelID),
 		Home:             home,
 		FromAgent:        row.FromAgent,
+		SessionID:        nullStringPtr(row.SessionID),
 		Body:             row.Body,
 		Mentions:         mentions,
+		ForkSessions:     forkSessions,
 		Reactions:        reactions,
 		Type:             msgType,
 		References:       nullStringPtr(row.References),
@@ -753,7 +781,7 @@ func scanMessages(rows *sql.Rows) ([]types.Message, error) {
 
 func scanMessage(scanner interface{ Scan(dest ...any) error }) (types.Message, error) {
 	var row messageRow
-	if err := scanner.Scan(&row.GUID, &row.TS, &row.ChannelID, &row.Home, &row.FromAgent, &row.Body, &row.Mentions, &row.MsgType, &row.References, &row.SurfaceMessage, &row.ReplyTo, &row.QuoteMessageGUID, &row.EditedAt, &row.ArchivedAt, &row.Reactions); err != nil {
+	if err := scanner.Scan(&row.GUID, &row.TS, &row.ChannelID, &row.Home, &row.FromAgent, &row.SessionID, &row.Body, &row.Mentions, &row.ForkSessions, &row.MsgType, &row.References, &row.SurfaceMessage, &row.ReplyTo, &row.QuoteMessageGUID, &row.EditedAt, &row.ArchivedAt, &row.Reactions); err != nil {
 		return types.Message{}, err
 	}
 	return row.toMessage()

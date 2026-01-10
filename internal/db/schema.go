@@ -50,8 +50,10 @@ CREATE TABLE IF NOT EXISTS fray_messages (
   channel_id TEXT,                     -- channel GUID for multi-channel support
   home TEXT DEFAULT 'room',            -- "room" or thread guid
   from_agent TEXT NOT NULL,            -- full agent address
+  session_id TEXT,                     -- session that posted this message
   body TEXT NOT NULL,                  -- message content (markdown)
   mentions TEXT NOT NULL DEFAULT '[]', -- JSON array of mentioned addresses
+  fork_sessions TEXT,                  -- JSON object: agent → session ID for @agent#sessid spawns
   type TEXT DEFAULT 'agent',           -- 'user' or 'agent'
   "references" TEXT,                   -- referenced message guid (surface)
   surface_message TEXT,                -- surface message guid (backlink event)
