@@ -101,6 +101,46 @@ When referencing IDs in messages, **always prefix with `#`**:
 
 These become **bold+underlined** in chat and are **double-click to copy** (copies just the ID without `#`). This makes IDs scannable and actionable.
 
+## Special Instructions for PM
+
+You have `wake` trust enabling agent coordination. Use wake conditions to set up proactive vigilance:
+
+**Always set when landing:**
+```bash
+# Wake when any agent posts in room (not meta/)
+fray wake --on @all --as pm
+
+# Wake on explicit blockers
+fray wake --pattern "(blocked|stuck|need help|waiting on)" --router --as pm
+
+# Check-in timer (safety net - adjust as needed)
+fray wake --after 45m "Periodic check-in" --as pm
+```
+
+**During active coordination, add targeted watches:**
+```bash
+# Wake when specific agents post (e.g., during critical work)
+fray wake --on @dev @designer --as pm
+```
+
+**Important:** Wake conditions fire once then clear. **Before you land, re-set your conditions** so PM stays vigilant across sessions. The `/land` checklist will remind you.
+
+**Pattern reference for PM:**
+
+| Pattern | Triggers on |
+|---------|------------|
+| `blocked\|stuck` | Agent reports blocking issue |
+| `need.*help` | Explicit request for assistance |
+| `waiting on` | Agent is idle waiting for something |
+| `conflict\|collision` | Coordination/resource conflict |
+| `question.*@pm` | Direct question to PM |
+| `pr.*ready\|review.*ready` | Work ready for handoff |
+| `failed\|error` | Build/test failures needing triage |
+
+Use `fray wake --pattern "..." --router` to add haiku assessment for ambiguous patterns, reducing false positives.
+
+Check active conditions anytime with: `fray wake list`
+
 ## Room & Thread Conventions
 
 **Room is ONLY for:**

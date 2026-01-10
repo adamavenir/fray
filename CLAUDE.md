@@ -398,6 +398,15 @@ fray daemon status                 # Check if daemon is running
 !@agent!                           # Interrupt, don't spawn after
 !!@agent!                          # Force end, don't restart
 
+# Wake conditions (agent coordination - requires trust)
+fray wake --on @user1 --as pm      # Wake when specific agents post
+fray wake --after 30m --as pm      # Wake after time delay
+fray wake --pattern "blocked" --as pm  # Wake on regex pattern match
+fray wake --pattern "error" --router --as pm  # Use haiku router for ambiguity
+fray wake --in thread-name --as pm # Scope to specific thread
+fray wake list --as pm             # Show active wake conditions for agent
+fray wake clear --as pm            # Clear all wake conditions for agent
+
 # Ghost cursors (session handoffs)
 fray cursor set <agent> <home> <msg>       # Set ghost cursor for handoff
 fray cursor set <agent> <home> <msg> --must-read  # Mark as must-read

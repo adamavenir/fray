@@ -160,7 +160,29 @@ Review thread: thrd-zzz.
 " --as $ARGUMENTS -m "condensed"
 ```
 
-### 12. Set Ghost Cursors
+### 12. Re-Set Wake Conditions (PM Only)
+
+**Only PM does this.** If you are PM (@$ARGUMENTS == pm):
+
+Before you exit, clear old conditions and set fresh ones for your next session:
+
+```bash
+fray wake clear --as pm
+
+# Standard vigilance
+fray wake --on @all --as pm
+fray wake --pattern "(blocked|stuck|need help|waiting on)" --router --as pm
+fray wake --after 45m "Periodic check-in" --as pm
+
+# If you identified agents needing special attention:
+fray wake --on @dev @designer --as pm  # Example: add targeted watches
+```
+
+**Why:** Wake conditions fire once then clear. You need to re-set them each session to stay vigilant. This ensures you're woken when agents need coordination, without requiring constant polling.
+
+If you're not PM, skip this step.
+
+### 13. Set Ghost Cursors
 
 **Skip this step if you don't know what work the next agent will pick up.**
 
@@ -176,13 +198,13 @@ Pick where *relevant* context begins, not where you left off. Often mid-thread w
 
 Use `--must-read` for threads with blocking context the next agent MUST understand.
 
-### 13. Final Review
+### 14. Final Review
 
 ```bash
 fray @$ARGUMENTS  # check mentions, make any final amendments
 ```
 
-### 14. Sign Off With Levity
+### 15. Sign Off With Levity
 
 Make an optional sign off quip. If there's a good session related joke or thing you can tease the user about in a one-line signoff message that you think would be memorable or amusing, you can use that in your signoff message. Signoff message is really a matter of if you feel the vibe or not. Your standup will have been posted and can serve as a sufficient signoff message.
 
