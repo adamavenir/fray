@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Daemon: 30s cooldown after clean agent exit prevents rapid restart loops
+- Interrupt syntax for daemon control: `!@agent` (resume), `!!@agent` (fresh), `!@agent!` (stop), `!!@agent!` (force end)
+
+### Fixed
+- Autocomplete: suggestions no longer auto-apply on Enter; must navigate first
 - Activity panel: presence-based icon colors (white pre-active, green active, yellow idle, gray offline, red error)
 - Presence audit trail: all state transitions logged to `agents.jsonl` as `presence_event` records
 - Daemon: driver-aware token tracking for presence detection (claude, codex, opencode)
