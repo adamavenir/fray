@@ -14,12 +14,22 @@ const (
 )
 
 // NormalizeReactionText trims and validates reaction text.
+// Reactions are short (max 20 runes), single-word responses or emoji.
+// Multi-word text or sentence-like punctuation is NOT a reaction.
 func NormalizeReactionText(value string) (string, bool) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return "", false
 	}
 	if utf8.RuneCountInString(trimmed) > maxReactionRunes {
+		return "", false
+	}
+	// Reactions should not contain spaces (multi-word text is a message, not a reaction)
+	if strings.Contains(trimmed, " ") {
+		return "", false
+	}
+	// Reactions should not contain sentence-like punctuation (these are messages)
+	if strings.ContainsAny(trimmed, "?!.,;:") {
 		return "", false
 	}
 	return trimmed, true

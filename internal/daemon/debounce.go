@@ -40,6 +40,24 @@ func (d *MentionDebouncer) GetWatermark(agentID string) string {
 	return ""
 }
 
+// GetReactionWatermark returns the last processed reaction timestamp (ms) for an agent.
+// Returns 0 if no watermark exists.
+func (d *MentionDebouncer) GetReactionWatermark(agentID string) int64 {
+	agent, err := db.GetAgent(d.database, agentID)
+	if err != nil || agent == nil {
+		return 0
+	}
+	if agent.ReactionWatermark != nil {
+		return *agent.ReactionWatermark
+	}
+	return 0
+}
+
+// UpdateReactionWatermark persists a new reaction watermark for an agent.
+func (d *MentionDebouncer) UpdateReactionWatermark(agentID string, timestampMs int64) error {
+	return db.UpdateAgentReactionWatermark(d.database, agentID, timestampMs)
+}
+
 // UpdateWatermark persists a new watermark for an agent.
 // Updates both SQLite and JSONL.
 func (d *MentionDebouncer) UpdateWatermark(agentID, msgID string) error {

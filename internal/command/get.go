@@ -619,11 +619,21 @@ func getThread(cmd *cobra.Command, ctx *CommandContext, thread *types.Thread, la
 	}
 
 	quotedMsgs := CollectQuotedMessages(ctx.DB, messages)
+
+	// Build set of pinned message GUIDs for accordion expansion
+	pinnedGUIDs := make(map[string]bool)
+	if pinnedMsgs, err := db.GetPinnedMessages(ctx.DB, thread.GUID); err == nil {
+		for _, pm := range pinnedMsgs {
+			pinnedGUIDs[pm.ID] = true
+		}
+	}
+
 	lines := FormatMessageListAccordion(messages, AccordionOptions{
 		ShowAll:     showAll,
 		ProjectName: projectName,
 		AgentBases:  agentBases,
 		QuotedMsgs:  quotedMsgs,
+		PinnedGUIDs: pinnedGUIDs,
 	})
 	for _, line := range lines {
 		fmt.Fprintln(out, line)

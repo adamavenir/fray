@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   invoke TEXT,                         -- JSON: driver config for spawning
   presence TEXT DEFAULT 'offline',     -- active, spawning, idle, error, offline
   mention_watermark TEXT,              -- last processed mention msg_id
+  reaction_watermark INTEGER,          -- last processed reaction timestamp (ms)
   last_heartbeat INTEGER,              -- last silent checkin timestamp (ms)
   last_session_id TEXT                 -- Claude Code session UUID for --resume
 );
@@ -748,6 +749,11 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(agentColumns, "last_heartbeat") {
 			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN last_heartbeat INTEGER"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "reaction_watermark") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN reaction_watermark INTEGER"); err != nil {
 				return err
 			}
 		}

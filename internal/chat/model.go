@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unicode"
@@ -21,6 +22,25 @@ import (
 )
 
 const doubleClickInterval = 400 * time.Millisecond
+const singleClickDebounce = 300 * time.Millisecond // Wait this long before executing single-click
+
+// debugLog writes debug messages to a file for debugging TUI issues
+func debugLog(msg string) {
+	f, err := os.OpenFile("/tmp/fray-debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(time.Now().Format("15:04:05.000") + " " + msg + "\n")
+}
+
+// pendingClick stores info about a click waiting for possible double-click
+type pendingClick struct {
+	messageID string
+	zone      string // "guid", "inlineid", or "line"
+	text      string // text to copy if single-click executes
+	timestamp time.Time
+}
 
 // peekSourceKind indicates how a peek was triggered (for displaying action hints)
 type peekSourceKind int
@@ -165,6 +185,11 @@ type Model struct {
 	peekThread       *types.Thread // thread being peeked (nil if not peeking)
 	peekPseudo       pseudoThreadKind // pseudo-thread being peeked (empty if not peeking)
 	peekSource       peekSourceKind // how peek was triggered (for hint display)
+	// Click debounce state (wait for possible double-click before executing single-click)
+	pendingClick     *pendingClick // pending single-click waiting for timeout
+	// Reply reference state (for reply preview UI)
+	replyToID        string // message ID being replied to (empty if no reply)
+	replyToPreview   string // preview text of reply target
 }
 
 // TokenUsage holds token usage data from ccusage (for activity panel).
@@ -198,6 +223,12 @@ type errMsg struct {
 	err error
 }
 
+// clickDebounceMsg fires after singleClickDebounce to execute pending single-click
+type clickDebounceMsg struct {
+	messageID string
+	timestamp time.Time
+}
+
 // NewModel creates a chat model with recent messages loaded.
 func NewModel(opts Options) (*Model, error) {
 	if opts.Last <= 0 {
@@ -206,6 +237,17 @@ func NewModel(opts Options) (*Model, error) {
 
 	channels, channelIndex := loadChannels(opts.ProjectRoot)
 	threads, threadIndex := loadThreads(opts.DB, opts.Username)
+
+	// Load managed agents for activity panel (initial state before first poll)
+	managedAgents, _ := db.GetManagedAgents(opts.DB)
+	agentTokenUsage := make(map[string]*TokenUsage)
+	for _, agent := range managedAgents {
+		if agent.LastSessionID != nil && *agent.LastSessionID != "" {
+			if usage := getTokenUsage(*agent.LastSessionID); usage != nil {
+				agentTokenUsage[agent.AgentID] = usage
+			}
+		}
+	}
 
 	colorMap, err := buildColorMap(opts.DB, 50, opts.IncludeArchived)
 	if err != nil {
@@ -297,7 +339,8 @@ func NewModel(opts Options) (*Model, error) {
 		threadNicknames:    make(map[string]string),
 		avatarMap:          make(map[string]string),
 		agentUnreadCounts:  make(map[string]int),
-		agentTokenUsage:    make(map[string]*TokenUsage),
+		managedAgents:      managedAgents,
+		agentTokenUsage:    agentTokenUsage,
 		statusInvoker:      NewStatusInvoker(filepath.Join(opts.ProjectRoot, ".fray")),
 		zoneManager:        zone.New(),
 		channels:        channels,
@@ -365,9 +408,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
-			if m.input.Value() != "" {
+			if m.input.Value() != "" || m.replyToID != "" {
 				m.input.Reset()
 				m.clearSuggestions()
+				// Clear reply reference without status message (silent clear)
+				m.replyToID = ""
+				m.replyToPreview = ""
 				m.lastInputValue = m.input.Value()
 				m.lastInputPos = m.inputCursorPos()
 				m.updateInputStyle()
@@ -387,6 +433,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refreshViewport(false)
 				return m, nil
 			}
+			// Clear reply reference if set
+			if m.replyToID != "" {
+				m.clearReplyTo()
+				return m, nil
+			}
+		case tea.KeyBackspace, tea.KeyDelete:
+			// Backspace at position 0 with reply set: clear reply (regardless of text content)
+			if m.replyToID != "" && m.inputCursorPos() == 0 {
+				m.clearReplyTo()
+				return m, nil
+			}
 		case tea.KeyEnter:
 			// Handle edit mode submission
 			if m.editingMessageID != "" {
@@ -400,6 +457,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.resize()
 				return m, m.submitEdit(msgID, value)
 			}
+			// DEBUG: log replyToID state at Enter press time
+			debugLog(fmt.Sprintf("KeyEnter: replyToID=%q replyToPreview=%q", m.replyToID, m.replyToPreview))
 			value := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
 			m.clearSuggestions()
@@ -443,7 +502,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		canType := !m.sidebarFocus && !m.threadPanelFocus
 		canType = canType || (m.isPeeking() && !m.threadFilterActive)
 		if canType {
-			m.input, cmd = m.input.Update(msg)
+			cmd = m.safeInputUpdate(msg)
 			m.refreshSuggestions()
 			m.resize()
 		}
@@ -638,10 +697,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("Edited #%s", msg.msg.ID)
 		}
 		return m, nil
+	case clickDebounceMsg:
+		// Execute pending single-click if it matches and hasn't been superseded
+		if m.pendingClick != nil &&
+			m.pendingClick.messageID == msg.messageID &&
+			m.pendingClick.timestamp == msg.timestamp {
+			m.executePendingClick()
+		}
+		return m, nil
 	}
 
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
+	cmd := m.safeInputUpdate(msg)
 	m.refreshSuggestions()
 	return m, cmd
 }
@@ -689,6 +755,13 @@ func (m *Model) View() string {
 }
 
 func (m *Model) renderInput() string {
+	var parts []string
+
+	// Add reply preview if replying
+	if replyPreview := m.renderReplyPreview(); replyPreview != "" {
+		parts = append(parts, replyPreview)
+	}
+
 	content := m.input.View()
 	bg := inputBg
 	if m.editingMessageID != "" {
@@ -699,7 +772,34 @@ func (m *Model) renderInput() string {
 		style = style.Width(width)
 	}
 	blank := style.Render("")
-	return strings.Join([]string{blank, style.Render(content), blank}, "\n")
+	parts = append(parts, blank, style.Render(content), blank)
+	return strings.Join(parts, "\n")
+}
+
+// renderReplyPreview renders the reply preview line above the input when replying
+func (m *Model) renderReplyPreview() string {
+	if m.replyToID == "" {
+		return ""
+	}
+
+	// Style similar to reply context in messages
+	previewStyle := lipgloss.NewStyle().Foreground(metaColor).Italic(true)
+	cancelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+
+	preview := previewStyle.Render(fmt.Sprintf("↪ Replying to: %s", m.replyToPreview))
+	cancel := m.zoneManager.Mark("reply-cancel", cancelStyle.Render(" [x]"))
+
+	width := m.mainWidth()
+	if width > 0 {
+		// Calculate padding to right-align the cancel button
+		previewWidth := lipgloss.Width(preview)
+		cancelWidth := lipgloss.Width(cancel)
+		padding := width - previewWidth - cancelWidth
+		if padding > 0 {
+			return preview + strings.Repeat(" ", padding) + cancel
+		}
+	}
+	return preview + " " + cancel
 }
 
 // renderPeekStatusline renders a blue statusline for peek mode.
@@ -774,23 +874,38 @@ func alignStatusLine(left, right string, width int) string {
 }
 
 func (m *Model) handleSubmit(text string) tea.Cmd {
-	resolution, err := ResolveReplyReference(m.db, text)
-	if err != nil {
-		m.status = err.Error()
-		return nil
-	}
-	if resolution.Kind == ReplyAmbiguous {
-		m.status = m.ambiguousStatus(resolution)
-		return nil
-	}
-
+	debugLog(fmt.Sprintf("handleSubmit called: text=%q, replyToID=%q", text, m.replyToID))
 	body := text
 	var replyTo *string
 	var replyMatch *ReplyMatch
-	if resolution.Kind == ReplyResolved {
-		body = resolution.Body
-		replyTo = &resolution.ReplyTo
-		replyMatch = resolution.Match
+
+	// Use m.replyToID if set (from double-click reply), otherwise parse text for #msgid
+	if m.replyToID != "" {
+		debugLog(fmt.Sprintf("handleSubmit: using replyToID=%q", m.replyToID))
+		// Copy the ID before clearing (don't take pointer to struct field we're about to modify)
+		replyID := m.replyToID
+		replyTo = &replyID
+		// Clear the reply reference after copying
+		m.replyToID = ""
+		m.replyToPreview = ""
+		m.resize() // Recalculate layout now that reply preview is gone
+	} else {
+		debugLog("handleSubmit: replyToID is empty, checking text for #msgid")
+		// Check for inline #msgid reference in text
+		resolution, err := ResolveReplyReference(m.db, text)
+		if err != nil {
+			m.status = err.Error()
+			return nil
+		}
+		if resolution.Kind == ReplyAmbiguous {
+			m.status = m.ambiguousStatus(resolution)
+			return nil
+		}
+		if resolution.Kind == ReplyResolved {
+			body = resolution.Body
+			replyTo = &resolution.ReplyTo
+			replyMatch = resolution.Match
+		}
 	}
 
 	if replyTo != nil {
@@ -820,6 +935,12 @@ func (m *Model) handleSubmit(text string) tea.Cmd {
 	home := ""
 	if m.currentThread != nil {
 		home = m.currentThread.GUID
+	}
+	// Debug: log the exact replyTo value being used
+	if replyTo != nil {
+		debugLog(fmt.Sprintf("handleSubmit: creating message with replyTo=%q", *replyTo))
+	} else {
+		debugLog("handleSubmit: creating message with replyTo=nil")
 	}
 	created, err := db.CreateMessage(m.db, types.Message{
 		FromAgent: m.username,
@@ -888,13 +1009,9 @@ func (m *Model) handleReaction(reaction, messageID string, match *ReplyMatch) te
 
 	m.applyMessageUpdate(*updated)
 
-	body := updated.Body
-	if match != nil && match.Body != "" {
-		body = match.Body
-	}
-	eventLine := core.FormatReactionEvent([]string{m.username}, reaction, updated.ID, body)
-	m.messages = append(m.messages, newEventMessage(eventLine))
-	m.status = ""
+	// Don't show event for user's own reactions - just update status briefly
+	// This reduces clutter per fray-48xt; agent reaction events will still show via poll
+	m.status = fmt.Sprintf("Reacted %s", reaction)
 	m.refreshViewport(true)
 
 	return nil
@@ -912,6 +1029,14 @@ func (m *Model) removeMessageByID(id string) bool {
 }
 
 func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
+	debugLog(fmt.Sprintf("handleMouseClick: action=%v button=%v x=%d y=%d replyToID=%q", msg.Action, msg.Button, msg.X, msg.Y, m.replyToID))
+	// Check for reply cancel click first (anywhere on screen)
+	if m.replyToID != "" && m.zoneManager.Get("reply-cancel").InBounds(msg) {
+		debugLog("handleMouseClick: clearing reply via cancel zone")
+		m.clearReplyTo()
+		return true, nil
+	}
+
 	threadWidth := 0
 	if m.threadPanelOpen {
 		threadWidth = m.threadPanelWidth()
@@ -1019,15 +1144,18 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 	clickedOnGUID := m.zoneManager.Get(guidZone).InBounds(msg)
 
 	if isDoubleClick {
+		// Clear double-click tracking and cancel any pending single-click
 		m.lastClickID = ""
 		m.lastClickAt = time.Time{}
+		m.pendingClick = nil
+
 		// Commit peek on double-click action
 		if m.isPeeking() {
 			m.commitPeek()
 		}
 		if clickedOnGUID {
-			// Double-click on footer ID: insert reply
-			m.prefillReply(*message)
+			// Double-click on footer ID: set reply reference (no clipboard copy)
+			m.setReplyTo(*message)
 		} else {
 			// Double-click elsewhere: copy from zone (text sections)
 			m.copyFromZone(msg, *message)
@@ -1035,26 +1163,98 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 		return true, nil
 	}
 
-	// Single-click
+	// Single-click - use debounce for GUID clicks
 	m.lastClickID = message.ID
 	m.lastClickAt = now
+
 	if clickedOnGUID {
-		// Single-click on ID: copy full message ID
-		// Also commit peek since user is interacting with content
-		if m.isPeeking() {
-			m.commitPeek()
+		// Queue single-click on GUID for debounce (will copy ID after delay)
+		m.pendingClick = &pendingClick{
+			messageID: message.ID,
+			zone:      "guid",
+			text:      message.ID,
+			timestamp: now,
 		}
-		if err := copyToClipboard(message.ID); err != nil {
-			m.status = err.Error()
-		} else {
-			m.status = "Copied message ID to clipboard."
-		}
-	} else if m.isPeeking() {
+		// Start debounce timer
+		return true, m.clickDebounceCmd(message.ID, now)
+	}
+
+	// Non-GUID single-click: handle immediately (no debounce needed)
+	if m.isPeeking() {
 		// Single-click on message content while peeking: commit peek (switch to this view)
 		m.commitPeek()
 	}
 	// Single-click elsewhere when not peeking: do nothing (wait for possible double-click)
 	return true, nil
+}
+
+// clickDebounceCmd returns a command that fires after singleClickDebounce
+func (m *Model) clickDebounceCmd(messageID string, timestamp time.Time) tea.Cmd {
+	return tea.Tick(singleClickDebounce, func(time.Time) tea.Msg {
+		return clickDebounceMsg{messageID: messageID, timestamp: timestamp}
+	})
+}
+
+// executePendingClick executes the pending single-click action
+func (m *Model) executePendingClick() {
+	if m.pendingClick == nil {
+		return
+	}
+	pc := m.pendingClick
+	m.pendingClick = nil
+
+	// Commit peek since user is interacting with content
+	if m.isPeeking() {
+		m.commitPeek()
+	}
+
+	switch pc.zone {
+	case "guid":
+		// Copy the message ID to clipboard
+		if err := copyToClipboard(pc.text); err != nil {
+			m.status = err.Error()
+		} else {
+			m.status = "Copied message ID to clipboard."
+		}
+	case "inlineid":
+		// Copy the inline ID (without # prefix)
+		if err := copyToClipboard(pc.text); err != nil {
+			m.status = err.Error()
+		} else {
+			m.status = "Copied ID to clipboard."
+		}
+	}
+}
+
+// setReplyTo sets the reply reference and shows preview (called on double-click footer ID)
+func (m *Model) setReplyTo(msg types.Message) {
+	debugLog(fmt.Sprintf("setReplyTo: msgID=%s from=%s", msg.ID, msg.FromAgent))
+	m.replyToID = msg.ID
+	m.replyToPreview = truncatePreview(msg.Body, 40)
+	m.status = fmt.Sprintf("Replying to @%s", msg.FromAgent)
+	m.resize() // Recalculate layout to account for reply preview line
+}
+
+// clearReplyTo clears the reply reference (called on Esc or backspace at pos 0)
+func (m *Model) clearReplyTo() {
+	// Debug: log caller information
+	pc := make([]uintptr, 10)
+	n := runtime.Callers(2, pc)
+	frames := runtime.CallersFrames(pc[:n])
+	var callers []string
+	for {
+		frame, more := frames.Next()
+		callers = append(callers, fmt.Sprintf("%s:%d", filepath.Base(frame.File), frame.Line))
+		if !more || len(callers) >= 3 {
+			break
+		}
+	}
+	debugLog(fmt.Sprintf("clearReplyTo called from: %v, replyToID was: %q", callers, m.replyToID))
+
+	m.replyToID = ""
+	m.replyToPreview = ""
+	m.status = "Reply cancelled"
+	m.resize() // Recalculate layout now that reply preview is gone
 }
 
 // navigateToAgentThread navigates to the thread where the agent last posted.
@@ -1107,12 +1307,10 @@ func (m *Model) copyFromZone(mouseMsg tea.MouseMsg, msg types.Message) {
 	var description string
 
 	// Check each zone type in priority order
+	// Note: All text copies EXCLUDE speaker name per spec
 	if m.zoneManager.Get(bylineZone).InBounds(mouseMsg) || m.zoneManager.Get(footerZone).InBounds(mouseMsg) {
-		// Double-clicked on byline or footer - copy whole message
+		// Double-clicked on byline or footer - copy whole message body (no speaker)
 		textToCopy = msg.Body
-		if msg.Type != types.MessageTypeEvent {
-			textToCopy = fmt.Sprintf("@%s: %s", msg.FromAgent, msg.Body)
-		}
 		description = "message"
 	} else {
 		// Check inline ID zones first (more specific than line zones)
@@ -1154,11 +1352,8 @@ func (m *Model) copyFromZone(mouseMsg tea.MouseMsg, msg types.Message) {
 				}
 			}
 			if !foundLine {
-				// Fallback: copy whole message
+				// Fallback: copy whole message body (no speaker)
 				textToCopy = msg.Body
-				if msg.Type != types.MessageTypeEvent {
-					textToCopy = fmt.Sprintf("@%s: %s", msg.FromAgent, msg.Body)
-				}
 				description = "message"
 			}
 		}
@@ -1173,11 +1368,8 @@ func (m *Model) copyFromZone(mouseMsg tea.MouseMsg, msg types.Message) {
 
 
 func (m *Model) copyMessage(msg types.Message) {
-	text := msg.Body
-	if msg.Type != types.MessageTypeEvent {
-		text = fmt.Sprintf("@%s: %s", msg.FromAgent, msg.Body)
-	}
-	if err := copyToClipboard(text); err != nil {
+	// Copy message body without speaker name per spec
+	if err := copyToClipboard(msg.Body); err != nil {
 		m.status = err.Error()
 		return
 	}
@@ -1264,12 +1456,17 @@ func (m *Model) refreshReactions() error {
 		added := diffReactions(msg.Reactions, next)
 		if len(added) > 0 {
 			for reaction, entries := range added {
+				// Only show reaction events from other agents, not from current user
 				agents := make([]string, 0, len(entries))
 				for _, e := range entries {
-					agents = append(agents, e.AgentID)
+					if e.AgentID != m.username {
+						agents = append(agents, e.AgentID)
+					}
 				}
-				eventLine := core.FormatReactionEvent(agents, reaction, msg.ID, msg.Body)
-				events = append(events, newEventMessage(eventLine))
+				if len(agents) > 0 {
+					eventLine := core.FormatReactionEvent(agents, reaction, msg.ID, msg.Body)
+					events = append(events, newEventMessage(eventLine))
+				}
 			}
 		}
 		if !reactionsEqual(msg.Reactions, next) {

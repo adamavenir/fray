@@ -137,6 +137,9 @@ func (m *Model) runSlashCommand(input string) (tea.Cmd, error) {
 		return nil, m.runUnpinCommand(fields[1:])
 	case "/prune":
 		return nil, m.runPruneCommand(fields[1:])
+	case "/close":
+		// Close all questions attached to a message
+		return m.runCloseQuestionsCommand(fields[1:])
 	}
 
 	return nil, fmt.Errorf("unknown command: %s", fields[0])
@@ -352,6 +355,23 @@ type editResultMsg struct {
 }
 
 func (m *Model) lastUserMessage() *types.Message {
+	// When in a thread, search thread messages first
+	if m.currentThread != nil {
+		for i := len(m.threadMessages) - 1; i >= 0; i-- {
+			msg := m.threadMessages[i]
+			if msg.Type != types.MessageTypeUser {
+				continue
+			}
+			if msg.FromAgent != m.username {
+				continue
+			}
+			if msg.ArchivedAt != nil || msg.Body == "[deleted]" {
+				continue
+			}
+			return &msg
+		}
+	}
+	// Search room messages
 	for i := len(m.messages) - 1; i >= 0; i-- {
 		msg := m.messages[i]
 		if msg.Type != types.MessageTypeUser {
@@ -1740,4 +1760,78 @@ func (m *Model) checkMetaPathCollision(parentGUID *string, name string) error {
 
 	// If we got here, the full meta path exists
 	return fmt.Errorf("thread exists at %s - use that path instead", metaPath)
+}
+
+// runCloseQuestionsCommand closes all questions attached to a message.
+// Syntax: /close #msg-xyz or /close (uses last selected in open-qs)
+func (m *Model) runCloseQuestionsCommand(args []string) (tea.Cmd, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("/close requires a message ID (#msg-xyz)")
+	}
+
+	// Parse message ID from args
+	ref := args[0]
+	if strings.HasPrefix(ref, "#") {
+		ref = ref[1:]
+	}
+
+	// Resolve message GUID from prefix (use ResolveReplyReference logic)
+	resolution, err := ResolveReplyReference(m.db, "#"+ref)
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve message: %v", err)
+	}
+	if resolution.Kind == ReplyNone {
+		return nil, fmt.Errorf("no message found matching: #%s", ref)
+	}
+	if resolution.Kind == ReplyAmbiguous {
+		return nil, fmt.Errorf("ambiguous message reference: #%s", ref)
+	}
+
+	messageID := resolution.ReplyTo
+
+	// Find all questions attached to this message
+	questions, err := db.GetQuestions(m.db, &types.QuestionQueryOptions{
+		AskedIn: &messageID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to find questions: %v", err)
+	}
+
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("no questions found for message #%s", ref)
+	}
+
+	// Close all questions
+	closed := 0
+	for _, q := range questions {
+		if q.Status == types.QuestionStatusAnswered {
+			continue // Already closed
+		}
+		status := string(types.QuestionStatusAnswered)
+		_, err := db.UpdateQuestion(m.db, q.GUID, db.QuestionUpdates{
+			Status: types.OptionalString{Set: true, Value: &status},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to close question: %v", err)
+		}
+
+		// Write update to JSONL
+		_ = db.AppendQuestionUpdate(m.projectDBPath, db.QuestionUpdateJSONLRecord{
+			Type:   "question_update",
+			GUID:   q.GUID,
+			Status: &status,
+		})
+		closed++
+	}
+
+	if closed == 0 {
+		m.status = fmt.Sprintf("All %d questions already closed", len(questions))
+	} else {
+		m.status = fmt.Sprintf("Closed %d question(s) for #%s", closed, ref)
+	}
+
+	// Refresh question counts
+	m.refreshQuestionCounts()
+
+	return nil, nil
 }

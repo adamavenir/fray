@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
@@ -68,14 +69,9 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 		color = colorForAgent(msg.FromAgent, m.colorMap)
 	}
 
-	// Get avatar for agent, or human avatar for users
-	avatar := m.avatarMap[msg.FromAgent]
-	if msg.Type == types.MessageTypeUser && avatar == "" {
-		avatar = core.HumanAvatar
-	}
-
 	// Mark byline as zone for copying whole message
-	bylineText := renderByline(msg.FromAgent, avatar, color)
+	// Avatar rendering disabled per fray-i2cq (deemed too busy)
+	bylineText := renderByline(msg.FromAgent, "", color)
 	sender := m.zoneManager.Mark("byline-"+msg.ID, bylineText)
 
 	body := highlightCodeBlocks(msg.Body)
@@ -133,11 +129,11 @@ func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map
 	}
 	lines = append(lines, fmt.Sprintf("%s\n%s", sender, bodyLine))
 	if reactionLine := formatReactionSummary(msg.Reactions); reactionLine != "" {
-		line := lipgloss.NewStyle().Foreground(metaColor).Faint(true).Render(reactionLine)
+		// Don't wrap with additional styling - formatReactionSummary handles styling internally
 		if width > 0 {
-			line = ansi.Wrap(line, width, "")
+			reactionLine = ansi.Wrap(reactionLine, width, "")
 		}
-		lines = append(lines, line)
+		lines = append(lines, reactionLine)
 	}
 	if questionLine := m.formatQuestionStatus(msg.ID); questionLine != "" {
 		if width > 0 {
@@ -273,22 +269,63 @@ func formatReactionSummary(reactions map[string][]types.ReactionEntry) string {
 	}
 	sort.Strings(keys)
 
-	parts := make([]string, 0, len(keys))
+	// Pill styling: dim grey background with padding
+	pillBg := lipgloss.Color("236")   // dim grey bg
+	pillPadStyle := lipgloss.NewStyle().Background(pillBg).Padding(0, 1)
+	// Yellow for text reactions (bold to ensure visibility on dark bg)
+	textStyle := lipgloss.NewStyle().Foreground(reactionColor).Background(pillBg).Bold(true)
+	// Regular text for emoji reactions
+	emojiStyle := lipgloss.NewStyle().Background(pillBg)
+	// Dim style for signoff
+	signoffStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Background(pillBg)
+
+	// Tree connector to show reactions are "attached" - use terminal connector
+	// since reactions are the last item before the footer
+	treeBar := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("└─")
+
+	pills := make([]string, 0, len(keys))
 	for _, reaction := range keys {
 		entries := reactions[reaction]
 		count := len(entries)
 		if count == 0 {
 			continue
 		}
+
+		var pillContent string
 		if count == 1 {
-			// Single reaction: show "👍 alice"
-			parts = append(parts, fmt.Sprintf("%s %s", reaction, entries[0].AgentID))
+			// Single reaction: "reaction --@agent"
+			agent := entries[0].AgentID
+			if isTextReaction(reaction) {
+				pillContent = textStyle.Render(reaction) + signoffStyle.Render(" --@"+agent)
+			} else {
+				pillContent = emojiStyle.Render(reaction) + signoffStyle.Render(" --@"+agent)
+			}
 		} else {
-			// Multiple reactions: show "👍x3"
-			parts = append(parts, fmt.Sprintf("%sx%d", reaction, count))
+			// Multiple reactions: "reaction x3"
+			if isTextReaction(reaction) {
+				pillContent = textStyle.Render(reaction) + signoffStyle.Render(fmt.Sprintf(" x%d", count))
+			} else {
+				pillContent = emojiStyle.Render(reaction) + signoffStyle.Render(fmt.Sprintf(" x%d", count))
+			}
+		}
+
+		// Wrap in pill padding (background already applied to content)
+		pills = append(pills, pillPadStyle.Render(pillContent))
+	}
+
+	return treeBar + " " + strings.Join(pills, " ")
+}
+
+// isTextReaction returns true if the reaction is plain text (not emoji)
+// Text reactions are ASCII letters/numbers/common punctuation
+func isTextReaction(reaction string) bool {
+	for _, r := range reaction {
+		// If any rune is outside the basic ASCII printable range, it's likely emoji
+		if r > unicode.MaxASCII || !unicode.IsPrint(r) {
+			return false
 		}
 	}
-	return strings.Join(parts, " · ")
+	return len(reaction) > 0
 }
 
 func diffReactions(before, after map[string][]types.ReactionEntry) map[string][]types.ReactionEntry {
@@ -351,7 +388,38 @@ func filterUpdates(messages []types.Message, showUpdates bool) []types.Message {
 	}
 	filtered := make([]types.Message, 0, len(messages))
 	for _, msg := range messages {
+		// Filter out all event messages when showUpdates is false
 		if msg.Type == types.MessageTypeEvent {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	return filtered
+}
+
+// isJoinLeaveEvent returns true if the message is a join/leave/rejoin event
+func isJoinLeaveEvent(msg types.Message) bool {
+	if msg.Type != types.MessageTypeEvent {
+		return false
+	}
+	body := msg.Body
+	// Check for the standard join/leave/rejoin patterns
+	// These are: "@agent joined", "@agent rejoined", "@agent left"
+	if strings.HasPrefix(body, "@") {
+		if strings.HasSuffix(body, " joined") ||
+			strings.HasSuffix(body, " rejoined") ||
+			strings.HasSuffix(body, " left") {
+			return true
+		}
+	}
+	return false
+}
+
+// filterJoinLeaveEvents removes join/leave event messages while keeping other events
+func filterJoinLeaveEvents(messages []types.Message) []types.Message {
+	filtered := make([]types.Message, 0, len(messages))
+	for _, msg := range messages {
+		if isJoinLeaveEvent(msg) {
 			continue
 		}
 		filtered = append(filtered, msg)

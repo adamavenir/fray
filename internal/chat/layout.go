@@ -141,6 +141,10 @@ func (m *Model) resize() {
 	}
 	m.input.SetHeight(lineCount)
 	inputHeight := m.input.Height() + 2
+	// Account for reply preview line when replying
+	if m.replyToID != "" {
+		inputHeight++
+	}
 
 	statusHeight := 1
 	suggestionHeight := m.suggestionHeight()

@@ -25,8 +25,9 @@ type Daemon struct {
 	database     *sql.DB
 	debouncer    *MentionDebouncer
 	detector     ActivityDetector
-	router       *router.Router     // mlld-based routing for mention interpretation
+	router       *router.Router      // mlld-based routing for mention interpretation
 	processes    map[string]*Process // agent_id -> process
+	spawning     map[string]bool     // agent_id -> true if spawn in progress (prevents races)
 	handled      map[string]bool     // agent_id -> true if exit already handled
 	drivers      map[string]Driver   // driver name -> driver
 	stopCh       chan struct{}
@@ -70,6 +71,7 @@ func New(project core.Project, database *sql.DB, cfg Config) *Daemon {
 		detector:     NewActivityDetector(),
 		router:       router.New(frayDir),
 		processes:    make(map[string]*Process),
+		spawning:     make(map[string]bool),
 		handled:      make(map[string]bool),
 		drivers:      make(map[string]Driver),
 		stopCh:       make(chan struct{}),
@@ -132,6 +134,7 @@ func (d *Daemon) Stop() error {
 		}
 	}
 	d.processes = make(map[string]*Process)
+	d.spawning = make(map[string]bool)
 	d.handled = make(map[string]bool)
 	d.mu.Unlock()
 
@@ -305,9 +308,10 @@ func (d *Daemon) poll(ctx context.Context) {
 
 	d.debugf("poll: checking %d managed agents", len(agents))
 
-	// Check for new mentions for each managed agent
+	// Check for new mentions and reactions for each managed agent
 	for _, agent := range agents {
 		d.checkMentions(ctx, agent)
+		d.checkReactions(ctx, agent)
 	}
 
 	// Update presence for running processes
@@ -437,26 +441,37 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			continue
 		}
 
-		// Check if agent has an active process (busy states)
-		// Detect orphaned state: presence=active but no tracked process
+		// Check if agent has a tracked process OR a spawn in progress
+		// Key invariant: if we have a process or spawn lock, queue - never spawn duplicates
 		d.mu.RLock()
 		_, hasProcess := d.processes[agent.AgentID]
+		isSpawning := d.spawning[agent.AgentID]
 		d.mu.RUnlock()
 
-		isBusyState := agent.Presence == types.PresenceSpawning ||
-			agent.Presence == types.PresencePrompting ||
-			agent.Presence == types.PresencePrompted ||
-			agent.Presence == types.PresenceActive
-
-		if isBusyState && hasProcess {
-			// Agent has running process, queue the mention
-			d.debugf("    %s: queued (agent busy)", msg.ID)
+		if isSpawning {
+			// Spawn already in progress - queue to avoid race condition
+			d.debugf("    %s: queued (spawn in progress)", msg.ID)
 			d.debouncer.QueueMention(agent.AgentID, msg.ID)
 			hasQueued = true
 			continue
 		}
 
-		if isBusyState && !hasProcess {
+		if hasProcess {
+			// Agent has running process - queue regardless of presence state
+			// (presence may be 'idle' if stdout went quiet, but process is still running)
+			d.debugf("    %s: queued (process running)", msg.ID)
+			d.debouncer.QueueMention(agent.AgentID, msg.ID)
+			hasQueued = true
+			continue
+		}
+
+		// No tracked process - check if presence indicates orphaned state
+		isBusyState := agent.Presence == types.PresenceSpawning ||
+			agent.Presence == types.PresencePrompting ||
+			agent.Presence == types.PresencePrompted ||
+			agent.Presence == types.PresenceActive
+
+		if isBusyState {
 			// Orphaned state: presence says busy but no tracked process
 			// Reset to idle and proceed to spawn
 			d.debugf("    %s: orphaned presence detected (was %s), resetting to idle", msg.ID, agent.Presence)
@@ -481,8 +496,19 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			d.debugf("    %s: direct=%v reply=%v - triggering spawn", msg.ID, isDirectAddress, isReplyToAgent)
 		}
 
+		// Set spawn lock BEFORE calling spawnAgent to prevent race with next poll
+		d.mu.Lock()
+		d.spawning[agent.AgentID] = true
+		d.mu.Unlock()
+
 		// Try to spawn - spawnAgent returns the last msgID included in wake prompt
 		lastIncluded, err := d.spawnAgent(ctx, agent, msg.ID)
+
+		// Clear spawn lock (process is now tracked in d.processes if successful)
+		d.mu.Lock()
+		delete(d.spawning, agent.AgentID)
+		d.mu.Unlock()
+
 		if err != nil {
 			d.debugf("    %s: spawn failed: %v", msg.ID, err)
 			continue
@@ -501,6 +527,121 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 		d.debugf("  @%s: updating watermark to %s", agent.AgentID, lastProcessedID)
 		if err := d.debouncer.UpdateWatermark(agent.AgentID, lastProcessedID); err != nil {
 			d.debugf("  @%s: watermark update failed: %v", agent.AgentID, err)
+		}
+	}
+}
+
+// checkReactions looks for new reactions to an agent's messages.
+// Reactions are treated like mentions - they can trigger spawns.
+func (d *Daemon) checkReactions(ctx context.Context, agent types.Agent) {
+	watermark := d.debouncer.GetReactionWatermark(agent.AgentID)
+	reactions, err := db.GetReactionsToAgentSince(d.database, agent.AgentID, watermark)
+	if err != nil {
+		d.debugf("  @%s: error getting reactions: %v", agent.AgentID, err)
+		return
+	}
+	if len(reactions) == 0 {
+		return
+	}
+
+	d.debugf("  @%s: found %d reactions since watermark %d", agent.AgentID, len(reactions), watermark)
+
+	// Check if agent has a tracked process OR spawn in progress - same invariant as checkMentions
+	d.mu.RLock()
+	_, hasProcess := d.processes[agent.AgentID]
+	isSpawning := d.spawning[agent.AgentID]
+	d.mu.RUnlock()
+
+	var lastProcessedAt int64
+
+	for _, reaction := range reactions {
+		d.debugf("    reaction from %s: %s on %s", reaction.ReactedBy, reaction.Emoji, reaction.MessageGUID)
+
+		// If spawn is in progress, skip - prevents race condition
+		if isSpawning {
+			d.debugf("    @%s: spawn in progress, skipping", agent.AgentID)
+			lastProcessedAt = reaction.ReactedAt
+			continue
+		}
+
+		// If we have a running process, don't spawn - just update watermark
+		if hasProcess {
+			d.debugf("    @%s: process running, skipping spawn", agent.AgentID)
+			lastProcessedAt = reaction.ReactedAt
+			continue
+		}
+
+		// No tracked process - check presence to decide whether to spawn
+		switch agent.Presence {
+		case types.PresenceOffline, types.PresenceIdle, "":
+			// Can spawn - trigger on reaction
+			d.debugf("    @%s: spawning on reaction from %s", agent.AgentID, reaction.ReactedBy)
+
+			// Update watermark BEFORE spawning to prevent race with next poll cycle
+			if err := d.debouncer.UpdateReactionWatermark(agent.AgentID, reaction.ReactedAt); err != nil {
+				d.debugf("    @%s: reaction watermark update failed: %v", agent.AgentID, err)
+			}
+
+			// Set spawn lock BEFORE calling spawnAgent to prevent race
+			d.mu.Lock()
+			d.spawning[agent.AgentID] = true
+			d.mu.Unlock()
+
+			// Spawn the agent with the reacted message as trigger
+			_, err := d.spawnAgent(ctx, agent, reaction.MessageGUID)
+
+			// Clear spawn lock
+			d.mu.Lock()
+			delete(d.spawning, agent.AgentID)
+			d.mu.Unlock()
+
+			if err != nil {
+				d.debugf("    @%s: spawn error: %v", agent.AgentID, err)
+			}
+			// Only spawn once per poll cycle
+			return
+
+		case types.PresenceSpawning, types.PresencePrompting, types.PresencePrompted, types.PresenceActive:
+			// Orphaned state: presence busy but no process (we checked above)
+			// Reset and spawn
+			d.debugf("    @%s: orphaned presence (%s), resetting to idle", agent.AgentID, agent.Presence)
+			db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, agent.Presence, types.PresenceIdle, "orphaned_reset", "daemon", agent.Status)
+			agent.Presence = types.PresenceIdle
+
+			// Update watermark BEFORE spawning
+			if err := d.debouncer.UpdateReactionWatermark(agent.AgentID, reaction.ReactedAt); err != nil {
+				d.debugf("    @%s: reaction watermark update failed: %v", agent.AgentID, err)
+			}
+
+			// Set spawn lock BEFORE calling spawnAgent to prevent race
+			d.mu.Lock()
+			d.spawning[agent.AgentID] = true
+			d.mu.Unlock()
+
+			// Now spawn
+			_, err := d.spawnAgent(ctx, agent, reaction.MessageGUID)
+
+			// Clear spawn lock
+			d.mu.Lock()
+			delete(d.spawning, agent.AgentID)
+			d.mu.Unlock()
+
+			if err != nil {
+				d.debugf("    @%s: spawn error: %v", agent.AgentID, err)
+			}
+			return
+
+		default:
+			d.debugf("    @%s: skipping (presence: %s)", agent.AgentID, agent.Presence)
+			lastProcessedAt = reaction.ReactedAt
+		}
+	}
+
+	// Update watermark for non-spawn cases (skipped reactions)
+	if lastProcessedAt > 0 {
+		d.debugf("  @%s: updating reaction watermark to %d", agent.AgentID, lastProcessedAt)
+		if err := d.debouncer.UpdateReactionWatermark(agent.AgentID, lastProcessedAt); err != nil {
+			d.debugf("  @%s: reaction watermark update failed: %v", agent.AgentID, err)
 		}
 	}
 }
@@ -707,33 +848,33 @@ func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string
 	}
 	triggerInfo := strings.Join(triggerLines, "\n")
 
-	// Wake prompt 
+	// Wake prompt - explicitly state agent identity to override any cached context
 	var prompt string
 	if minCheckin > 0 {
 		minCheckinMins := minCheckin / 60000
-		prompt = fmt.Sprintf(`You've been @mentioned. Check fray for context.
+		prompt = fmt.Sprintf(`**You are @%s.** Check fray for context.
 
 Trigger messages:
 %s
 
-Run: /fly $ARGUMENTS if this is the start of a new session 
+Run: /fly %s if this is the start of a new session
 Run: fray get %s
 
 ---
 As soon as you 'fray back', post a reply in fray (in the same thread where the message was received, using the flag "--reply-to <msg-id>") as quickly as you can to acknowledge the user, then continue.  Don't use the literal word 'ack' as it can sound like a panicked reply. Be casual and mix it up.`,
-			triggerInfo, agent.AgentID)
+			agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID)
 		_ = minCheckinMins // Reserved for future use
 	} else {
-		prompt = fmt.Sprintf(`You've been @mentioned. Check fray for context.
+		prompt = fmt.Sprintf(`**You are @%s.** Check fray for context.
 
 Trigger messages:
 %s
 
-Run: /fly $ARGUMENTS if this is the start of a new session
-Run: fray get %s 
+Run: /fly %s if this is the start of a new session
+Run: fray get %s
 
 As soon as you 'fray back', post a reply in fray (in the same thread where the message was received, using the flag "--reply-to <msg-id>") as quickly as you can to acknowledge the user, then continue. Don't use the literal word 'ack' as it can sound like a panicked reply. Be casual and mix it up.`,
-			triggerInfo, agent.AgentID)
+			agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID)
 	}
 
 	return prompt, allMentions

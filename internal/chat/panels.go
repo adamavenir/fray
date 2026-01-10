@@ -395,6 +395,40 @@ func (m *Model) switchChannel(entry channelEntry) error {
 	m.projectDBPath = project.DBPath
 	m.projectName = filepath.Base(project.Root)
 
+	// Reset thread navigation state - threads from old channel don't exist here
+	m.currentThread = nil
+	m.currentPseudo = ""
+	m.threadMessages = nil
+	m.drillPath = nil
+	m.threadScrollOffset = 0
+
+	// Reset edit mode if active
+	if m.editingMessageID != "" {
+		m.exitEditMode()
+	}
+
+	// Clear pending input (user was composing for old channel)
+	if m.input.Value() != "" {
+		m.input.Reset()
+		m.clearSuggestions()
+		m.lastInputValue = ""
+		m.lastInputPos = 0
+	}
+
+	// Reload threads for new channel
+	threads, threadIndex := loadThreads(dbConn, m.username)
+	m.threads = threads
+	m.threadIndex = threadIndex
+
+	// Refresh thread-related state
+	m.refreshUnreadCounts()
+	m.refreshFavedThreads()
+	m.refreshSubscribedThreads()
+	m.refreshMutedThreads()
+	m.refreshThreadNicknames()
+	m.refreshAvatars()
+	m.refreshQuestionCounts()
+
 	if err := m.reloadMessages(); err != nil {
 		return err
 	}
@@ -930,10 +964,8 @@ func (m *Model) renderThreadPanel() string {
 	activityLines, activityHeight := m.renderActivitySection(width)
 
 	// Virtual scrolling: calculate visible range
-	headerLines := 1 // blank line at top
-	if showHeader {
-		headerLines = 2 // header + blank line
-	}
+	// Header is always 2 lines: either header+blank or filter-hint+blank
+	headerLines := 2
 	// Reserve space: header lines + footer(1) + padding(1) + activity section
 	visibleHeight := m.height - headerLines - 2 - activityHeight
 	if visibleHeight < 1 {

@@ -409,6 +409,7 @@ type AccordionOptions struct {
 	ProjectName  string
 	AgentBases   map[string]struct{}
 	QuotedMsgs   map[string]*types.Message // Map of message ID -> quoted message for inline display
+	PinnedGUIDs  map[string]bool           // Pinned messages shown fully even in collapsed section
 }
 
 // FormatMessageListAccordion formats a list of messages with accordion collapsing.
@@ -457,14 +458,19 @@ func FormatMessageListAccordion(messages []types.Message, opts AccordionOptions)
 		lines = append(lines, formatMsg(messages[i]))
 	}
 
-	// Middle messages (preview format)
+	// Middle messages (preview format, except pinned messages shown in full)
 	middleStart := headCount
 	middleEnd := len(messages) - tailCount
 	if middleEnd > middleStart {
 		collapsedCount := middleEnd - middleStart
 		lines = append(lines, fmt.Sprintf("%s  ... %d messages collapsed ...%s", dim, collapsedCount, reset))
 		for i := middleStart; i < middleEnd; i++ {
-			lines = append(lines, FormatMessagePreview(messages[i], opts.ProjectName))
+			msg := messages[i]
+			if opts.PinnedGUIDs[msg.ID] {
+				lines = append(lines, formatMsg(msg))
+			} else {
+				lines = append(lines, FormatMessagePreview(msg, opts.ProjectName))
+			}
 		}
 		lines = append(lines, fmt.Sprintf("%s  ... end collapsed ...%s", dim, reset))
 	}

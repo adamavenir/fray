@@ -321,7 +321,8 @@ func (m *Model) currentMessages() []types.Message {
 			messages = m.threadMessages
 		}
 	} else {
-		messages = m.messages
+		// Main room - filter out join/leave events to reduce clutter
+		messages = filterJoinLeaveEvents(m.messages)
 	}
 	return filterDeletedMessages(messages)
 }

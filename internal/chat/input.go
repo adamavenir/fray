@@ -7,6 +7,7 @@ import (
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/types"
 	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -19,12 +20,33 @@ func (m *Model) insertInputText(text string) {
 	m.resize()
 }
 
+// safeInputUpdate calls textarea.Update with panic recovery.
+// The bubbles textarea can panic during cursor navigation at soft-wrap
+// boundaries (known library issue). This wrapper catches such panics
+// and preserves the current input state.
+func (m *Model) safeInputUpdate(msg tea.Msg) tea.Cmd {
+	defer func() {
+		if r := recover(); r != nil {
+			// Textarea panicked during update - preserve current state
+			// This typically happens during word navigation (alt-arrow)
+			// at soft-wrap boundaries in the bubbles library
+			m.status = "Navigation error (recovered)"
+		}
+	}()
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return cmd
+}
+
 func (m *Model) inputCursorPos() int {
 	value := m.input.Value()
 	if value == "" {
 		return 0
 	}
 	lines := strings.Split(value, "\n")
+	if len(lines) == 0 {
+		return 0
+	}
 	row := m.input.Line()
 	if row < 0 {
 		row = 0
@@ -32,7 +54,10 @@ func (m *Model) inputCursorPos() int {
 	if row >= len(lines) {
 		row = len(lines) - 1
 	}
-	col := m.input.LineInfo().ColumnOffset
+	// Safely get column offset - the textarea may return invalid values
+	// during soft-wrap recalculation
+	lineInfo := m.input.LineInfo()
+	col := lineInfo.ColumnOffset
 	if col < 0 {
 		col = 0
 	}

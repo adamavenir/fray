@@ -59,9 +59,10 @@ type Agent struct {
 	Managed          bool           `json:"managed,omitempty"`           // whether daemon controls this agent
 	Invoke           *InvokeConfig  `json:"invoke,omitempty"`            // daemon invocation config
 	Presence         PresenceState  `json:"presence,omitempty"`          // daemon-tracked presence state
-	MentionWatermark *string        `json:"mention_watermark,omitempty"` // last processed mention msg_id
-	LastHeartbeat    *int64         `json:"last_heartbeat,omitempty"`    // last silent checkin timestamp (ms)
-	LastSessionID    *string        `json:"last_session_id,omitempty"`   // Claude Code session ID for --resume
+	MentionWatermark  *string        `json:"mention_watermark,omitempty"`  // last processed mention msg_id
+	ReactionWatermark *int64         `json:"reaction_watermark,omitempty"` // last processed reaction timestamp (ms)
+	LastHeartbeat     *int64         `json:"last_heartbeat,omitempty"`     // last silent checkin timestamp (ms)
+	LastSessionID     *string        `json:"last_session_id,omitempty"`    // Claude Code session ID for --resume
 }
 
 // ReactionEntry represents a single reaction from an agent.

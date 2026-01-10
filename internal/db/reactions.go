@@ -174,6 +174,48 @@ func InsertReactionNow(db *sql.DB, messageGUID, agentID, emoji string) (int64, e
 	return reactedAt, err
 }
 
+// ReactionNotification represents a reaction that should notify an agent.
+type ReactionNotification struct {
+	MessageGUID string
+	MessageBody string
+	MessageHome string
+	Emoji       string
+	ReactedBy   string
+	ReactedAt   int64
+}
+
+// GetReactionsToAgentSince returns reactions to an agent's messages since a timestamp.
+// This is used by the daemon to notify agents about reactions to their content.
+func GetReactionsToAgentSince(db *sql.DB, agentID string, sinceMs int64) ([]ReactionNotification, error) {
+	query := `
+		SELECT r.message_guid, m.body, m.home, r.emoji, r.agent_id, r.reacted_at
+		FROM fray_reactions r
+		INNER JOIN fray_messages m ON m.guid = r.message_guid
+		WHERE (m.from_agent = ? OR m.from_agent LIKE ?)
+		AND r.agent_id != ?
+		AND r.agent_id NOT LIKE ?
+		AND r.reacted_at > ?
+		ORDER BY r.reacted_at ASC
+		LIMIT 100
+	`
+	// Match agent and sub-agents, exclude self-reactions
+	rows, err := db.Query(query, agentID, agentID+".%", agentID, agentID+".%", sinceMs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []ReactionNotification
+	for rows.Next() {
+		var n ReactionNotification
+		if err := rows.Scan(&n.MessageGUID, &n.MessageBody, &n.MessageHome, &n.Emoji, &n.ReactedBy, &n.ReactedAt); err != nil {
+			return nil, err
+		}
+		results = append(results, n)
+	}
+	return results, rows.Err()
+}
+
 // Legacy helpers for backward compatibility with old JSON reactions format.
 // These will be removed once migration is complete.
 
