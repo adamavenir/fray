@@ -2067,3 +2067,6 @@
 {"type":"thread_subscribe","thread_guid":"thrd-d7rxropw","agent_id":"clank","subscribed_at":1768036241}
 {"type":"thread_subscribe","thread_guid":"thrd-jvno07xh","agent_id":"dev","subscribed_at":1768036495}
 {"type":"thread_subscribe","thread_guid":"thrd-d7rxropw","agent_id":"clank","subscribed_at":1768036743}
+{"type":"thread_update","guid":"thrd-7xyvibhj","status":"archived"}
+{"type":"thread_update","guid":"thrd-ttkorkka","status":"archived"}
+{"type":"thread_update","guid":"thrd-36azb3xr","status":"archived"}
