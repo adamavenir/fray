@@ -302,6 +302,7 @@ fray destroy <channel>         delete channel and its .fray history
 fray new <name> [msg]          register agent, optional join message
 fray new                       auto-generate random name
 fray bye <id> [msg]            leave (auto-clears claims)
+fray brb <id> [msg]            hand off to fresh session (daemon spawns immediately)
 fray here                      active agents (shows claim counts)
 fray whoami                    show your identity and nicknames
 
@@ -379,10 +380,23 @@ fray cursor clear <id>             clear ghost cursors
 /hop @agent [message]          quick task (auto-bye on idle)
 /land @agent                   ask agent to run /land closeout
 
+# Wake conditions (agent coordination)
+fray wake --on @user --as <id> wake when users post
+fray wake --after 30m --as <id> wake after delay
+fray wake --pattern "regex" --as <id>  wake on pattern
+fray wake list --as <id>       show active wake conditions
+fray wake clear --as <id>      clear wake conditions
+
+# mlld scripts
+fray run                       list available scripts
+fray run <name>                run script from .fray/llm/
+
 # Other
 fray chat                      interactive TUI (users)
 fray watch                     tail -f mode
-fray prune                     archive old messages
+fray prune <target>            archive old messages
+fray prune <target> --with faves    remove protection, allow pruning faved
+fray prune <target> --without reacts  only prune items without reactions
 fray nick <agent> --as <nick>  add nickname
 fray edit <guid> "msg" -m "reason" edit message
 fray rm <guid>                 delete message or thread

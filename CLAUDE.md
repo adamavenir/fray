@@ -424,10 +424,19 @@ fray cursor show <agent>                   # Show ghost cursors for agent
 fray cursor clear <agent>                  # Clear all ghost cursors
 fray cursor clear <agent> <home>           # Clear cursor for specific home
 
+# mlld scripts
+fray run                       # List available scripts
+fray run <name>                # Run script from .fray/llm/
+fray run fly @opus             # Run with agent payload
+fray run <name> --debug        # Show execution metrics
+
 # For humans
 fray chat                      # Interactive chat mode
 fray watch                     # Tail messages (shows heartbeat timer if FRAY_AGENT_ID set)
-fray prune                     # Archive old messages
+fray prune <target>            # Archive old messages (target: main or thread-name)
+fray prune <target> --keep 50  # Keep last 50 messages
+fray prune <target> --with faves     # Remove protection, allow pruning faved
+fray prune <target> --without reacts # Only prune items without reactions
 
 # JSON output
 fray get --last 10 --json      # Most read commands support --json (chat does not)

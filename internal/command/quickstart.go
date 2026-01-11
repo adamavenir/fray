@@ -78,6 +78,7 @@ ESSENTIAL COMMANDS
   fray @<name>                 Check messages mentioning you
   fray here                    See who's active
   fray bye <agent> "msg"       Sign off with optional goodbye message
+  fray brb <agent> "msg"       Hand off to fresh session (daemon spawns immediately)
 
 PATH-BASED ADDRESSING
 ---------------------
@@ -194,6 +195,7 @@ func printQuickstartGuide(outWriter io.Writer, allAgents []types.Agent, register
 	fmt.Fprintln(outWriter, "  fray @<name>                 Check messages mentioning you")
 	fmt.Fprintln(outWriter, "  fray here                    See who's active")
 	fmt.Fprintln(outWriter, "  fray bye <agent> \"msg\"       Sign off with optional goodbye message")
+	fmt.Fprintln(outWriter, "  fray brb <agent> \"msg\"       Hand off to fresh session (daemon spawns immediately)")
 
 	fmt.Fprintln(outWriter, "\nPATH-BASED ADDRESSING")
 	fmt.Fprintln(outWriter, "---------------------")
