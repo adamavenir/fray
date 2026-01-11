@@ -367,6 +367,7 @@ type SessionEnd struct {
 	DurationMs int64   `json:"duration_ms"`
 	EndedAt    int64   `json:"ended_at"`
 	LastMsgID  *string `json:"last_msg_id,omitempty"`
+	Stderr     *string `json:"stderr,omitempty"`
 }
 
 // SessionHeartbeat records periodic session health updates.

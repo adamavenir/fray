@@ -63,6 +63,16 @@ func (b *StdoutBuffer) String() string {
 	return string(b.Bytes())
 }
 
+// SpawnMode indicates how an agent session was spawned.
+type SpawnMode string
+
+const (
+	SpawnModeNormal SpawnMode = ""     // Regular @mention spawn
+	SpawnModeFly    SpawnMode = "fly"  // /fly command - full session
+	SpawnModeHop    SpawnMode = "hop"  // /hop command - auto-bye on idle
+	SpawnModeLand   SpawnMode = "land" // /land command - asking to close out
+)
+
 // Process represents a spawned agent process.
 type Process struct {
 	Cmd              *exec.Cmd
@@ -76,6 +86,8 @@ type Process struct {
 	BaselineInput    int64         // Baseline input tokens at spawn (for resumed sessions)
 	BaselineOutput   int64         // Baseline output tokens at spawn (for resumed sessions)
 	StdoutBuffer     *StdoutBuffer // Ring buffer capturing last ~4KB of stdout
+	StderrBuffer     *StdoutBuffer // Ring buffer capturing last ~4KB of stderr
+	SpawnMode        SpawnMode     // How this session was spawned (fly, hop, land, or normal)
 }
 
 // Driver defines the interface for CLI-specific agent spawning.

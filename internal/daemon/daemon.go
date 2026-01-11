@@ -17,6 +17,7 @@ import (
 	"github.com/adamavenir/fray/internal/db"
 	"github.com/adamavenir/fray/internal/router"
 	"github.com/adamavenir/fray/internal/types"
+	mlld "github.com/mlld-lang/mlld/sdk/go"
 )
 
 // Daemon watches for @mentions and spawns managed agents.
@@ -27,6 +28,7 @@ type Daemon struct {
 	debouncer     *MentionDebouncer
 	detector      ActivityDetector
 	router        *router.Router      // mlld-based routing for mention interpretation
+	mlldClient    *mlld.Client        // mlld client for prompt template execution
 	processes     map[string]*Process // agent_id -> process
 	spawning      map[string]bool     // agent_id -> true if spawn in progress (prevents races)
 	handled       map[string]bool     // agent_id -> true if exit already handled
@@ -66,12 +68,19 @@ func New(project core.Project, database *sql.DB, cfg Config) *Daemon {
 	}
 
 	frayDir := filepath.Dir(project.DBPath)
+
+	// Create mlld client for prompt template execution
+	mlldClient := mlld.New()
+	mlldClient.Timeout = 30 * time.Second
+	mlldClient.WorkingDir = project.Root
+
 	d := &Daemon{
 		project:       project,
 		database:      database,
 		debouncer:     NewMentionDebouncer(database, project.DBPath),
 		detector:      NewActivityDetector(),
 		router:        router.New(frayDir),
+		mlldClient:    mlldClient,
 		processes:     make(map[string]*Process),
 		spawning:      make(map[string]bool),
 		handled:       make(map[string]bool),
@@ -531,7 +540,8 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 		}
 
 		// Error state blocks auto-spawn - requires manual recovery via "fray back"
-		if agent.Presence == types.PresenceError {
+		// Exception: interrupts (!@agent, !!@agent) bypass error state
+		if agent.Presence == types.PresenceError && !isInterrupt {
 			d.debugf("    %s: skip (agent in error state, needs manual recovery)", msg.ID)
 			// Advance watermark to avoid retrying the same message
 			if !hasQueued {
@@ -1237,8 +1247,8 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 	}
 
 	// Build wake prompt and get all included mentions
-	prompt, allMentions := d.buildWakePrompt(agent, triggerMsgID)
-	d.debugf("  wake prompt includes %d mentions", len(allMentions))
+	prompt, spawnMode, allMentions := d.buildWakePrompt(agent, triggerMsgID)
+	d.debugf("  wake prompt includes %d mentions, mode=%s", len(allMentions), spawnMode)
 
 	// Spawn process
 	proc, err := driver.Spawn(ctx, agent, prompt)
@@ -1247,6 +1257,9 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 		db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, types.PresenceSpawning, types.PresenceError, "spawn_error", "daemon", agent.Status)
 		return "", err
 	}
+
+	// Track spawn mode for special handling (e.g., /hop auto-bye)
+	proc.SpawnMode = spawnMode
 
 	d.debugf("  spawned pid %d", proc.Cmd.Process.Pid)
 
@@ -1421,8 +1434,9 @@ Check your notes for context from the previous session.`,
 func (d *Daemon) monitorProcess(agentID string, proc *Process) {
 	defer d.wg.Done()
 
-	// Create ring buffer for stdout capture (4KB)
+	// Create ring buffers for stdout/stderr capture (4KB each)
 	proc.StdoutBuffer = NewStdoutBuffer(4096)
+	proc.StderrBuffer = NewStdoutBuffer(4096)
 
 	// Drain stdout/stderr to prevent blocking
 	var wg sync.WaitGroup
@@ -1455,8 +1469,12 @@ func (d *Daemon) monitorProcess(agentID string, proc *Process) {
 			buf := make([]byte, 4096)
 			for {
 				n, err := proc.Stderr.Read(buf)
-				if n > 0 && proc.Cmd.Process != nil {
-					d.detector.RecordActivity(proc.Cmd.Process.Pid)
+				if n > 0 {
+					// Capture to ring buffer for error debugging
+					proc.StderrBuffer.Write(buf[:n])
+					if proc.Cmd.Process != nil {
+						d.detector.RecordActivity(proc.Cmd.Process.Pid)
+					}
 				}
 				if err != nil {
 					break
@@ -1490,26 +1508,120 @@ func (d *Daemon) monitorProcess(agentID string, proc *Process) {
 	}
 }
 
+// detectSpawnMode checks the trigger message for /fly, /hop, /land patterns.
+// Returns the spawn mode and optionally a user message that follows the command.
+func detectSpawnMode(body string, agentID string) (SpawnMode, string) {
+	// Look for patterns like "@agent /fly", "@agent /hop", "@agent /land"
+	patterns := []struct {
+		suffix string
+		mode   SpawnMode
+	}{
+		{" /fly", SpawnModeFly},
+		{" /hop", SpawnModeHop},
+		{" /land", SpawnModeLand},
+	}
+
+	agentMention := "@" + agentID
+	bodyLower := strings.ToLower(body)
+	for _, p := range patterns {
+		pattern := strings.ToLower(agentMention + p.suffix)
+		if strings.HasPrefix(bodyLower, pattern) {
+			// Extract any user message after the command
+			remainder := strings.TrimSpace(body[len(agentMention)+len(p.suffix):])
+			return p.mode, remainder
+		}
+	}
+	return SpawnModeNormal, ""
+}
+
+// PromptPayload is the input to prompt template execution.
+type PromptPayload struct {
+	Agent         string   `json:"agent"`
+	TriggerMsgIDs []string `json:"triggerMsgIDs"`
+	UserTask      string   `json:"userTask,omitempty"`
+}
+
+// executePromptTemplate runs an mlld template and returns the prompt string.
+// Falls back to empty string if template doesn't exist or execution fails.
+// Template location:
+//   - prompts/: mention-fresh, mention-resume (daemon spawn context)
+//   - slash/: fly, hop, land (skill templates)
+func (d *Daemon) executePromptTemplate(templateName string, payload PromptPayload) (string, error) {
+	// Determine template directory based on template type
+	var templateDir string
+	switch templateName {
+	case "mention-fresh", "mention-resume":
+		templateDir = "prompts"
+	default:
+		templateDir = "slash"
+	}
+	templatePath := filepath.Join(d.project.Root, ".fray", "llm", templateDir, templateName+".mld")
+
+	// Check if template exists
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		d.debugf("  template %s not found at %s", templateName, templatePath)
+		return "", fmt.Errorf("template not found: %s", templateName)
+	}
+
+	// Execute the template
+	result, err := d.mlldClient.Execute(templatePath, payload, nil)
+	if err != nil {
+		d.debugf("  mlld execute error for %s: %v", templateName, err)
+		return "", fmt.Errorf("mlld execute failed: %w", err)
+	}
+
+	return result.Output, nil
+}
+
 // buildWakePrompt creates the prompt for waking an agent.
-// Returns the prompt and the list of all msgIDs included.
-func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string, []string) {
+// Uses mlld templates from .fray/llm/prompts/ and .fray/llm/slash/ with fallback to inline prompts.
+// Returns the prompt, spawn mode, and the list of all msgIDs included.
+func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string, SpawnMode, []string) {
 	// Include any pending mentions
 	pending := d.debouncer.FlushPending(agent.AgentID)
 	allMentions := append([]string{triggerMsgID}, pending...)
 
-	// Get min_checkin for the prompt
-	_, _, minCheckin, _ := GetTimeouts(agent.Invoke)
-
-	// Check for fork spawn: was this agent mentioned with @agent#sessid syntax?
-	var forkSessionID string
+	// Check for /fly, /hop, /land patterns in trigger message
 	triggerMsg, _ := db.GetMessage(d.database, triggerMsgID)
-	if triggerMsg != nil && triggerMsg.ForkSessions != nil {
-		if sessID, ok := triggerMsg.ForkSessions[agent.AgentID]; ok {
-			forkSessionID = sessID
-		}
+	spawnMode := SpawnModeNormal
+	var userMessage string
+	if triggerMsg != nil {
+		spawnMode, userMessage = detectSpawnMode(triggerMsg.Body, agent.AgentID)
 	}
 
-	// Group messages by home (thread) for better context
+	// Determine which template to use based on spawn mode
+	var templateName string
+	switch spawnMode {
+	case SpawnModeFly:
+		templateName = "mention-fresh"
+	case SpawnModeHop:
+		templateName = "hop"
+	case SpawnModeLand:
+		templateName = "land"
+	default:
+		templateName = "mention-resume"
+	}
+
+	// Try to execute mlld template
+	payload := PromptPayload{
+		Agent:         agent.AgentID,
+		TriggerMsgIDs: allMentions,
+		UserTask:      userMessage,
+	}
+
+	if prompt, err := d.executePromptTemplate(templateName, payload); err == nil && prompt != "" {
+		d.debugf("  using mlld template %s", templateName)
+		return prompt, spawnMode, allMentions
+	}
+
+	// Fallback to inline prompts if template execution fails
+	d.debugf("  falling back to inline prompt (template %s unavailable)", templateName)
+	return d.buildInlinePrompt(agent, triggerMsgID, spawnMode, userMessage, allMentions)
+}
+
+// buildInlinePrompt generates a prompt using hardcoded templates (fallback).
+func (d *Daemon) buildInlinePrompt(agent types.Agent, triggerMsgID string, spawnMode SpawnMode, userMessage string, allMentions []string) (string, SpawnMode, []string) {
+	// Build trigger info with thread context
 	homeGroups := make(map[string][]string)
 	for _, msgID := range allMentions {
 		msg, err := db.GetMessage(d.database, msgID)
@@ -1524,7 +1636,6 @@ func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string
 		homeGroups[home] = append(homeGroups[home], msgID)
 	}
 
-	// Build trigger info with thread context
 	var triggerLines []string
 	for home, msgIDs := range homeGroups {
 		if home == "room" {
@@ -1535,73 +1646,86 @@ func (d *Daemon) buildWakePrompt(agent types.Agent, triggerMsgID string) (string
 	}
 	triggerInfo := strings.Join(triggerLines, "\n")
 
-	// Build fork context if this is a fork spawn
-	forkContext := ""
-	if forkSessionID != "" {
-		// Get messages from the fork session for context
-		forkMsgs := d.getSessionMessages(forkSessionID, agent.AgentID, 5)
-		if len(forkMsgs) > 0 {
-			var msgSummaries []string
-			for _, msg := range forkMsgs {
-				preview := msg.Body
-				if len(preview) > 100 {
-					preview = preview[:100] + "..."
-				}
-				msgSummaries = append(msgSummaries, fmt.Sprintf("  - [%s] %s", msg.ID, preview))
-			}
-			forkContext = fmt.Sprintf(`
-**Fork Context (session %s):**
-This spawn was triggered with @%s#%s syntax, meaning you should have context from a prior session.
-Recent messages from that session:
-%s
-
-Use this context to continue the work without re-reading everything.
-`,
-				forkSessionID, agent.AgentID, forkSessionID, strings.Join(msgSummaries, "\n"))
-		} else {
-			forkContext = fmt.Sprintf(`
-**Fork Context (session %s):**
-This spawn was triggered with @%s#%s syntax, but no messages from that session were found.
-The session ID may be invalid or the messages may have been pruned.
-`,
-				forkSessionID, agent.AgentID, forkSessionID)
-		}
+	// Build prompt based on spawn mode
+	var prompt string
+	switch spawnMode {
+	case SpawnModeFly:
+		prompt = d.buildFlyPromptInline(agent, userMessage, triggerInfo)
+	case SpawnModeHop:
+		prompt = d.buildHopPromptInline(agent, userMessage, triggerInfo)
+	case SpawnModeLand:
+		prompt = d.buildLandPromptInline(agent, triggerInfo)
+	default:
+		prompt = d.buildResumePromptInline(agent, triggerInfo)
 	}
 
-	// Wake prompt - explicitly state agent identity to override any cached context
-	var prompt string
-	if minCheckin > 0 {
-		minCheckinMins := minCheckin / 60000
-		prompt = fmt.Sprintf(`**You are @%s.** Check fray for context.
+	return prompt, spawnMode, allMentions
+}
+
+// buildFlyPromptInline creates the fallback prompt for /fly command spawns.
+func (d *Daemon) buildFlyPromptInline(agent types.Agent, userMessage, triggerInfo string) string {
+	taskContext := ""
+	if userMessage != "" {
+		taskContext = fmt.Sprintf("\n\nUser's task:\n%s", userMessage)
+	}
+
+	return fmt.Sprintf(`**You are @%s.** Starting a new session.
 
 Trigger messages:
 %s
 %s
-Run: /fly %s if this is the start of a new session
-Run: fray get %s
+---
+This is a fresh session. Check your notes (fray get meta/%s/notes) for prior context, then proceed with the task.
+
+IMPORTANT: Users only see messages posted to fray. Your stdout is not visible. Post progress updates and summaries to fray so users can follow your work.`,
+		agent.AgentID, triggerInfo, taskContext, agent.AgentID)
+}
+
+// buildHopPromptInline creates the fallback prompt for /hop command spawns.
+func (d *Daemon) buildHopPromptInline(agent types.Agent, userMessage, triggerInfo string) string {
+	taskContext := ""
+	if userMessage != "" {
+		taskContext = fmt.Sprintf("\n\nUser's task:\n%s", userMessage)
+	}
+
+	return fmt.Sprintf(`**You are @%s.** Quick hop-in task.
+
+Trigger messages:
+%s
+%s
+---
+Complete this task efficiently, then run 'fray bye %s' when done. If you go idle without completing, you'll be auto-terminated.
+
+IMPORTANT: Users only see messages posted to fray. Your stdout is not visible. Post progress updates to fray so users can follow your work.`,
+		agent.AgentID, triggerInfo, taskContext, agent.AgentID)
+}
+
+// buildLandPromptInline creates the fallback prompt for /land command messages.
+func (d *Daemon) buildLandPromptInline(agent types.Agent, triggerInfo string) string {
+	return fmt.Sprintf(`**@%s** - User is asking you to close out your session.
+
+Trigger: %s
+
+Generate a standup report and clean up your session:
+1. Post a brief standup to the room
+2. Update your notes with handoff context
+3. Clear claims: fray clear @%s
+4. Leave: fray bye %s "standup message"`,
+		agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID)
+}
+
+// buildResumePromptInline creates the fallback prompt for regular @mention wakes.
+func (d *Daemon) buildResumePromptInline(agent types.Agent, triggerInfo string) string {
+	return fmt.Sprintf(`**You are @%s.** Check fray for context.
+
+Trigger messages:
+%s
 
 ---
-After 'fray back', reply in the thread where you were mentioned (using "--reply-to <msg-id>"). If you can answer the question immediately and with confidence, just answer directly - no need to ack first. Otherwise, ack quickly then continue. Don't use the literal word 'ack'. Be casual.
+Reply in the thread where you were mentioned (use --reply-to <msg-id>). If you can answer immediately, just answer. Otherwise, acknowledge briefly then continue.
 
 IMPORTANT: Users only see messages posted to fray. Your stdout is not visible. Post progress updates and summaries to fray so users can follow your work.`,
-			agent.AgentID, triggerInfo, forkContext, agent.AgentID, agent.AgentID)
-		_ = minCheckinMins // Reserved for future use
-	} else {
-		prompt = fmt.Sprintf(`**You are @%s.** Check fray for context.
-
-Trigger messages:
-%s
-%s
-Run: /fly %s if this is the start of a new session
-Run: fray get %s
-
-After 'fray back', reply in the thread where you were mentioned (using "--reply-to <msg-id>"). If you can answer the question immediately and with confidence, just answer directly - no need to ack first. Otherwise, ack quickly then continue. Don't use the literal word 'ack'. Be casual.
-
-IMPORTANT: Users only see messages posted to fray. Your stdout is not visible. Post progress updates and summaries to fray so users can follow your work.`,
-			agent.AgentID, triggerInfo, forkContext, agent.AgentID, agent.AgentID)
-	}
-
-	return prompt, allMentions
+		agent.AgentID, triggerInfo)
 }
 
 // getSessionMessages retrieves recent messages from a specific session for fork context.
@@ -1756,6 +1880,13 @@ func (d *Daemon) updatePresence() {
 			}
 
 		case types.PresenceIdle:
+			// /hop auto-bye: if this is a hop session and agent goes idle, terminate
+			if proc.SpawnMode == SpawnModeHop {
+				d.debugf("  @%s: hop session went idle, auto-terminating", agentID)
+				d.killProcess(agentID, proc, "hop auto-bye: idle")
+				continue
+			}
+
 			// Done-detection: if idle AND no fray activity for min_checkin, kill session
 			if minCheckin > 0 {
 				lastPostTs, _ := db.GetAgentLastPostTime(d.database, agentID)
@@ -1833,6 +1964,15 @@ func (d *Daemon) handleProcessExit(agentID string, proc *Process) bool {
 		EndedAt:    time.Now().Unix(),
 		LastMsgID:  lastMsgID,
 	}
+
+	// Capture stderr on error exits for debugging
+	if exitCode != 0 && proc.StderrBuffer != nil {
+		stderr := strings.TrimSpace(proc.StderrBuffer.String())
+		if len(stderr) > 0 {
+			sessionEnd.Stderr = &stderr
+		}
+	}
+
 	db.AppendSessionEnd(d.project.DBPath, sessionEnd)
 
 	// Session ID is now stored at spawn time (we generate it ourselves with --session-id)
