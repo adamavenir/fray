@@ -13,12 +13,22 @@ import (
 )
 
 var agentPalette = []lipgloss.Color{
-	lipgloss.Color("111"),
-	lipgloss.Color("157"),
-	lipgloss.Color("216"),
-	lipgloss.Color("36"),
-	lipgloss.Color("183"),
-	lipgloss.Color("230"),
+	lipgloss.Color("138"), // dusty rose
+	lipgloss.Color("114"), // sage green
+	lipgloss.Color("141"), // light purple
+	lipgloss.Color("208"), // orange
+	lipgloss.Color("80"),  // sky cyan
+	lipgloss.Color("227"), // bright yellow
+	lipgloss.Color("182"), // mauve
+	lipgloss.Color("77"),  // lime green
+	lipgloss.Color("69"),  // periwinkle blue
+	lipgloss.Color("215"), // peach
+	lipgloss.Color("44"),  // turquoise
+	lipgloss.Color("183"), // lavender
+	lipgloss.Color("174"), // soft coral
+	lipgloss.Color("156"), // pale green
+	lipgloss.Color("99"),  // medium purple
+	lipgloss.Color("214"), // golden yellow
 }
 
 func buildColorMap(dbConn *sql.DB, lookback int, includeArchived bool) (map[string]lipgloss.Color, error) {

@@ -39,12 +39,22 @@ var colorPairs = []struct {
 	Bright string
 	Dim    string
 }{
-	{Bright: ansiCode("\x1b[38;5;111m"), Dim: ansiCode("\x1b[38;5;105m")},
-	{Bright: ansiCode("\x1b[38;5;157m"), Dim: ansiCode("\x1b[38;5;156m")},
-	{Bright: ansiCode("\x1b[38;5;216m"), Dim: ansiCode("\x1b[38;5;215m")},
-	{Bright: ansiCode("\x1b[38;5;36m"), Dim: ansiCode("\x1b[38;5;30m")},
-	{Bright: ansiCode("\x1b[38;5;183m"), Dim: ansiCode("\x1b[38;5;141m")},
-	{Bright: ansiCode("\x1b[38;5;230m"), Dim: ansiCode("\x1b[38;5;229m")},
+	{Bright: ansiCode("\x1b[38;5;138m"), Dim: ansiCode("\x1b[38;5;95m")},  // dusty rose
+	{Bright: ansiCode("\x1b[38;5;114m"), Dim: ansiCode("\x1b[38;5;108m")}, // sage green
+	{Bright: ansiCode("\x1b[38;5;141m"), Dim: ansiCode("\x1b[38;5;135m")}, // light purple
+	{Bright: ansiCode("\x1b[38;5;208m"), Dim: ansiCode("\x1b[38;5;172m")}, // orange
+	{Bright: ansiCode("\x1b[38;5;80m"), Dim: ansiCode("\x1b[38;5;74m")},   // sky cyan
+	{Bright: ansiCode("\x1b[38;5;227m"), Dim: ansiCode("\x1b[38;5;221m")}, // bright yellow
+	{Bright: ansiCode("\x1b[38;5;182m"), Dim: ansiCode("\x1b[38;5;139m")}, // mauve
+	{Bright: ansiCode("\x1b[38;5;77m"), Dim: ansiCode("\x1b[38;5;71m")},   // lime green
+	{Bright: ansiCode("\x1b[38;5;69m"), Dim: ansiCode("\x1b[38;5;63m")},   // periwinkle blue
+	{Bright: ansiCode("\x1b[38;5;215m"), Dim: ansiCode("\x1b[38;5;179m")}, // peach
+	{Bright: ansiCode("\x1b[38;5;44m"), Dim: ansiCode("\x1b[38;5;37m")},   // turquoise
+	{Bright: ansiCode("\x1b[38;5;183m"), Dim: ansiCode("\x1b[38;5;177m")}, // lavender
+	{Bright: ansiCode("\x1b[38;5;174m"), Dim: ansiCode("\x1b[38;5;138m")}, // soft coral
+	{Bright: ansiCode("\x1b[38;5;156m"), Dim: ansiCode("\x1b[38;5;150m")}, // pale green
+	{Bright: ansiCode("\x1b[38;5;99m"), Dim: ansiCode("\x1b[38;5;93m")},   // medium purple
+	{Bright: ansiCode("\x1b[38;5;214m"), Dim: ansiCode("\x1b[38;5;178m")}, // golden yellow
 }
 
 var (

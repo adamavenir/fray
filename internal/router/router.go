@@ -35,21 +35,31 @@ type RouterPayload struct {
 	Thread  *string `json:"thread"`  // Thread context (nil if room)
 }
 
+// ReactionPayload is the input to the reaction router.
+type ReactionPayload struct {
+	Emoji   string `json:"emoji"`   // The reaction (emoji or short text)
+	Message string `json:"message"` // The message that was reacted to
+	Agent   string `json:"agent"`   // The agent who authored the message
+}
+
 // Router wraps the mlld router for daemon command dispatch.
 type Router struct {
-	client     *mlld.Client
-	routerPath string
-	available  bool
+	client             *mlld.Client
+	routerPath         string
+	reactionRouterPath string
+	frayDir            string
+	available          bool
 }
 
 // New creates a new Router for the given fray project.
 // Returns a Router that gracefully degrades if mlld is unavailable.
 func New(frayDir string) *Router {
 	routerPath := filepath.Join(frayDir, "llm", "router.mld")
+	reactionRouterPath := filepath.Join(frayDir, "llm", "reaction-router.mld")
 
 	// Check if router file exists
 	if _, err := os.Stat(routerPath); os.IsNotExist(err) {
-		return &Router{available: false}
+		return &Router{available: false, frayDir: frayDir}
 	}
 
 	client := mlld.New()
@@ -57,9 +67,11 @@ func New(frayDir string) *Router {
 	client.WorkingDir = frayDir
 
 	return &Router{
-		client:     client,
-		routerPath: routerPath,
-		available:  true,
+		client:             client,
+		routerPath:         routerPath,
+		reactionRouterPath: reactionRouterPath,
+		frayDir:            frayDir,
+		available:          true,
 	}
 }
 
@@ -94,6 +106,42 @@ func (r *Router) Route(payload RouterPayload) RouterResult {
 	var routerResult RouterResult
 	if err := json.Unmarshal([]byte(result.Output), &routerResult); err != nil {
 		fmt.Fprintf(os.Stderr, "[router] parse error: %v (output: %s)\n", err, result.Output)
+		return defaultResult
+	}
+
+	return routerResult
+}
+
+// ReactionRouterAvailable returns true if reaction routing is available.
+func (r *Router) ReactionRouterAvailable() bool {
+	if !r.available {
+		return false
+	}
+	_, err := os.Stat(r.reactionRouterPath)
+	return err == nil
+}
+
+// RouteReaction determines whether a reaction should wake an agent.
+// Returns a default result (shouldSpawn: true) if routing fails or is unavailable.
+func (r *Router) RouteReaction(payload ReactionPayload) RouterResult {
+	defaultResult := RouterResult{
+		ShouldSpawn: true,
+		Confidence:  0.5,
+	}
+
+	if !r.ReactionRouterAvailable() {
+		return defaultResult
+	}
+
+	result, err := r.client.Execute(r.reactionRouterPath, payload, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[reaction-router] execute error: %v\n", err)
+		return defaultResult
+	}
+
+	var routerResult RouterResult
+	if err := json.Unmarshal([]byte(result.Output), &routerResult); err != nil {
+		fmt.Fprintf(os.Stderr, "[reaction-router] parse error: %v (output: %s)\n", err, result.Output)
 		return defaultResult
 	}
 

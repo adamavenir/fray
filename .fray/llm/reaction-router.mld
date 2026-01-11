@@ -1,0 +1,44 @@
+/import { @emoji, @message, @agent } from @payload
+
+/exe @haiku(prompt) = @prompt | cmd { claude -p --model haiku }
+
+/exe @route(emoji, message, agent) = [
+  let @prompt = `You're deciding whether a reaction warrants waking an agent.
+
+Someone reacted to @agent's message with: @emoji
+
+The original message from @agent was:
+@message
+
+Should @agent be woken up for this reaction?
+
+CONTEXT MATTERS - interpret the emoji in context of the original message:
+- 👍 on "Should I proceed?" = WAKE (approval)
+- 👍 on "Just pushed the fix" = DON'T WAKE (acknowledgment)
+- ❌ on anything = WAKE (indicates problem)
+
+WAKE (return {"wake": true}) if:
+- Agent asked for approval/confirmation and reaction indicates yes/no (👍, 👎, ✅, ❌)
+- Reaction is answering a question the agent asked
+- Reaction indicates a problem, blocker, or rejection
+- Reaction contains actionable text like "Yes", "Go ahead", "Approved", "Do it"
+
+DON'T WAKE (return {"wake": false}) if:
+- Agent was just sharing status/info and reaction is appreciation (👍, 🎉, 💯)
+- Reaction is expressing amusement at a joke or observation (😄, 💀, 😂)
+- Agent wasn't asking for anything and reaction is just acknowledgment
+- Reaction doesn't require any response or action from the agent
+
+Return JSON: {"wake": true} or {"wake": false}
+No explanation needed.`
+
+  let @result = @haiku(@prompt) | @json.llm
+  => {
+    shouldSpawn: @result.wake,
+    confidence: 0.7
+  }
+]
+
+/show @route(@emoji, @message, @agent)
+
+/export { @route }

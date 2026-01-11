@@ -641,10 +641,27 @@ func (d *Daemon) checkReactions(ctx context.Context, agent types.Agent) {
 			continue
 		}
 
+		// Route reaction through haiku to check if it warrants waking
+		if d.router.ReactionRouterAvailable() {
+			routerResult := d.router.RouteReaction(router.ReactionPayload{
+				Emoji:   reaction.Emoji,
+				Message: reaction.MessageBody,
+				Agent:   agent.AgentID,
+			})
+			d.debugf("    @%s: reaction router says shouldSpawn=%v (confidence=%.2f)",
+				agent.AgentID, routerResult.ShouldSpawn, routerResult.Confidence)
+
+			if !routerResult.ShouldSpawn {
+				d.debugf("    @%s: reaction router rejected wake, skipping", agent.AgentID)
+				lastProcessedAt = reaction.ReactedAt
+				continue
+			}
+		}
+
 		// No tracked process - check presence to decide whether to spawn
 		switch agent.Presence {
 		case types.PresenceOffline, types.PresenceIdle, "":
-			// Can spawn - trigger on reaction
+			// Can spawn - reaction approved by router (or no router available)
 			d.debugf("    @%s: spawning on reaction from %s", agent.AgentID, reaction.ReactedBy)
 
 			// Update watermark BEFORE spawning to prevent race with next poll cycle
