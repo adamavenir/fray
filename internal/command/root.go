@@ -124,7 +124,24 @@ func NewRootCmd(version string) *cobra.Command {
 func Execute() error {
 	os.Args = rewriteMentionArgs(os.Args)
 	os.Args = rewriteMessageIDArgs(os.Args)
+	os.Args = rewriteNoArgsToChat(os.Args)
 	return NewRootCmd(Version).Execute()
+}
+
+// rewriteNoArgsToChat rewrites "fray" with no subcommand to "fray chat".
+// This makes chat the default behavior when running plain "fray".
+func rewriteNoArgsToChat(args []string) []string {
+	if len(args) < 1 {
+		return args
+	}
+	// Find the first non-flag argument (potential subcommand)
+	idx := findFirstNonFlagArg(args[1:])
+	if idx != -1 {
+		// There's already a subcommand
+		return args
+	}
+	// No subcommand found - insert "chat" after the program name and any global flags
+	return append(args, "chat")
 }
 
 // rewriteMessageIDArgs rewrites "fray msg-xxx" to "fray get msg-xxx".

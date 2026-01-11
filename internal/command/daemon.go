@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -119,20 +120,25 @@ Use Ctrl+C or SIGTERM to gracefully shut down.`,
 // NewDaemonResetCmd creates the daemon reset command.
 func NewDaemonResetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reset",
-		Short: "Reset all managed agent presence states to offline",
-		Long: `Reset presence state for all managed agents.
+		Use:   "reset [agents...]",
+		Short: "Reset managed agent presence states to offline",
+		Long: `Reset presence state for managed agents.
 
 Use this when:
 - Daemon crashed and left agents in stale states
 - Database has inconsistent presence data
 - Starting fresh after manual intervention
 
-All managed agents will be set to "offline" presence.
+Specified agents (or all if none given) will be set to "offline" presence.
 Running agents will not be affected - this only updates the database.
 
 Use --clear-sessions to also clear session IDs, forcing fresh spawns
-instead of resumes on next @mention.`,
+instead of resumes on next @mention.
+
+Examples:
+  fray daemon reset                    # Reset all managed agents
+  fray daemon reset opus clank         # Reset specific agents
+  fray daemon reset @pm --clear-sessions  # Reset @pm and clear its session`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmdCtx, err := GetContext(cmd)
 			if err != nil {
@@ -143,20 +149,46 @@ instead of resumes on next @mention.`,
 			clearSessions, _ := cmd.Flags().GetBool("clear-sessions")
 
 			// Get all managed agents
-			managedAgents, err := db.GetManagedAgents(cmdCtx.DB)
+			allAgents, err := db.GetManagedAgents(cmdCtx.DB)
 			if err != nil {
 				return writeCommandError(cmd, fmt.Errorf("failed to get managed agents: %w", err))
+			}
+
+			// Build agent map for lookup
+			agentMap := make(map[string]types.Agent)
+			for _, agent := range allAgents {
+				agentMap[agent.AgentID] = agent
+			}
+
+			// Determine which agents to reset
+			var managedAgents []types.Agent
+			if len(args) > 0 {
+				// Reset only specified agents
+				for _, name := range args {
+					// Strip @ prefix if present
+					name = strings.TrimPrefix(name, "@")
+					if agent, ok := agentMap[name]; ok {
+						managedAgents = append(managedAgents, agent)
+					} else {
+						if !cmdCtx.JSONMode {
+							fmt.Fprintf(cmd.OutOrStdout(), "Warning: @%s is not a managed agent, skipping\n", name)
+						}
+					}
+				}
+			} else {
+				// Reset all managed agents
+				managedAgents = allAgents
 			}
 
 			if len(managedAgents) == 0 {
 				if cmdCtx.JSONMode {
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-						"status":          "no_agents",
-						"count":           0,
+						"status":           "no_agents",
+						"count":            0,
 						"sessions_cleared": false,
 					})
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "No managed agents found")
+				fmt.Fprintln(cmd.OutOrStdout(), "No managed agents to reset")
 				return nil
 			}
 

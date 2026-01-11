@@ -334,7 +334,7 @@ func NewModel(opts Options) (*Model, error) {
 		status:            "",
 		messageCount:    count,
 		lastLimit:       opts.Last,
-		hasMore:         len(rawMessages) < count,
+		hasMore:         len(rawMessages) >= opts.Last,
 		colorMap:        colorMap,
 		threads:            threads,
 		threadIndex:        threadIndex,
