@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Reaction routing: reactions now go through haiku before waking agents
+  - Interprets emoji in context (👍 on "Should I proceed?" wakes, on status update doesn't)
+  - Uses `.fray/llm/reaction-router.mld` template
 - `fray run`: execute mlld scripts from `.fray/llm/run/`
   - `fray run` lists available scripts
   - `fray run <name>` executes script
@@ -66,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Created on `fray init` alongside router.mld
 
 ### Changed
+- Agent colors: expanded palette from 6 to 16 muted colors for better diversity
+  - Replaced alarm-red tones (coral, terra cotta) with dusty rose, soft coral, mauve
 - Chat: edit mode redesigned - up arrow shows message body only with blue background, Esc cancels, Enter saves
 - Chat: peek mode redesigned - single-click on content commits peek, sidebar stays open
 - Chat: click-to-reply changed - double-click on message ID inserts reply prefix, single-click copies ID
