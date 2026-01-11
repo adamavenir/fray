@@ -1,0 +1,36 @@
+/import { @stdout, @lastPost, @agentId } from @payload
+
+/exe @haiku(prompt) = @prompt | cmd { claude -p --model haiku }
+
+/exe @evaluate(stdout, lastPost, agentId) = [
+  let @prompt = `You're evaluating agent stdout for valuable content to post to fray.
+
+Agent @agentId's session ended. Here's their captured stdout (last ~4KB):
+
+---STDOUT---
+@stdout
+---END STDOUT---
+
+Their last fray post was:
+@{lastPost ?? "(no posts this session)"}
+
+## Task
+Decide whether this stdout contains valuable content that should be posted to fray.
+
+## Rules
+1. SKIP if stdout is empty or just whitespace
+2. SKIP if stdout is tool output noise (e.g., "[msg-xxx] Posted as @agent", "Run: /fly", "Welcome back")
+3. SKIP if stdout duplicates the last fray post
+4. POST if stdout contains a meaningful summary, conclusion, or explanation that wasn't posted
+5. If posting, extract ONLY the valuable content (remove tool output, prompts, etc)
+
+Return JSON:
+- If skipping: {"post": false, "reason": "brief reason"}
+- If posting: {"post": true, "content": "cleaned content to post"}`
+  let @result = @haiku(@prompt) | @json.llm
+  => @result
+]
+
+/show @evaluate(@stdout, @lastPost, @agentId)
+
+/export { @evaluate }

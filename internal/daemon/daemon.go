@@ -448,7 +448,8 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 
 		// Ambiguous mention: not direct address and not reply to agent
 		// Route through Haiku to decide if agent should be woken
-		isAmbiguousMention := !isDirectAddress && !isReplyToAgent
+		// Interrupts (!@agent) are explicit spawn requests, skip router check
+		isAmbiguousMention := !isDirectAddress && !isReplyToAgent && !isInterrupt
 		if isAmbiguousMention {
 			var threadHome *string
 			if msg.Home != "" && msg.Home != "room" {
@@ -1879,6 +1880,25 @@ func (d *Daemon) updatePresence() {
 						db.UpdateAgentPresence(d.database, agentID, types.PresencePrompting)
 					}
 				}
+			}
+
+			// Fallback 1: if agent has posted to fray since spawn, transition to active.
+			// This handles cases where ccusage is unavailable or slow.
+			lastPostTs, _ := db.GetAgentLastPostTime(d.database, agentID)
+			if lastPostTs > proc.StartedAt.UnixMilli() {
+				d.debugf("  @%s: %s→active (fray post detected)", agentID, agent.Presence)
+				db.UpdateAgentPresence(d.database, agentID, types.PresenceActive)
+				continue // Skip spawn timeout check since agent is clearly working
+			}
+
+			// Fallback 2 (experimental): if process shows stdout/stderr activity, transition to active.
+			// Only check after 10s of spawning to give ccusage time to detect token activity first.
+			// This catches cases where agent is working but ccusage is unavailable.
+			// Note: May be overly sensitive to any stdout. Monitoring for false positives.
+			if elapsed > 10000 && proc.Cmd.Process != nil && d.detector.IsActive(proc.Cmd.Process.Pid) {
+				d.debugf("  @%s: %s→active (process activity detected after 10s, experimental)", agentID, agent.Presence)
+				db.UpdateAgentPresence(d.database, agentID, types.PresenceActive)
+				continue // Skip spawn timeout check since agent is clearly working
 			}
 
 			// Check spawn timeout (applies to spawning state only)
