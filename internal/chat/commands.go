@@ -524,10 +524,12 @@ func (m *Model) runDeleteCommand(input string) error {
 }
 
 func (m *Model) runPruneCommand(args []string) error {
-	keep, pruneAll, target, withReact, err := parsePruneArgs(args)
+	keep, pruneAll, target, withReact, withFlags, withoutFlags, err := parsePruneArgs(args)
 	if err != nil {
 		return err
 	}
+
+	opts := parsePruneProtectionOpts(withFlags, withoutFlags)
 
 	// Resolve target to home
 	var home string
@@ -558,19 +560,6 @@ func (m *Model) runPruneCommand(args []string) error {
 		}
 	}
 
-	// Check for subthreads if pruning a thread
-	if home != "room" {
-		subthreads, err := db.GetThreads(m.db, &types.ThreadQueryOptions{
-			ParentThread: &home,
-		})
-		if err != nil {
-			return err
-		}
-		if len(subthreads) > 0 {
-			return fmt.Errorf("thread has %d subthreads - cannot prune (use CLI with --include subthreads)", len(subthreads))
-		}
-	}
-
 	root := projectRootFromPath(m.projectDBPath)
 	if err := checkPruneGuardrails(root); err != nil {
 		return err
@@ -580,7 +569,7 @@ func (m *Model) runPruneCommand(args []string) error {
 	if withReact != "" {
 		result, err = pruneMessagesWithReaction(m.projectDBPath, home, withReact)
 	} else {
-		result, err = pruneMessages(m.projectDBPath, keep, pruneAll, home)
+		result, err = pruneMessages(m.projectDBPath, keep, pruneAll, home, opts)
 	}
 	if err != nil {
 		return err
@@ -815,7 +804,7 @@ func (m *Model) reloadMessages() error {
 	m.lastCursor = lastCursor
 	m.oldestCursor = oldestCursor
 	m.messageCount = count
-	m.hasMore = len(rawMessages) < count
+	m.hasMore = len(rawMessages) >= m.lastLimit
 	m.colorMap = colorMap
 	m.refreshViewport(true)
 	return nil
@@ -881,11 +870,13 @@ func parseDeleteCommand(input string) (string, error) {
 	return id, nil
 }
 
-func parsePruneArgs(args []string) (int, bool, string, string, error) {
+func parsePruneArgs(args []string) (int, bool, string, string, []string, []string, error) {
 	keep := 20
 	pruneAll := false
 	target := ""
 	withReact := ""
+	var withFlags []string
+	var withoutFlags []string
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -894,30 +885,46 @@ func parsePruneArgs(args []string) (int, bool, string, string, error) {
 			pruneAll = true
 		case arg == "--keep":
 			if i+1 >= len(args) {
-				return 0, false, "", "", fmt.Errorf("usage: /prune [target] [--keep N] [--all] [--with-react emoji]")
+				return 0, false, "", "", nil, nil, fmt.Errorf("usage: /prune [target] [--keep N] [--all] [--with X] [--without X]")
 			}
 			i++
 			value, err := parseNonNegativeInt(args[i])
 			if err != nil {
-				return 0, false, "", "", err
+				return 0, false, "", "", nil, nil, err
 			}
 			keep = value
 		case strings.HasPrefix(arg, "--keep="):
 			value, err := parseNonNegativeInt(strings.TrimPrefix(arg, "--keep="))
 			if err != nil {
-				return 0, false, "", "", err
+				return 0, false, "", "", nil, nil, err
 			}
 			keep = value
 		case arg == "--with-react":
 			if i+1 >= len(args) {
-				return 0, false, "", "", fmt.Errorf("usage: /prune [target] [--with-react emoji]")
+				return 0, false, "", "", nil, nil, fmt.Errorf("usage: /prune [target] [--with-react emoji]")
 			}
 			i++
 			withReact = args[i]
 		case strings.HasPrefix(arg, "--with-react="):
 			withReact = strings.TrimPrefix(arg, "--with-react=")
+		case arg == "--with":
+			if i+1 >= len(args) {
+				return 0, false, "", "", nil, nil, fmt.Errorf("usage: /prune [target] [--with replies,faves,reacts]")
+			}
+			i++
+			withFlags = append(withFlags, args[i])
+		case strings.HasPrefix(arg, "--with="):
+			withFlags = append(withFlags, strings.TrimPrefix(arg, "--with="))
+		case arg == "--without":
+			if i+1 >= len(args) {
+				return 0, false, "", "", nil, nil, fmt.Errorf("usage: /prune [target] [--without replies,faves,reacts]")
+			}
+			i++
+			withoutFlags = append(withoutFlags, args[i])
+		case strings.HasPrefix(arg, "--without="):
+			withoutFlags = append(withoutFlags, strings.TrimPrefix(arg, "--without="))
 		case strings.HasPrefix(arg, "--"):
-			return 0, false, "", "", fmt.Errorf("unknown flag: %s", arg)
+			return 0, false, "", "", nil, nil, fmt.Errorf("unknown flag: %s", arg)
 		default:
 			// First non-flag arg is target, or could be a number for keep
 			if target == "" {
@@ -928,12 +935,12 @@ func parsePruneArgs(args []string) (int, bool, string, string, error) {
 					target = arg
 				}
 			} else {
-				return 0, false, "", "", fmt.Errorf("usage: /prune [target] [--keep N] [--all] [--with-react emoji]")
+				return 0, false, "", "", nil, nil, fmt.Errorf("usage: /prune [target] [--keep N] [--all] [--with X] [--without X]")
 			}
 		}
 	}
 
-	return keep, pruneAll, target, withReact, nil
+	return keep, pruneAll, target, withReact, withFlags, withoutFlags, nil
 }
 
 func parseNonNegativeInt(value string) (int, error) {

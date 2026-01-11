@@ -80,19 +80,6 @@ Note: Pinned messages cannot be pruned; they must be unpinned first.`,
 				return writeCommandError(cmd, err)
 			}
 
-			// Check for subthreads if pruning a thread
-			if home != "room" {
-				subthreads, err := db.GetThreads(ctx.DB, &types.ThreadQueryOptions{
-					ParentThread: &home,
-				})
-				if err != nil {
-					return writeCommandError(cmd, err)
-				}
-				if len(subthreads) > 0 {
-					return writeCommandError(cmd, fmt.Errorf("thread has %d subthreads. Use --include subthreads to prune them too (not yet implemented)", len(subthreads)))
-				}
-			}
-
 			if err := checkPruneGuardrails(ctx.Project.Root); err != nil {
 				return writeCommandError(cmd, err)
 			}
