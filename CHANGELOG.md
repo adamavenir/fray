@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `fray prune --with`: remove default protections (allow pruning faved/reacted/replied messages)
+- `fray prune --without`: filter to only prune messages lacking specified attributes
 - Reaction routing: reactions now go through haiku before waking agents
   - Interprets emoji in context (👍 on "Should I proceed?" wakes, on status update doesn't)
   - Uses `.fray/llm/reaction-router.mld` template
@@ -34,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interrupt syntax for daemon control: `!@agent` (resume), `!!@agent` (fresh), `!@agent!` (stop), `!!@agent!` (force end)
 
 ### Fixed
+- Chat: edit mode shows distinct olive/amber background
+- Chat: reply mode (input starting with #msgid) shows blue text
 - Chat: scroll-up pagination now loads correct messages (most recent before cursor, not oldest in database)
 - Chat: `@agent#sessid` fork syntax now works from chat input (session ID was not being captured)
 - Autocomplete: suggestions no longer auto-apply on Enter; must navigate first
