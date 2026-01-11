@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `fray run <name>` executes script
   - `--debug` shows execution metrics
 - `/run` chat command: run mlld scripts from chat interface
+  - Searches both `.fray/llm/run/` (fray scripts) and `llm/run/` (project scripts)
+  - Autocomplete shows available scripts from both locations
+- `/bye @agent` chat command: send bye for specific agent from chat
+- `/close` chat command: close questions attached to a message
 - `fray init`: creates mlld-config.json with `@proj` resolver for project-relative paths
 - `fray chat --debug-sync`: logs state divergence to `.fray/sync-debug.log` for debugging
 - `fray wake`: set wake conditions for agent coordination
