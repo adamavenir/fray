@@ -4,8 +4,8 @@ import (
 	_ "embed"
 )
 
-//go:embed templates/router.mld
-var RouterTemplate []byte
+//go:embed templates/mentions.mld
+var MentionsRouterTemplate []byte
 
 //go:embed templates/neo.mld
 var NeoTemplate []byte
@@ -18,3 +18,6 @@ var WakeRouterTemplate []byte
 
 //go:embed templates/wake-prompt.mld
 var WakePromptTemplate []byte
+
+//go:embed templates/stdout-repair.mld
+var StdoutRepairTemplate []byte

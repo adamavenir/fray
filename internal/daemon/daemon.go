@@ -1109,6 +1109,55 @@ func (d *Daemon) runWakePrompt(payload types.WakePromptPayload) (*types.WakeProm
 	return &result, nil
 }
 
+// runStdoutRepair evaluates captured stdout to determine if it should be posted.
+// Returns nil if stdout-repair.mld doesn't exist (graceful degradation).
+func (d *Daemon) runStdoutRepair(stdout string, lastPost *string, agentID string) *types.StdoutRepairResult {
+	// Check if stdout-repair.mld exists (try new location, fall back to legacy)
+	stdoutRepairPath := filepath.Join(d.project.Root, ".fray", "llm", "routers", "stdout-repair.mld")
+	if _, err := os.Stat(stdoutRepairPath); os.IsNotExist(err) {
+		// Try legacy location
+		stdoutRepairPath = filepath.Join(d.project.Root, ".fray", "llm", "stdout-repair.mld")
+		if _, err := os.Stat(stdoutRepairPath); os.IsNotExist(err) {
+			d.debugf("stdout-repair: template not found, skipping")
+			return nil
+		}
+	}
+
+	// Build payload
+	payload := types.StdoutRepairPayload{
+		Stdout:   stdout,
+		LastPost: lastPost,
+		AgentID:  agentID,
+	}
+
+	// Encode payload to JSON
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		d.debugf("stdout-repair: marshal error: %v", err)
+		return nil
+	}
+
+	// Run mlld
+	cmd := exec.Command("mlld", stdoutRepairPath)
+	cmd.Stdin = strings.NewReader(string(payloadJSON))
+	cmd.Dir = d.project.Root
+
+	output, err := cmd.Output()
+	if err != nil {
+		d.debugf("stdout-repair: mlld error: %v", err)
+		return nil
+	}
+
+	// Parse result
+	var result types.StdoutRepairResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		d.debugf("stdout-repair: parse error: %v (output: %s)", err, output)
+		return nil
+	}
+
+	return &result
+}
+
 // getMessagesAfter returns messages mentioning agent after the given watermark.
 // Includes mentions in all threads (not just room) and replies to agent's messages.
 func (d *Daemon) getMessagesAfter(watermark, agentID string) ([]types.Message, error) {
@@ -1140,11 +1189,37 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 
 	d.debugf("  spawning @%s with driver %s", agent.AgentID, agent.Invoke.Driver)
 
+	// Determine session mode: fork (#XXX), new (#n), or resumed (empty)
+	// Check for fork spawn first: was this agent mentioned with @agent#sessid syntax?
+	var sessionMode string
+	triggerMsg, _ := db.GetMessage(d.database, triggerMsgID)
+	if triggerMsg != nil && triggerMsg.ForkSessions != nil {
+		if forkSessID, ok := triggerMsg.ForkSessions[agent.AgentID]; ok && forkSessID != "" {
+			// Fork spawn: use first 3 chars of fork session ID
+			if len(forkSessID) >= 3 {
+				sessionMode = forkSessID[:3]
+			} else {
+				sessionMode = forkSessID
+			}
+			d.debugf("  fork spawn from session %s, mode=%s", forkSessID, sessionMode)
+		}
+	}
+
 	// If agent was offline (from bye), clear session ID so driver starts fresh.
 	// We keep LastSessionID in DB for token usage display, but clear it for spawning.
+	isNewSession := false
 	if agent.Presence == types.PresenceOffline {
 		d.debugf("  agent was offline, starting fresh session")
 		agent.LastSessionID = nil // Clear locally for driver, DB retains for display
+		isNewSession = true
+	}
+
+	// If not a fork and starting fresh, mark as new session
+	if sessionMode == "" && isNewSession {
+		sessionMode = "n"
+		d.debugf("  new session, mode=n")
+	} else if sessionMode == "" {
+		d.debugf("  resuming existing session")
 	}
 
 	// Update presence to spawning
@@ -1195,6 +1270,18 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 	// Store session ID for future resume - this ensures each agent keeps their own session
 	if proc.SessionID != "" {
 		db.UpdateAgentSessionID(d.database, agent.AgentID, proc.SessionID)
+	}
+
+	// Store session mode for display in activity panel (#n, #XXX, or empty for resume)
+	db.UpdateAgentSessionMode(d.database, agent.AgentID, sessionMode)
+
+	// Append session mode update to JSONL for persistence
+	if sessionMode != "" {
+		db.AppendAgentUpdate(d.project.DBPath, db.AgentUpdateJSONLRecord{
+			Type:        "agent_update",
+			AgentID:     agent.AgentID,
+			SessionMode: &sessionMode,
+		})
 	}
 
 	// Track process
@@ -1326,6 +1413,9 @@ Check your notes for context from the previous session.`,
 func (d *Daemon) monitorProcess(agentID string, proc *Process) {
 	defer d.wg.Done()
 
+	// Create ring buffer for stdout capture (4KB)
+	proc.StdoutBuffer = NewStdoutBuffer(4096)
+
 	// Drain stdout/stderr to prevent blocking
 	var wg sync.WaitGroup
 
@@ -1336,8 +1426,12 @@ func (d *Daemon) monitorProcess(agentID string, proc *Process) {
 			buf := make([]byte, 4096)
 			for {
 				n, err := proc.Stdout.Read(buf)
-				if n > 0 && proc.Cmd.Process != nil {
-					d.detector.RecordActivity(proc.Cmd.Process.Pid)
+				if n > 0 {
+					// Capture to ring buffer for later processing
+					proc.StdoutBuffer.Write(buf[:n])
+					if proc.Cmd.Process != nil {
+						d.detector.RecordActivity(proc.Cmd.Process.Pid)
+					}
 				}
 				if err != nil {
 					break
@@ -1503,12 +1597,13 @@ IMPORTANT: Users only see messages posted to fray. Your stdout is not visible. P
 }
 
 // getSessionMessages retrieves recent messages from a specific session for fork context.
+// sessionID can be a prefix (e.g., "25912084") which will match full UUIDs like "25912084-8d46-497b-...".
 func (d *Daemon) getSessionMessages(sessionID, agentID string, limit int) []types.Message {
-	// Query messages where session_id matches
+	// Query messages where session_id matches prefix (supports @agent#sessid with short IDs)
 	rows, err := d.database.Query(`
 		SELECT guid, ts, channel_id, home, from_agent, session_id, body, mentions, fork_sessions, type, "references", surface_message, reply_to, quote_message_guid, edited_at, archived_at, reactions
 		FROM fray_messages
-		WHERE session_id = ? AND from_agent = ?
+		WHERE session_id LIKE ? || '%' AND from_agent = ?
 		ORDER BY ts DESC
 		LIMIT ?
 	`, sessionID, agentID, limit)
@@ -1734,6 +1829,45 @@ func (d *Daemon) handleProcessExit(agentID string, proc *Process) bool {
 
 	// Session ID is now stored at spawn time (we generate it ourselves with --session-id)
 	// No need to detect it from Claude's files anymore - see fix for fray-8ld6
+
+	// Evaluate stdout buffer for valuable content to post
+	if proc.StdoutBuffer != nil && isCurrentProc {
+		stdout := proc.StdoutBuffer.String()
+		if len(strings.TrimSpace(stdout)) > 0 {
+			// Get last post from this session for duplicate detection
+			var lastPost *string
+			if proc.SessionID != "" {
+				msgs := d.getSessionMessages(proc.SessionID, agentID, 1)
+				if len(msgs) > 0 {
+					lastPost = &msgs[len(msgs)-1].Body
+				}
+			}
+
+			// Run stdout repair
+			result := d.runStdoutRepair(stdout, lastPost, agentID)
+			if result != nil && result.Post && len(strings.TrimSpace(result.Content)) > 0 {
+				d.debugf("stdout-repair: posting %d chars for @%s", len(result.Content), agentID)
+				// Create message from stdout
+				msgID, _ := core.GenerateGUID("msg-")
+				msg := types.Message{
+					ID:        msgID,
+					TS:        time.Now().UnixMilli(),
+					FromAgent: agentID,
+					Body:      result.Content,
+					Type:      types.MessageTypeAgent,
+					Home:      "room", // Post to room
+				}
+				if proc.SessionID != "" {
+					msg.SessionID = &proc.SessionID
+				}
+				if err := db.AppendMessage(d.project.DBPath, msg); err != nil {
+					d.debugf("stdout-repair: post error: %v", err)
+				}
+			} else if result != nil {
+				d.debugf("stdout-repair: skipping - %s", result.Reason)
+			}
+		}
+	}
 
 	// Cleanup process resources
 	driver := d.getDriver(agentID)

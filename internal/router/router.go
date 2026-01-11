@@ -54,7 +54,12 @@ type Router struct {
 // New creates a new Router for the given fray project.
 // Returns a Router that gracefully degrades if mlld is unavailable.
 func New(frayDir string) *Router {
-	routerPath := filepath.Join(frayDir, "llm", "router.mld")
+	// Try new location first, fall back to legacy for backwards compatibility
+	routerPath := filepath.Join(frayDir, "llm", "routers", "mentions.mld")
+	if _, err := os.Stat(routerPath); os.IsNotExist(err) {
+		// Fallback to legacy location
+		routerPath = filepath.Join(frayDir, "llm", "router.mld")
+	}
 	reactionRouterPath := filepath.Join(frayDir, "llm", "reaction-router.mld")
 
 	// Check if router file exists

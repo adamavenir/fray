@@ -825,8 +825,9 @@ func GetRecentMessages(db *sql.DB, sinceSeconds int) ([]types.Message, error) {
 }
 
 // GetMessagesBySession returns messages from a specific session.
+// sessionID can be a prefix (e.g., "25912084") which will match full UUIDs like "25912084-8d46-497b-...".
 func GetMessagesBySession(db *sql.DB, sessionID string, limit int) ([]types.Message, error) {
-	query := "SELECT " + messageColumns + " FROM fray_messages WHERE session_id = ? ORDER BY ts ASC"
+	query := "SELECT " + messageColumns + " FROM fray_messages WHERE session_id LIKE ? || '%' ORDER BY ts ASC"
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}

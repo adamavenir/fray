@@ -64,6 +64,7 @@ type Agent struct {
 	ReactionWatermark *int64         `json:"reaction_watermark,omitempty"` // last processed reaction timestamp (ms)
 	LastHeartbeat     *int64         `json:"last_heartbeat,omitempty"`     // last silent checkin timestamp (ms)
 	LastSessionID     *string        `json:"last_session_id,omitempty"`    // Claude Code session ID for --resume
+	SessionMode       string         `json:"session_mode,omitempty"`       // "" (resumed), "n" (new), or 3-char fork prefix
 }
 
 // ReactionEntry represents a single reaction from an agent.

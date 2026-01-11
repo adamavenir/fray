@@ -1924,7 +1924,8 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 	}
 
 	var lines []string
-	staleThreshold := 1 * 60 * 60 // 1 hour in seconds
+	staleThreshold := 1 * 60 * 60  // 1 hour in seconds
+	forkIdleThreshold := 5 * 60    // 5 minutes for fork sessions
 	now := int64(0)
 	if t := time.Now().Unix(); t > 0 {
 		now = t
@@ -1932,6 +1933,18 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 
 	var activeAgents, offlineAgents []types.Agent
 	for _, agent := range m.managedAgents {
+		// Fork sessions (SessionMode is 3-char prefix, not "n" or "") hide after 5m idle
+		isForkSession := agent.SessionMode != "" && agent.SessionMode != "n"
+		if isForkSession {
+			timeSinceActive := now - agent.LastSeen
+			if agent.Presence == types.PresenceIdle || agent.Presence == types.PresenceOffline {
+				if timeSinceActive > int64(forkIdleThreshold) {
+					// Fork session idle > 5m: don't show in activity panel
+					continue
+				}
+			}
+		}
+
 		// Presence takes priority over LeftAt for categorization
 		// This handles the case where daemon sets LeftAt on process exit but agent is just idle
 		if agent.Presence == types.PresenceOffline {
@@ -2084,8 +2097,12 @@ func (m *Model) renderAgentRow(agent types.Agent, width int) string {
 	// Build the visible text content in parts for styling
 	// Icon part: " icon" (gets presence-based color)
 	iconPart := fmt.Sprintf(" %s", icon)
-	// Name part: " name" (gets agent color)
+	// Name part: " name#mode" (gets agent color, includes session mode suffix)
+	// SessionMode: "" (resumed - no suffix), "n" (new), or 3-char fork prefix
 	namePart := fmt.Sprintf(" %s", name)
+	if agent.SessionMode != "" {
+		namePart = fmt.Sprintf(" %s#%s", name, agent.SessionMode)
+	}
 	// Italic part: " status (unread)" + padding
 	italicPart := ""
 	if displayStatus != "" {

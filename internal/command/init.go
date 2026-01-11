@@ -456,11 +456,25 @@ func ensureLLMRouter(projectRoot string) error {
 		return fmt.Errorf("create llm/run directory: %w", err)
 	}
 
-	// Write stock router template (if not exists)
-	routerPath := filepath.Join(llmDir, "router.mld")
-	if _, err := os.Stat(routerPath); os.IsNotExist(err) {
-		if err := os.WriteFile(routerPath, db.RouterTemplate, 0o644); err != nil {
-			return fmt.Errorf("write router template: %w", err)
+	// Create llm/routers/ directory for mlld routers
+	routersDir := filepath.Join(llmDir, "routers")
+	if err := os.MkdirAll(routersDir, 0o755); err != nil {
+		return fmt.Errorf("create llm/routers directory: %w", err)
+	}
+
+	// Write mentions router template (if not exists)
+	mentionsPath := filepath.Join(routersDir, "mentions.mld")
+	if _, err := os.Stat(mentionsPath); os.IsNotExist(err) {
+		if err := os.WriteFile(mentionsPath, db.MentionsRouterTemplate, 0o644); err != nil {
+			return fmt.Errorf("write mentions router template: %w", err)
+		}
+	}
+
+	// Write stdout-repair router template (if not exists)
+	stdoutRepairPath := filepath.Join(routersDir, "stdout-repair.mld")
+	if _, err := os.Stat(stdoutRepairPath); os.IsNotExist(err) {
+		if err := os.WriteFile(stdoutRepairPath, db.StdoutRepairTemplate, 0o644); err != nil {
+			return fmt.Errorf("write stdout-repair router template: %w", err)
 		}
 	}
 

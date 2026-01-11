@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   mention_watermark TEXT,              -- last processed mention msg_id
   reaction_watermark INTEGER,          -- last processed reaction timestamp (ms)
   last_heartbeat INTEGER,              -- last silent checkin timestamp (ms)
-  last_session_id TEXT                 -- Claude Code session UUID for --resume
+  last_session_id TEXT,                -- Claude Code session UUID for --resume
+  session_mode TEXT                    -- "" (resumed), "n" (new), or 3-char fork prefix
 );
 
 -- Agent sessions (daemon-managed)

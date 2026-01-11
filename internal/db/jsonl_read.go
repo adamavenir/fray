@@ -723,6 +723,9 @@ func ReadAgents(projectPath string) ([]AgentJSONLRecord, error) {
 			if update.LastHeartbeat != nil {
 				existing.LastHeartbeat = update.LastHeartbeat
 			}
+			if update.SessionMode != nil {
+				existing.SessionMode = *update.SessionMode
+			}
 			agentMap[update.AgentID] = existing
 		// session_start, session_end, session_heartbeat are events, not agent records
 		// They are handled separately when needed

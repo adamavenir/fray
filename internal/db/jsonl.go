@@ -215,6 +215,7 @@ type AgentJSONLRecord struct {
 	Presence         string              `json:"presence,omitempty"`
 	MentionWatermark *string             `json:"mention_watermark,omitempty"`
 	LastHeartbeat    *int64              `json:"last_heartbeat,omitempty"`
+	SessionMode      string              `json:"session_mode,omitempty"`
 }
 
 // AgentUpdateJSONLRecord represents an agent update entry in JSONL.
@@ -231,6 +232,7 @@ type AgentUpdateJSONLRecord struct {
 	Presence         *string             `json:"presence,omitempty"`
 	MentionWatermark *string             `json:"mention_watermark,omitempty"`
 	LastHeartbeat    *int64              `json:"last_heartbeat,omitempty"`
+	SessionMode      *string             `json:"session_mode,omitempty"`
 }
 
 // SessionStartJSONLRecord represents a session start event in JSONL.

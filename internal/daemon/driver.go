@@ -4,10 +4,64 @@ import (
 	"context"
 	"io"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/adamavenir/fray/internal/types"
 )
+
+// StdoutBuffer is a thread-safe ring buffer that captures the last N bytes of stdout.
+type StdoutBuffer struct {
+	mu   sync.Mutex
+	buf  []byte
+	size int
+	pos  int // write position (wraps around)
+	full bool
+}
+
+// NewStdoutBuffer creates a ring buffer with the given capacity.
+func NewStdoutBuffer(size int) *StdoutBuffer {
+	return &StdoutBuffer{
+		buf:  make([]byte, size),
+		size: size,
+	}
+}
+
+// Write appends data to the ring buffer, overwriting oldest data if full.
+func (b *StdoutBuffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	n = len(p)
+	for _, c := range p {
+		b.buf[b.pos] = c
+		b.pos = (b.pos + 1) % b.size
+		if b.pos == 0 {
+			b.full = true
+		}
+	}
+	return n, nil
+}
+
+// Bytes returns the buffered content in chronological order.
+func (b *StdoutBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.full {
+		return append([]byte(nil), b.buf[:b.pos]...)
+	}
+	// Buffer wrapped: content is [pos:] + [:pos]
+	result := make([]byte, b.size)
+	copy(result, b.buf[b.pos:])
+	copy(result[b.size-b.pos:], b.buf[:b.pos])
+	return result
+}
+
+// String returns the buffered content as a string.
+func (b *StdoutBuffer) String() string {
+	return string(b.Bytes())
+}
 
 // Process represents a spawned agent process.
 type Process struct {
@@ -21,6 +75,7 @@ type Process struct {
 	TempFiles        []string      // Temp files to clean up after process exits
 	BaselineInput    int64         // Baseline input tokens at spawn (for resumed sessions)
 	BaselineOutput   int64         // Baseline output tokens at spawn (for resumed sessions)
+	StdoutBuffer     *StdoutBuffer // Ring buffer capturing last ~4KB of stdout
 }
 
 // Driver defines the interface for CLI-specific agent spawning.

@@ -145,3 +145,17 @@ type WakePromptResult struct {
 	Reason     string  `json:"reason,omitempty"`
 	Confidence float64 `json:"confidence"`
 }
+
+// StdoutRepairPayload is the input to the stdout repair mlld script.
+type StdoutRepairPayload struct {
+	Stdout   string  `json:"stdout"`   // Captured stdout buffer content
+	LastPost *string `json:"lastPost"` // Agent's last fray post (nil if none)
+	AgentID  string  `json:"agentId"`  // Agent identifier
+}
+
+// StdoutRepairResult is the output from the stdout repair script.
+type StdoutRepairResult struct {
+	Post    bool   `json:"post"`              // Whether to post the content
+	Content string `json:"content,omitempty"` // Cleaned content to post
+	Reason  string `json:"reason,omitempty"`  // Why posting/not posting
+}
