@@ -356,6 +356,21 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 	watermark := d.debouncer.GetWatermark(agent.AgentID)
 	messages, err := d.getMessagesAfter(watermark, agent.AgentID)
 	if err != nil {
+		// Check if watermark message was pruned/archived
+		if watermark != "" && strings.Contains(err.Error(), "message not found") {
+			d.debugf("  @%s: watermark %s was pruned, advancing to latest", agent.AgentID, watermark)
+			// Get the latest message ID to use as new watermark
+			latestMsgs, latestErr := db.GetMessages(d.database, &types.MessageQueryOptions{Limit: 1})
+			if latestErr == nil && len(latestMsgs) > 0 {
+				newWatermark := latestMsgs[0].ID
+				if err := d.debouncer.UpdateWatermark(agent.AgentID, newWatermark); err != nil {
+					d.debugf("  @%s: failed to update watermark: %v", agent.AgentID, err)
+				} else {
+					d.debugf("  @%s: watermark advanced to %s", agent.AgentID, newWatermark)
+				}
+			}
+			return
+		}
 		d.debugf("  @%s: error getting messages: %v", agent.AgentID, err)
 		return
 	}

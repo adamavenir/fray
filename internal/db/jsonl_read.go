@@ -727,6 +727,17 @@ func ReadAgents(projectPath string) ([]AgentJSONLRecord, error) {
 				existing.SessionMode = *update.SessionMode
 			}
 			agentMap[update.AgentID] = existing
+		case "presence_event":
+			var event PresenceEventJSONLRecord
+			if err := json.Unmarshal([]byte(line), &event); err != nil {
+				continue
+			}
+			existing, ok := agentMap[event.AgentID]
+			if !ok {
+				continue
+			}
+			existing.Presence = event.To
+			agentMap[event.AgentID] = existing
 		// session_start, session_end, session_heartbeat are events, not agent records
 		// They are handled separately when needed
 		}

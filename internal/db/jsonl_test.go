@@ -276,6 +276,70 @@ func TestReadAgentsUpdateDoesNotCreateNewAgent(t *testing.T) {
 	}
 }
 
+func TestReadAgentsProcessesPresenceEvents(t *testing.T) {
+	projectDir := t.TempDir()
+	frayDir := filepath.Join(projectDir, ".fray")
+	if err := os.MkdirAll(frayDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// Write agent record followed by presence_event that should update presence
+	agentRecord := `{"type":"agent","id":"usr-abc12345","agent_id":"alice","name":"alice","registered_at":100,"last_seen":100,"managed":true,"presence":"active"}`
+	presenceEvent := `{"type":"presence_event","agent_id":"alice","from":"active","to":"idle","reason":"idle_timeout","source":"daemon","ts":200}`
+
+	content := agentRecord + "\n" + presenceEvent + "\n"
+	if err := os.WriteFile(filepath.Join(frayDir, agentsFile), []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	readBack, err := ReadAgents(projectDir)
+	if err != nil {
+		t.Fatalf("read agents: %v", err)
+	}
+
+	if len(readBack) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(readBack))
+	}
+
+	// presence_event should have updated presence from active to idle
+	if readBack[0].Presence != "idle" {
+		t.Fatalf("expected presence 'idle' after presence_event, got %s", readBack[0].Presence)
+	}
+}
+
+func TestReadAgentsPresenceEventAfterAgentRecord(t *testing.T) {
+	projectDir := t.TempDir()
+	frayDir := filepath.Join(projectDir, ".fray")
+	if err := os.MkdirAll(frayDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// Scenario: agent record with presence=active, then agent record again, then presence_event to idle
+	// This matches real-world case where fray back writes full agent records
+	agentRecord1 := `{"type":"agent","id":"usr-abc12345","agent_id":"alice","name":"alice","registered_at":100,"last_seen":100,"managed":true,"presence":"offline"}`
+	agentRecord2 := `{"type":"agent","id":"usr-abc12345","agent_id":"alice","name":"alice","registered_at":100,"last_seen":200,"managed":true,"presence":"active"}`
+	presenceEvent := `{"type":"presence_event","agent_id":"alice","from":"active","to":"idle","reason":"startup_cleanup","source":"startup","ts":300}`
+
+	content := agentRecord1 + "\n" + agentRecord2 + "\n" + presenceEvent + "\n"
+	if err := os.WriteFile(filepath.Join(frayDir, agentsFile), []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	readBack, err := ReadAgents(projectDir)
+	if err != nil {
+		t.Fatalf("read agents: %v", err)
+	}
+
+	if len(readBack) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(readBack))
+	}
+
+	// Final presence should be idle (from presence_event)
+	if readBack[0].Presence != "idle" {
+		t.Fatalf("expected presence 'idle' after presence_event, got %s", readBack[0].Presence)
+	}
+}
+
 func TestRebuildPreservesManagedAgentFields(t *testing.T) {
 	projectDir := t.TempDir()
 

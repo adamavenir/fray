@@ -112,6 +112,12 @@ Note: Pinned messages cannot be pruned; they must be unpinned first.`,
 				return writeCommandError(cmd, err)
 			}
 
+			// Fix stale watermarks pointing to pruned messages
+			if err := fixStaleWatermarks(ctx.DB, ctx.Project.DBPath); err != nil {
+				// Log but don't fail - watermarks will self-heal on next daemon poll
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not fix stale watermarks: %v\n", err)
+			}
+
 			if ctx.JSONMode {
 				payload := map[string]any{
 					"kept":     result.Kept,
@@ -952,4 +958,49 @@ func runGitCommand(root string, args ...string) (string, error) {
 		return "", err
 	}
 	return string(output), nil
+}
+
+// fixStaleWatermarks updates agent watermarks that point to pruned messages.
+// This prevents the daemon from getting "message not found" errors after pruning.
+func fixStaleWatermarks(dbConn *sql.DB, projectPath string) error {
+	agents, err := db.GetAllAgents(dbConn)
+	if err != nil {
+		return err
+	}
+
+	// Get latest message for fallback
+	latestMsgs, err := db.GetMessages(dbConn, &types.MessageQueryOptions{Limit: 1})
+	if err != nil {
+		return err
+	}
+	var latestMsgID string
+	if len(latestMsgs) > 0 {
+		latestMsgID = latestMsgs[0].ID
+	}
+
+	for _, agent := range agents {
+		if agent.MentionWatermark == nil || *agent.MentionWatermark == "" {
+			continue
+		}
+
+		// Check if watermark message exists
+		_, err := db.GetMessage(dbConn, *agent.MentionWatermark)
+		if err == nil {
+			continue // Message exists, watermark is valid
+		}
+
+		// Message doesn't exist - update watermark to latest
+		newWatermark := latestMsgID
+		if err := db.UpdateAgentWatermark(dbConn, agent.AgentID, newWatermark); err != nil {
+			continue // Skip on error, daemon will self-heal
+		}
+
+		// Persist to JSONL
+		db.AppendAgentUpdate(projectPath, db.AgentUpdateJSONLRecord{
+			AgentID:          agent.AgentID,
+			MentionWatermark: &newWatermark,
+		})
+	}
+
+	return nil
 }

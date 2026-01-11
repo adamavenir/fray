@@ -2,7 +2,9 @@ package chat
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -67,6 +69,28 @@ func getTokenUsage(sessionID string) *TokenUsage {
 	tokenCache.Unlock()
 
 	return &usage
+}
+
+// daemonLockInfo matches the daemon.lock file format.
+type daemonLockInfo struct {
+	PID       int   `json:"pid"`
+	StartedAt int64 `json:"started_at"`
+}
+
+// readDaemonStartedAt reads the daemon's started_at timestamp from daemon.lock.
+// Returns 0 if the file doesn't exist or can't be read.
+func readDaemonStartedAt(projectDBPath string) int64 {
+	frayDir := filepath.Dir(projectDBPath)
+	lockPath := filepath.Join(frayDir, "daemon.lock")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return 0
+	}
+	var info daemonLockInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return 0
+	}
+	return info.StartedAt
 }
 
 const pollInterval = time.Second
@@ -205,11 +229,13 @@ func (m *Model) pollCmd() tea.Cmd {
 // activityPollMsg is a faster-polling message for activity panel updates only.
 // This runs at 250ms to catch fast state transitions (spawning→prompting→prompted).
 type activityPollMsg struct {
-	managedAgents   []types.Agent
-	agentTokenUsage map[string]*TokenUsage
+	managedAgents    []types.Agent
+	agentTokenUsage  map[string]*TokenUsage
+	daemonStartedAt  int64
 }
 
 func (m *Model) activityPollCmd() tea.Cmd {
+	projectDBPath := m.projectDBPath
 	return tea.Tick(activityPollInterval, func(time.Time) tea.Msg {
 		// Fetch managed agents for activity panel
 		managedAgents, _ := db.GetManagedAgents(m.db)
@@ -224,9 +250,13 @@ func (m *Model) activityPollCmd() tea.Cmd {
 			}
 		}
 
+		// Check daemon started_at for restart detection
+		daemonStartedAt := readDaemonStartedAt(projectDBPath)
+
 		return activityPollMsg{
-			managedAgents:   managedAgents,
-			agentTokenUsage: agentTokenUsage,
+			managedAgents:    managedAgents,
+			agentTokenUsage:  agentTokenUsage,
+			daemonStartedAt:  daemonStartedAt,
 		}
 	})
 }

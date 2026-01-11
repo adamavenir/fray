@@ -200,6 +200,8 @@ type Model struct {
 	// Debug sync state
 	debugSync        bool
 	stopSyncChecker  chan struct{}
+	// Daemon restart detection
+	daemonStartedAt  int64
 }
 
 // TokenUsage holds token usage data from ccusage (for activity panel).
@@ -800,6 +802,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.agentTokenUsage != nil {
 			m.agentTokenUsage = msg.agentTokenUsage
+		}
+		// Detect daemon restart and trigger database refresh
+		if msg.daemonStartedAt != 0 && msg.daemonStartedAt != m.daemonStartedAt {
+			if m.daemonStartedAt != 0 {
+				// Daemon restarted - reload messages to get fresh data
+				m.status = "Daemon restarted, refreshing..."
+				if err := m.reloadMessages(); err == nil {
+					m.status = ""
+				}
+			}
+			m.daemonStartedAt = msg.daemonStartedAt
 		}
 		return m, m.activityPollCmd()
 	case errMsg:

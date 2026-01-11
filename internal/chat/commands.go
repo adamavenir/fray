@@ -579,6 +579,9 @@ func (m *Model) runPruneCommand(args []string) error {
 		return err
 	}
 
+	// Fix stale watermarks pointing to pruned messages
+	_ = fixStaleWatermarks(m.db, m.projectDBPath)
+
 	if err := m.reloadMessages(); err != nil {
 		return err
 	}

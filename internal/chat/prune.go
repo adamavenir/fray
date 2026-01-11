@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -578,4 +579,44 @@ func runGitCommand(root string, args ...string) (string, error) {
 		return "", err
 	}
 	return string(output), nil
+}
+
+// fixStaleWatermarks updates agent watermarks that point to pruned messages.
+func fixStaleWatermarks(dbConn *sql.DB, projectPath string) error {
+	agents, err := db.GetAllAgents(dbConn)
+	if err != nil {
+		return err
+	}
+
+	latestMsgs, err := db.GetMessages(dbConn, &types.MessageQueryOptions{Limit: 1})
+	if err != nil {
+		return err
+	}
+	var latestMsgID string
+	if len(latestMsgs) > 0 {
+		latestMsgID = latestMsgs[0].ID
+	}
+
+	for _, agent := range agents {
+		if agent.MentionWatermark == nil || *agent.MentionWatermark == "" {
+			continue
+		}
+
+		_, err := db.GetMessage(dbConn, *agent.MentionWatermark)
+		if err == nil {
+			continue
+		}
+
+		newWatermark := latestMsgID
+		if err := db.UpdateAgentWatermark(dbConn, agent.AgentID, newWatermark); err != nil {
+			continue
+		}
+
+		db.AppendAgentUpdate(projectPath, db.AgentUpdateJSONLRecord{
+			AgentID:          agent.AgentID,
+			MentionWatermark: &newWatermark,
+		})
+	}
+
+	return nil
 }
