@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interrupt syntax for daemon control: `!@agent` (resume), `!!@agent` (fresh), `!@agent!` (stop), `!!@agent!` (force end)
 
 ### Fixed
+- Chat: scroll-up pagination now loads correct messages (most recent before cursor, not oldest in database)
+- Chat: `@agent#sessid` fork syntax now works from chat input (session ID was not being captured)
 - Autocomplete: suggestions no longer auto-apply on Enter; must navigate first
 - Activity panel: presence-based icon colors (white pre-active, green active, yellow idle, gray offline, red error)
 - Presence audit trail: all state transitions logged to `agents.jsonl` as `presence_event` records
