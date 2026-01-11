@@ -236,10 +236,13 @@ func extractCleanOutput(result *mlld.ExecuteResult) string {
 
 			// Also include pre-JSON content (progress messages etc)
 			preJSON := strings.TrimSpace(rawOutput[:jsonStart])
-			if preJSON != "" {
-				return preJSON + "\n" + strings.Join(outputLines, "\n")
+			effectOutput := strings.Join(outputLines, "\n")
+			if preJSON != "" && effectOutput != "" {
+				return preJSON + "\n" + effectOutput
+			} else if preJSON != "" {
+				return preJSON
 			}
-			return strings.Join(outputLines, "\n")
+			return effectOutput
 		}
 	}
 
