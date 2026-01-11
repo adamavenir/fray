@@ -1228,6 +1228,14 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 		return "", err
 	}
 
+	// Clear LeftAt - spawn implies back (agent is rejoining)
+	// This prevents "agent has left" errors if agent tries to post before running fray back
+	if err := db.UpdateAgent(d.database, agent.AgentID, db.AgentUpdates{
+		LeftAt: types.OptionalInt64{Set: true, Value: nil},
+	}); err != nil {
+		d.debugf("  error clearing left_at: %v", err)
+	}
+
 	// Build wake prompt and get all included mentions
 	prompt, allMentions := d.buildWakePrompt(agent, triggerMsgID)
 	d.debugf("  wake prompt includes %d mentions", len(allMentions))
