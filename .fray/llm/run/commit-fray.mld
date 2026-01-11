@@ -1,3 +1,4 @@
-run cmd {git add @proj/.fray @proj/.beads}
-run cmd {git commit -m 'fray, beads'}
+exe @greperr() = cmd {grep "error"}
+run cmd {git add @proj/.fray @proj/.beads} | @greperr
+run cmd {git commit -m 'fray, beads'} | @greperr
 
