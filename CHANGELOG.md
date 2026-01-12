@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interrupt syntax for daemon control: `!@agent` (resume), `!!@agent` (fresh), `!@agent!` (stop), `!!@agent!` (force end)
 
 ### Fixed
+- Daemon: resilient presence detection with fallbacks when ccusage unavailable
+  - Fray post detection: any message post transitions to active immediately
+  - Process activity fallback (experimental): stdout/stderr activity after 10s
+  - Spawn timeout increased from 30s to 60s
 - Chat: edit mode shows distinct olive/amber background
 - Chat: reply mode (input starting with #msgid) shows blue text
 - Chat: scroll-up pagination now loads correct messages (most recent before cursor, not oldest in database)
