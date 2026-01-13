@@ -4,13 +4,13 @@ exe @fray(args) = cmd { fray @args --json }
 exe @safe(obj, field) = js { return (obj && obj[field]) || [] }
 exe @at(name) = js { return "@" + name }
 
->> Get session context for standup
+>> Get session context for hot handoff
 var @notes = @fray(`get meta/@agent/notes --last 3`)
 var @claimsData = @fray(`claims @$@agent`)
 var @notesList = @safe(@notes, "messages")
 var @claimsList = @safe(@claimsData, "claims")
 
-var @prompt = `**@at(@agent)** - User is asking you to close out your session.
+var @prompt = `**@at(@agent)** - Hot handoff requested. Work continues immediately in fresh context.
 
 ## Trigger
 Messages: @triggerMsgIDs
@@ -26,17 +26,16 @@ Messages: @triggerMsgIDs
 /end
 
 ---
-Generate a standup report and clean up your session (longterm closeout):
+Hand off to fresh context (you KNOW the explicit next steps):
 
-1. Post a brief standup to the room summarizing what you did
+1. Post brief "handing off" message to room
 2. Review session notes - ensure all balls land somewhere (beads, handoff, or delete)
-3. Update your notes with handoff context (Suggested Next Steps are SUGGESTIONS - may become stale)
-4. Commit code (your work only)
-5. Update changelog if user-facing changes
-6. Clear your claims: fray clear @at(@agent)
-7. Leave: fray bye @agent "standup message"
-
-Use /hand instead if work continues immediately with explicit next steps.`
+3. Create beads for any discovered work: bd create "..." --type task
+4. Update your notes with EXPLICIT next steps (not suggestions - the assignment)
+5. Commit code (your work only)
+6. Update changelog if user-facing changes
+7. Clear claims: fray clear @at(@agent)
+8. Hand off: fray brb @agent "handing off to fresh context"`
 
 show @prompt
 

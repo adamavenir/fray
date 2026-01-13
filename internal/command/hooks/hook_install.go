@@ -13,7 +13,13 @@ import (
 )
 
 type hookSettings struct {
-	Hooks map[string]any `json:"hooks,omitempty"`
+	Permissions *permissionsConfig `json:"permissions,omitempty"`
+	Hooks       map[string]any     `json:"hooks,omitempty"`
+}
+
+type permissionsConfig struct {
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
 }
 
 // NewHookInstallCmd installs Claude Code hooks for fray integration.
@@ -109,6 +115,23 @@ Examples:
 							}},
 						},
 					},
+					"PreToolUse": []any{
+						map[string]any{
+							"matcher": "Bash(fray post*)",
+							"hooks": []any{map[string]any{
+								"type":    "command",
+								"command": "fray hook-pretool",
+								"timeout": 3,
+							}},
+						},
+					},
+				},
+			}
+
+			// Add permissions to allow fray commands
+			hooksConfig.Permissions = &permissionsConfig{
+				Allow: []string{
+					"Bash(fray:*)",
 				},
 			}
 
@@ -138,6 +161,25 @@ Examples:
 				settings.Hooks[key] = value
 			}
 
+			// Merge permissions
+			if hooksConfig.Permissions != nil {
+				if settings.Permissions == nil {
+					settings.Permissions = &permissionsConfig{}
+				}
+				// Add fray permission if not already present
+				frayPerm := "Bash(fray:*)"
+				found := false
+				for _, p := range settings.Permissions.Allow {
+					if p == frayPerm {
+						found = true
+						break
+					}
+				}
+				if !found {
+					settings.Permissions.Allow = append(settings.Permissions.Allow, frayPerm)
+				}
+			}
+
 			merged, err := json.MarshalIndent(settings, "", "  ")
 			if err != nil {
 				return writeCommandError(cmd, err)
@@ -153,6 +195,9 @@ Examples:
 			fmt.Fprintln(out, "  UserPromptSubmit - injects room messages and @mentions before each prompt")
 			fmt.Fprintln(out, "  PreCompact - reminds to preserve work before context compaction")
 			fmt.Fprintln(out, "  SessionEnd - records session end for presence tracking")
+			fmt.Fprintln(out, "  PreToolUse (fray post) - reminds to use --reply-to and post in threads")
+			fmt.Fprintln(out, "")
+			fmt.Fprintln(out, "Added permission: Bash(fray:*)")
 
 			if precommit {
 				installPrecommitHook(projectDir, false, out)

@@ -1413,8 +1413,15 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 	prompt, spawnMode, allMentions := d.buildWakePrompt(agent, triggerMsgID)
 	d.debugf("  wake prompt includes %d mentions, mode=%s", len(allMentions), spawnMode)
 
+	// Add trigger info to context for driver to use
+	triggerInfo := TriggerInfo{MsgID: triggerMsgID}
+	if triggerMsg != nil {
+		triggerInfo.Home = triggerMsg.Home
+	}
+	spawnCtx := ContextWithTrigger(ctx, triggerInfo)
+
 	// Spawn process
-	proc, err := driver.Spawn(ctx, agent, prompt)
+	proc, err := driver.Spawn(spawnCtx, agent, prompt)
 	if err != nil {
 		d.debugf("  spawn error: %v", err)
 		db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, types.PresenceSpawning, types.PresenceError, "spawn_error", "daemon", agent.Status)
@@ -1699,10 +1706,10 @@ func (d *Daemon) monitorProcess(agentID string, proc *Process) {
 	}
 }
 
-// detectSpawnMode checks the trigger message for /fly, /hop, /land patterns.
+// detectSpawnMode checks the trigger message for /fly, /hop, /land, /hand patterns.
 // Returns the spawn mode and optionally a user message that follows the command.
 func detectSpawnMode(body string, agentID string) (SpawnMode, string) {
-	// Look for patterns like "@agent /fly", "@agent /hop", "@agent /land"
+	// Look for patterns like "@agent /fly", "@agent /hop", "@agent /land", "@agent /hand"
 	patterns := []struct {
 		suffix string
 		mode   SpawnMode
@@ -1710,6 +1717,7 @@ func detectSpawnMode(body string, agentID string) (SpawnMode, string) {
 		{" /fly", SpawnModeFly},
 		{" /hop", SpawnModeHop},
 		{" /land", SpawnModeLand},
+		{" /hand", SpawnModeHand},
 	}
 
 	agentMention := "@" + agentID
@@ -1846,6 +1854,8 @@ func (d *Daemon) buildInlinePrompt(agent types.Agent, triggerMsgID string, spawn
 		prompt = d.buildHopPromptInline(agent, userMessage, triggerInfo)
 	case SpawnModeLand:
 		prompt = d.buildLandPromptInline(agent, triggerInfo)
+	case SpawnModeHand:
+		prompt = d.buildHandPromptInline(agent, triggerInfo)
 	default:
 		prompt = d.buildResumePromptInline(agent, triggerInfo)
 	}
@@ -1893,7 +1903,7 @@ IMPORTANT: Users only see messages posted to fray. Your stdout is not visible. P
 
 // buildLandPromptInline creates the fallback prompt for /land command messages.
 func (d *Daemon) buildLandPromptInline(agent types.Agent, triggerInfo string) string {
-	return fmt.Sprintf(`**@%s** - User is asking you to close out your session.
+	return fmt.Sprintf(`**@%s** - User is asking you to close out your session (longterm).
 
 Trigger: %s
 
@@ -1902,6 +1912,20 @@ Generate a standup report and clean up your session:
 2. Update your notes with handoff context
 3. Clear claims: fray clear @%s
 4. Leave: fray bye %s "standup message"`,
+		agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID)
+}
+
+func (d *Daemon) buildHandPromptInline(agent types.Agent, triggerInfo string) string {
+	return fmt.Sprintf(`**@%s** - Hot handoff requested. Work continues immediately in fresh context.
+
+Trigger: %s
+
+Hand off to fresh context:
+1. Post brief "handing off" message to room
+2. Create beads for discovered work: bd create "..." --type task
+3. Update your notes with current state (preserve details, don't condense)
+4. Clear claims: fray clear @%s
+5. Hand off: fray brb %s "handing off to fresh context"`,
 		agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID)
 }
 

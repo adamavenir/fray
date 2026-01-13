@@ -46,7 +46,19 @@ func (d *CodexDriver) Spawn(ctx context.Context, agent types.Agent, prompt strin
 	cmd := exec.CommandContext(ctx, "codex", args...)
 
 	// Set FRAY_AGENT_ID so the agent can use fray commands without --as flag
-	cmd.Env = append(os.Environ(), "FRAY_AGENT_ID="+agent.AgentID)
+	env := append(os.Environ(), "FRAY_AGENT_ID="+agent.AgentID)
+
+	// Add trigger info for PreToolUse hook reminders
+	if trigger, ok := TriggerFromContext(ctx); ok {
+		if trigger.MsgID != "" {
+			env = append(env, "FRAY_TRIGGER_MSG="+trigger.MsgID)
+		}
+		if trigger.Home != "" {
+			env = append(env, "FRAY_TRIGGER_HOME="+trigger.Home)
+		}
+	}
+
+	cmd.Env = env
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

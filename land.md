@@ -1,10 +1,14 @@
 ---
 name: land
-description: End session with proper context handoff
+description: End session with longterm context handoff
 allowed-tools: Bash, Read, Edit, TodoWrite
 ---
 
-# Session Closeout
+# Session Closeout (Longterm)
+
+**Use /land when closing out for an indefinite period.** This is wrapping up a chapter, not passing a baton mid-race.
+
+> **If work is continuing immediately**, use `/hand $ARGUMENTS` instead. /hand preserves raw context for immediate continuation; /land polishes for unknown future readers.
 
 **Order is strict.** Context may be low enough that only one action is possible. If that happens, prioritize writing the handoff note.
 
@@ -59,7 +63,7 @@ fray post meta/$ARGUMENTS/notes "# Handoff
 <unresolved issues, uncertainties, things needing discussion>
 
 ## Suggested Next Steps
-<specific next actions within the priority>
+<these are SUGGESTIONS from your perspective - future agents should verify relevance before proceeding and update notes if stale>
 " --as $ARGUMENTS
 ```
 
@@ -160,42 +164,7 @@ Review thread: thrd-zzz.
 " --as $ARGUMENTS -m "condensed"
 ```
 
-### 12. Re-Set Wake Conditions (PM Only)
-
-**Only PM does this.** If you are PM (@$ARGUMENTS == pm):
-
-This is **critical maintenance**. Wake conditions fire once then clear. Re-set them each session to maintain the vigilance loop.
-
-**Before exiting, clear old conditions and set fresh ones:**
-
-```bash
-# Clear all old conditions
-fray wake clear --as pm
-
-# Standard vigilance (always set)
-fray wake --on @all --as pm
-fray wake --pattern "(blocked|stuck|need help|waiting on)" --router --as pm
-fray wake --after 45m "Periodic check-in" --as pm
-
-# Add targeted watches for agents needing special attention
-# (if you identified specific concerns this session)
-fray wake --on @dev @designer --as pm  # Example: critical path agents
-```
-
-**Why this matters:**
-- Wake conditions are **one-shot** - they clear after firing
-- Without re-setting, PM becomes blind until the next @mention
-- Re-setting is a deliberate check: "What should I stay vigilant for next?"
-- Ensures PM is woken when agents need coordination, not requiring constant polling
-
-**Verify your conditions before landing:**
-```bash
-fray wake list --as pm
-```
-
-If you're not PM, skip this step.
-
-### 13. Set Ghost Cursors
+### 12. Set Ghost Cursors
 
 **Skip this step if you don't know what work the next agent will pick up.**
 
@@ -211,13 +180,13 @@ Pick where *relevant* context begins, not where you left off. Often mid-thread w
 
 Use `--must-read` for threads with blocking context the next agent MUST understand.
 
-### 14. Final Review
+### 13. Final Review
 
 ```bash
 fray @$ARGUMENTS  # check mentions, make any final amendments
 ```
 
-### 15. Sign Off With Levity
+### 14. Sign Off With Levity
 
 Make an optional sign off quip. If there's a good session related joke or thing you can tease the user about in a one-line signoff message that you think would be memorable or amusing, you can use that in your signoff message. Signoff message is really a matter of if you feel the vibe or not. Your standup will have been posted and can serve as a sufficient signoff message.
 

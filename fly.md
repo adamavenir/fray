@@ -69,6 +69,22 @@ Claims auto-clear when you `fray bye`, or clear manually with `fray clear @$ARGU
 - **Close issues when done**: `bd close <id> --reason "..."` with what you implemented
 - **Create issues for discovered work**: `bd create "..." --type task`
 
+## Write Notes Throughout Your Session
+
+**Use your notes as a scratch pad.** Whenever you learn something that would help someone else working in the same area, jot it down:
+
+```bash
+fray post meta/$ARGUMENTS/notes "Discovered: the auth flow requires..." --as $ARGUMENTS
+```
+
+Don't worry about perfection - you'll get a chance to review and clean these up at session end (/land or /hand). Think of them as breadcrumbs for yourself and future agents.
+
+Good things to note:
+- Gotchas and surprises you encountered
+- Context that wasn't obvious from the code
+- Decisions made and why
+- Things you learned that aren't captured elsewhere
+
 ## Questions for User and Other Agents
 
 Use structured question blocks in posts for decisions that need input:
@@ -100,82 +116,6 @@ When referencing IDs in messages, **always prefix with `#`**:
 - `#123` - github issue IDs
 
 These become **bold+underlined** in chat and are **double-click to copy** (copies just the ID without `#`). This makes IDs scannable and actionable.
-
-## Special Instructions for PM
-
-You have `wake` trust enabling agent coordination. **Your job:** Stay vigilant between sessions by setting wake conditions at the start of each flight.
-
-### The Vigilance Loop
-
-Wake conditions fire **once then clear**. This forces deliberate attention management:
-1. You land, re-set conditions for your next session
-2. Conditions wake you when agents need help
-3. You handle it, land again, re-set conditions
-4. Repeat
-
-This is the heartbeat of PM coordination. Don't skip the re-set step.
-
-### Startup: Set Your Conditions
-
-**Always do this after /fly spawns:**
-```bash
-# Wake when any agent posts in room (not meta/)
-fray wake --on @all --as pm
-
-# Wake on explicit blockers
-fray wake --pattern "(blocked|stuck|need help|waiting on)" --router --as pm
-
-# Check-in timer (safety net - adjust as needed)
-fray wake --after 45m "Periodic check-in" --as pm
-```
-
-**During active coordination, add targeted watches:**
-```bash
-# Wake when specific agents post (e.g., during critical work)
-fray wake --on @dev @designer --as pm
-```
-
-**Check what you've set:**
-```bash
-fray wake list --as pm
-```
-
-### Pattern Reference
-
-Watch for these patterns when setting conditions:
-
-| Pattern | Indicates | Example Action |
-|---------|-----------|-----------------|
-| `blocked\|stuck` | Can't proceed without help | Unblock or reassign work |
-| `need.*help` | Explicit request | Respond immediately |
-| `waiting on` | Idle waiting for something | Provide what they need or reassign |
-| `conflict\|collision` | Resource/work conflict | Coordinate/deconflict |
-| `question.*@pm` | Needs your decision | Answer the question |
-| `pr.*ready\|review.*ready` | Work ready for handoff | Review and approve |
-| `failed\|error` | Build/test failure | Triage and guide fix |
-
-Use `--router` to add Haiku assessment for ambiguous patterns, reducing false positives:
-```bash
-fray wake --pattern "issue|concern" --router --as pm  # Haiku filters noise
-```
-
-### Shutdown: Reset Your Conditions (Before /land)
-
-**CRITICAL:** Before you exit, clear old conditions and re-set fresh ones:
-
-```bash
-fray wake clear --as pm
-
-# Standard vigilance
-fray wake --on @all --as pm
-fray wake --pattern "(blocked|stuck|need help|waiting on)" --router --as pm
-fray wake --after 45m "Periodic check-in" --as pm
-
-# If you identified agents needing special attention this session:
-fray wake --on @dev @designer --as pm  # Example: add targeted watches
-```
-
-The `/land` checklist will remind you to do this. Don't skip it.
 
 ## Room & Thread Conventions
 

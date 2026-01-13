@@ -182,10 +182,22 @@ func (d *ClaudeDriver) Spawn(ctx context.Context, agent types.Agent, prompt stri
 
 	// Set FRAY_AGENT_ID so the agent can use fray commands without --as flag
 	// Set CLAUDE_SESSION_ID so fray post can attach session ID to messages
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"FRAY_AGENT_ID="+agent.AgentID,
 		"CLAUDE_SESSION_ID="+sessionID,
 	)
+
+	// Add trigger info for PreToolUse hook reminders
+	if trigger, ok := TriggerFromContext(ctx); ok {
+		if trigger.MsgID != "" {
+			env = append(env, "FRAY_TRIGGER_MSG="+trigger.MsgID)
+		}
+		if trigger.Home != "" {
+			env = append(env, "FRAY_TRIGGER_HOME="+trigger.Home)
+		}
+	}
+
+	cmd.Env = env
 
 	// Get pipes for stdin/stdout/stderr
 	stdin, err := cmd.StdinPipe()

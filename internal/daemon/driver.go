@@ -70,7 +70,8 @@ const (
 	SpawnModeNormal SpawnMode = ""     // Regular @mention spawn
 	SpawnModeFly    SpawnMode = "fly"  // /fly command - full session
 	SpawnModeHop    SpawnMode = "hop"  // /hop command - auto-bye on idle
-	SpawnModeLand   SpawnMode = "land" // /land command - asking to close out
+	SpawnModeLand   SpawnMode = "land" // /land command - longterm closeout
+	SpawnModeHand   SpawnMode = "hand" // /hand command - hot handoff, immediate continuation
 )
 
 // Process represents a spawned agent process.
@@ -103,6 +104,27 @@ type Driver interface {
 
 	// Cleanup terminates the process and releases resources.
 	Cleanup(proc *Process) error
+}
+
+// TriggerInfo holds context about what triggered an agent spawn.
+type TriggerInfo struct {
+	MsgID string // The message ID that triggered this spawn
+	Home  string // The home (room or thread name) of the trigger message
+}
+
+type contextKey string
+
+const triggerInfoKey contextKey = "triggerInfo"
+
+// ContextWithTrigger adds trigger info to a context for driver use.
+func ContextWithTrigger(ctx context.Context, info TriggerInfo) context.Context {
+	return context.WithValue(ctx, triggerInfoKey, info)
+}
+
+// TriggerFromContext retrieves trigger info from context.
+func TriggerFromContext(ctx context.Context) (TriggerInfo, bool) {
+	info, ok := ctx.Value(triggerInfoKey).(TriggerInfo)
+	return info, ok
 }
 
 // GetDriver returns a driver for the given name.

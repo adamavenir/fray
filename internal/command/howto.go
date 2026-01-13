@@ -364,19 +364,51 @@ The party setup wizard helps configure these for new projects.
 	},
 	"fly-land": {
 		Name:        "fly-land",
-		Title:       "Customizing Session Commands",
-		Description: "How to customize /fly and /land for projects",
-		Content: `CUSTOMIZING SESSION COMMANDS
-============================
+		Title:       "Session Lifecycle Commands",
+		Description: "How to customize /fly, /land, and /hand for projects",
+		Content: `SESSION LIFECYCLE COMMANDS
+==========================
 
-The /fly and /land commands define the agent session lifecycle. Projects can
-customize these to match their conventions.
+The /fly, /land, and /hand commands define the agent session lifecycle.
+Projects can customize these to match their conventions.
+
+COMMAND OVERVIEW
+----------------
+  /fly   Start session - load context, get assignment
+  /hop   Quick join - minimal context, fast in/out
+  /land  End session (longterm) - polish for future readers
+  /hand  End session (shortterm) - hot handoff, work continues NOW
+
+WHEN TO USE EACH ENDING
+-----------------------
+  /land  You have IDEAS about what might come next (suggestions)
+         - Polish notes for unknown future reader
+         - Next steps framed as suggestions (may become stale)
+         - Exit: fray bye
+
+  /hand  You KNOW the EXPLICIT next work (assignment)
+         - Preserve raw details for immediate continuation
+         - Next steps framed as the assignment (not suggestions)
+         - Exit: fray brb (daemon spawns fresh session)
+
+Both /land and /hand:
+  - Commit code
+  - Update changelog
+  - Create beads for discovered work
+  - Update handoff notes
+
+Decision guide:
+  - Know EXACTLY what's next? → /hand
+  - Have IDEAS about what's next? → /land
+  - Context getting low, mid-task? → /hand
+  - Task complete, wrapping up? → /land
 
 GLOBAL COMMANDS
 ---------------
 Global commands live in ~/.claude/commands/:
   ~/.claude/commands/fly.md     Session start
-  ~/.claude/commands/land.md    Session end
+  ~/.claude/commands/land.md    Longterm session end
+  ~/.claude/commands/hand.md    Hot handoff
   ~/.claude/commands/hop.md     Quick join (lightweight)
   ~/.claude/commands/standup.md Standup report format
 
@@ -389,6 +421,7 @@ Create .claude/commands/ in your project directory:
   mkdir -p .claude/commands
   cp ~/.claude/commands/fly.md .claude/commands/
   cp ~/.claude/commands/land.md .claude/commands/
+  cp ~/.claude/commands/hand.md .claude/commands/
 
 Then customize for your project's conventions.
 
@@ -406,8 +439,8 @@ Key sections:
   - Active Patterns: Ongoing workflows
   - ID Convention: How to reference things
 
-LAND.MD STRUCTURE
------------------
+LAND.MD STRUCTURE (LONGTERM)
+----------------------------
 The /land command should:
 1. Post standup report (room summary)
 2. Update handoff note (for next session)
@@ -416,12 +449,29 @@ The /land command should:
 5. Create beads for discovered work
 6. Clear claims
 7. Commit code (if any)
-8. Sign off (fray bye)
+8. Update changelog (if shipping)
+9. Sign off: fray bye
 
 Key principles:
-  - Capture first, condense later
+  - Polish for unknown future reader
   - Grounded citations (IDs, not summaries)
-  - DRY breadcrumbs (point to sources)
+  - Condense ephemeral details
+
+HAND.MD STRUCTURE (HOT HANDOFF)
+-------------------------------
+The /hand command should:
+1. Post brief "handing off" message
+2. Create beads for discovered work
+3. Update notes with EXPLICIT next steps (the assignment)
+4. Commit code (if any)
+5. Update changelog (if user-facing changes)
+6. Clear claims
+7. Hand off: fray brb
+
+Key principles:
+  - Preserve raw context
+  - Next steps are an ASSIGNMENT, not suggestions
+  - Ensure all balls land somewhere
 
 CUSTOMIZATION IDEAS
 -------------------
@@ -436,14 +486,6 @@ For teams with PR reviews:
 For projects with CI/CD:
   - Add build verification to /land
   - Include deployment checks
-
-PARTY SETUP
------------
-The party agent can scaffold project-specific commands:
-  party setup
-
-This walks you through customization options and generates
-the .claude/commands/ directory with appropriate defaults.
 `,
 	},
 }

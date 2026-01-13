@@ -462,6 +462,12 @@ func ensureLLMRouter(projectRoot string) error {
 		return fmt.Errorf("create llm/routers directory: %w", err)
 	}
 
+	// Create llm/slash/ directory for session lifecycle commands
+	slashDir := filepath.Join(llmDir, "slash")
+	if err := os.MkdirAll(slashDir, 0o755); err != nil {
+		return fmt.Errorf("create llm/slash directory: %w", err)
+	}
+
 	// Write mentions router template (if not exists)
 	mentionsPath := filepath.Join(routersDir, "mentions.mld")
 	if _, err := os.Stat(mentionsPath); os.IsNotExist(err) {
@@ -483,6 +489,22 @@ func ensureLLMRouter(projectRoot string) error {
 	if _, err := os.Stat(statusPath); os.IsNotExist(err) {
 		if err := os.WriteFile(statusPath, db.StatusTemplate, 0o644); err != nil {
 			return fmt.Errorf("write status template: %w", err)
+		}
+	}
+
+	// Write slash command templates (session lifecycle)
+	slashTemplates := map[string][]byte{
+		"fly.mld":  db.FlyTemplate,
+		"land.mld": db.LandTemplate,
+		"hand.mld": db.HandTemplate,
+		"hop.mld":  db.HopTemplate,
+	}
+	for name, content := range slashTemplates {
+		path := filepath.Join(slashDir, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := os.WriteFile(path, content, 0o644); err != nil {
+				return fmt.Errorf("write %s template: %w", name, err)
+			}
 		}
 	}
 

@@ -31,9 +31,21 @@ func (d *OpencodeDriver) Spawn(ctx context.Context, agent types.Agent, prompt st
 	var cmd *exec.Cmd
 	sessionID, _ := core.GenerateGUID("sess")
 
+	// Build environment with agent and trigger info
+	env := append(os.Environ(), "FRAY_AGENT_ID="+agent.AgentID)
+	if trigger, ok := TriggerFromContext(ctx); ok {
+		if trigger.MsgID != "" {
+			env = append(env, "FRAY_TRIGGER_MSG="+trigger.MsgID)
+		}
+		if trigger.Home != "" {
+			env = append(env, "FRAY_TRIGGER_HOME="+trigger.Home)
+		}
+	}
+
 	switch delivery {
 	case types.PromptDeliveryArgs:
 		cmd = exec.CommandContext(ctx, "opencode", "-p", prompt)
+		cmd.Env = env
 
 	case types.PromptDeliveryStdin:
 		return nil, fmt.Errorf("stdin delivery not yet implemented for opencode driver")
@@ -60,6 +72,7 @@ func (d *OpencodeDriver) Spawn(ctx context.Context, agent types.Agent, prompt st
 
 		promptPath, _ := filepath.Abs(tmpFile.Name())
 		cmd = exec.CommandContext(ctx, "opencode", "-f", promptPath)
+		cmd.Env = env
 
 		// Track temp file for cleanup in Cleanup()
 		proc := &Process{
