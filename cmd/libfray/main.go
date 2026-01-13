@@ -18,6 +18,7 @@ import (
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/db"
 	"github.com/adamavenir/fray/internal/types"
+	"github.com/adamavenir/fray/internal/usage"
 )
 
 // Handle management
@@ -692,6 +693,133 @@ func FraySetConfig(handle C.ulonglong, key, value *C.char) *C.char {
 	}
 
 	return returnJSON(successResponse(map[string]bool{"set": true}))
+}
+
+//export FrayListChannels
+func FrayListChannels() *C.char {
+	config, err := core.ReadGlobalConfig()
+	if err != nil {
+		return returnJSON(errorResponse(err.Error()))
+	}
+	if config == nil {
+		return returnJSON(successResponse([]core.GlobalChannelRef{}))
+	}
+
+	// Convert map to list with IDs
+	type ChannelInfo struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	channels := make([]ChannelInfo, 0, len(config.Channels))
+	for id, ch := range config.Channels {
+		channels = append(channels, ChannelInfo{
+			ID:   id,
+			Name: ch.Name,
+			Path: ch.Path,
+		})
+	}
+	return returnJSON(successResponse(channels))
+}
+
+//export FrayGetFaves
+func FrayGetFaves(handle C.ulonglong, agentID *C.char, itemType *C.char) *C.char {
+	entry, ok := getHandle(uint64(handle))
+	if !ok {
+		return returnJSON(errorResponse("invalid database handle"))
+	}
+
+	agentIDStr := cStringToGo(agentID)
+	typeStr := cStringToGo(itemType)
+
+	faves, err := db.GetFaves(entry.db, agentIDStr, typeStr)
+	if err != nil {
+		return returnJSON(errorResponse(err.Error()))
+	}
+
+	return returnJSON(successResponse(faves))
+}
+
+//export FrayUnfaveItem
+func FrayUnfaveItem(handle C.ulonglong, itemGUID, agentID *C.char) *C.char {
+	entry, ok := getHandle(uint64(handle))
+	if !ok {
+		return returnJSON(errorResponse("invalid database handle"))
+	}
+
+	itemGUIDStr := cStringToGo(itemGUID)
+	agentIDStr := cStringToGo(agentID)
+
+	// Infer item type from GUID prefix
+	itemType := "message"
+	if strings.HasPrefix(itemGUIDStr, "thrd-") {
+		itemType = "thread"
+	}
+
+	if err := db.RemoveFave(entry.db, agentIDStr, itemType, itemGUIDStr); err != nil {
+		return returnJSON(errorResponse(err.Error()))
+	}
+
+	return returnJSON(successResponse(map[string]bool{"unfaved": true}))
+}
+
+//export FrayGetAgentUsage
+func FrayGetAgentUsage(handle C.ulonglong, agentID *C.char) *C.char {
+	entry, ok := getHandle(uint64(handle))
+	if !ok {
+		return returnJSON(errorResponse("invalid database handle"))
+	}
+
+	agentIDStr := cStringToGo(agentID)
+	if agentIDStr == "" {
+		return returnJSON(errorResponse("agent_id required"))
+	}
+
+	// Get agent to find their session_id and driver
+	agent, err := db.GetAgent(entry.db, agentIDStr)
+	if err != nil {
+		return returnJSON(errorResponse(err.Error()))
+	}
+	if agent == nil {
+		return returnJSON(errorResponse("agent not found"))
+	}
+
+	// If no session, return zeroes
+	if agent.LastSessionID == nil || *agent.LastSessionID == "" {
+		return returnJSON(successResponse(usage.SessionUsage{
+			SessionID:    "",
+			ContextLimit: 200000,
+		}))
+	}
+
+	sessionID := *agent.LastSessionID
+
+	// Determine driver from agent's invoke config
+	driver := ""
+	if agent.Invoke != nil {
+		driver = agent.Invoke.Driver
+	}
+
+	// Use the internal usage package to get session usage
+	var sessionUsage *usage.SessionUsage
+	if driver != "" {
+		sessionUsage, err = usage.GetSessionUsageByDriver(sessionID, driver)
+	} else {
+		sessionUsage, err = usage.GetSessionUsage(sessionID)
+	}
+
+	if err != nil {
+		return returnJSON(errorResponse(err.Error()))
+	}
+
+	if sessionUsage == nil {
+		sessionUsage = &usage.SessionUsage{
+			SessionID:    sessionID,
+			ContextLimit: 200000,
+		}
+	}
+
+	return returnJSON(successResponse(sessionUsage))
 }
 
 //export FrayFreeString
