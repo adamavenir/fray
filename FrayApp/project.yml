@@ -1,0 +1,142 @@
+name: Fray
+options:
+  bundleIdPrefix: com.fray
+  deploymentTarget:
+    macOS: "14.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+targets:
+  Fray:
+    type: application
+    platform: macOS
+    sources:
+      - path: Fray
+        excludes:
+          - "**/*.h"
+          - "**/module.modulemap"
+          - "**/*.xcodeproj"
+          - "**/*.xcodeproj/**"
+      - path: ../build/libfray.dylib
+        buildPhase:
+          copyFiles:
+            destination: frameworks
+            subpath: ""
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fray.app
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Fray
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        CODE_SIGN_ENTITLEMENTS: Fray/Fray.entitlements
+        LIBRARY_SEARCH_PATHS:
+          - $(PROJECT_DIR)/../build
+        HEADER_SEARCH_PATHS:
+          - $(PROJECT_DIR)/Fray/FrayBridge
+        OTHER_LDFLAGS:
+          - -lfray
+        OTHER_SWIFT_FLAGS:
+          - -import-objc-header
+          - $(PROJECT_DIR)/Fray/FrayBridge/libfray.h
+        ENABLE_APP_SANDBOX: NO
+    preBuildScripts:
+      - name: Build libfray.dylib
+        script: |
+          # Skip build if dylib already exists
+          if [ -f "${PROJECT_DIR}/../build/libfray.dylib" ]; then
+            echo "libfray.dylib already exists, skipping build"
+            exit 0
+          fi
+          export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
+          cd "${PROJECT_DIR}/.."
+          CGO_ENABLED=1 go build -buildmode=c-shared -o build/libfray.dylib ./cmd/libfray
+        inputFiles:
+          - $(PROJECT_DIR)/../cmd/libfray/main.go
+        outputFiles:
+          - $(PROJECT_DIR)/../build/libfray.dylib
+    postBuildScripts:
+      - name: Fix libfray install name
+        script: |
+          # Change install name to @rpath so the app can find it at runtime
+          install_name_tool -id @rpath/libfray.dylib "$BUILT_PRODUCTS_DIR/$FRAMEWORKS_FOLDER_PATH/libfray.dylib"
+          # Fix the reference in all binaries that link to it
+          for binary in "$BUILT_PRODUCTS_DIR/$EXECUTABLE_FOLDER_PATH"/*.dylib "$BUILT_PRODUCTS_DIR/$EXECUTABLE_PATH"; do
+            if [ -f "$binary" ]; then
+              install_name_tool -change libfray.dylib @rpath/libfray.dylib "$binary" 2>/dev/null || true
+            fi
+          done
+
+  FrayMenuBar:
+    type: application
+    platform: macOS
+    sources:
+      - path: FrayMenuBar
+      - path: Fray/FrayBridge
+        excludes:
+          - "**/*.h"
+          - "**/module.modulemap"
+      - path: Fray/Styles/FrayColors.swift
+      - path: ../build/libfray.dylib
+        buildPhase:
+          copyFiles:
+            destination: frameworks
+            subpath: ""
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fray.menubar
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        LIBRARY_SEARCH_PATHS:
+          - $(PROJECT_DIR)/../build
+        HEADER_SEARCH_PATHS:
+          - $(PROJECT_DIR)/Fray/FrayBridge
+        OTHER_LDFLAGS:
+          - -lfray
+        OTHER_SWIFT_FLAGS:
+          - -import-objc-header
+          - $(PROJECT_DIR)/Fray/FrayBridge/libfray.h
+        ENABLE_APP_SANDBOX: NO
+    preBuildScripts:
+      - name: Build libfray.dylib
+        script: |
+          # Skip build if dylib already exists
+          if [ -f "${PROJECT_DIR}/../build/libfray.dylib" ]; then
+            echo "libfray.dylib already exists, skipping build"
+            exit 0
+          fi
+          export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
+          cd "${PROJECT_DIR}/.."
+          CGO_ENABLED=1 go build -buildmode=c-shared -o build/libfray.dylib ./cmd/libfray
+        inputFiles:
+          - $(PROJECT_DIR)/../cmd/libfray/main.go
+        outputFiles:
+          - $(PROJECT_DIR)/../build/libfray.dylib
+    postBuildScripts:
+      - name: Fix libfray install name
+        script: |
+          # Change install name to @rpath so the app can find it at runtime
+          install_name_tool -id @rpath/libfray.dylib "$BUILT_PRODUCTS_DIR/$FRAMEWORKS_FOLDER_PATH/libfray.dylib"
+          # Fix the reference in all binaries that link to it
+          for binary in "$BUILT_PRODUCTS_DIR/$EXECUTABLE_FOLDER_PATH"/*.dylib "$BUILT_PRODUCTS_DIR/$EXECUTABLE_PATH"; do
+            if [ -f "$binary" ]; then
+              install_name_tool -change libfray.dylib @rpath/libfray.dylib "$binary" 2>/dev/null || true
+            fi
+          done
+
+schemes:
+  Fray:
+    build:
+      targets:
+        Fray: all
+    run:
+      config: Debug
+
+  FrayMenuBar:
+    build:
+      targets:
+        FrayMenuBar: all
+    run:
+      config: Debug
