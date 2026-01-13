@@ -663,3 +663,56 @@ func AppendWakeConditionReset(projectPath, guid string, expiresAt int64) error {
 	touchDatabaseFile(projectPath)
 	return nil
 }
+
+// AppendJobCreate appends a job creation record to JSONL.
+func AppendJobCreate(projectPath string, job types.Job) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := JobCreateJSONLRecord{
+		Type:       "job_create",
+		GUID:       job.GUID,
+		Name:       job.Name,
+		Context:    job.Context,
+		OwnerAgent: job.OwnerAgent,
+		Status:     string(job.Status),
+		ThreadGUID: job.ThreadGUID,
+		CreatedAt:  job.CreatedAt,
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendJobUpdate appends a job update record to JSONL.
+func AppendJobUpdate(projectPath string, record JobUpdateJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	record.Type = "job_update"
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendJobWorkerJoin appends a worker join record to JSONL.
+func AppendJobWorkerJoin(projectPath string, record JobWorkerJoinJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	record.Type = "job_worker_join"
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+// AppendJobWorkerLeave appends a worker leave record to JSONL.
+func AppendJobWorkerLeave(projectPath string, record JobWorkerLeaveJSONLRecord) error {
+	frayDir := resolveFrayDir(projectPath)
+	record.Type = "job_worker_leave"
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}

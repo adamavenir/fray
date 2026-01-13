@@ -22,7 +22,7 @@ type AgentUpdates struct {
 // GetAgent returns an agent by exact ID.
 func GetAgent(db *sql.DB, agentID string) (*types.Agent, error) {
 	row := db.QueryRow(`
-		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
 		FROM fray_agents
 		WHERE agent_id = ?
 	`, agentID)
@@ -40,7 +40,7 @@ func GetAgent(db *sql.DB, agentID string) (*types.Agent, error) {
 // GetAgentsByPrefix returns agents matching a prefix.
 func GetAgentsByPrefix(db *sql.DB, prefix string) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
 		FROM fray_agents
 		WHERE agent_id = ? OR agent_id LIKE ?
 		ORDER BY agent_id
@@ -67,7 +67,7 @@ func GetAgentsByPrefix(db *sql.DB, prefix string) ([]types.Agent, error) {
 // GetAgents returns all agents.
 func GetAgents(db *sql.DB) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
 		FROM fray_agents
 		ORDER BY agent_id
 	`)
@@ -116,15 +116,20 @@ func CreateAgent(db *sql.DB, agent types.Agent) error {
 		managed = 1
 	}
 
+	isEphemeral := 0
+	if agent.IsEphemeral {
+		isEphemeral = 1
+	}
+
 	presence := string(agent.Presence)
 	if presence == "" {
 		presence = string(types.PresenceOffline)
 	}
 
 	_, err := db.Exec(`
-		INSERT INTO fray_agents (guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, guid, agent.AgentID, agent.Status, agent.Purpose, agent.Avatar, agent.RegisteredAt, agent.LastSeen, agent.LeftAt, managed, invokeJSON, presence, agent.MentionWatermark, agent.LastHeartbeat)
+		INSERT INTO fray_agents (guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, last_heartbeat, job_id, job_idx, is_ephemeral)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, guid, agent.AgentID, agent.Status, agent.Purpose, agent.Avatar, agent.RegisteredAt, agent.LastSeen, agent.LeftAt, managed, invokeJSON, presence, agent.MentionWatermark, agent.LastHeartbeat, agent.JobID, agent.JobIdx, isEphemeral)
 	return err
 }
 
@@ -224,7 +229,7 @@ func UpdateAgent(db *sql.DB, agentID string, updates AgentUpdates) error {
 // GetActiveAgents returns non-stale agents.
 func GetActiveAgents(db *sql.DB, staleHours int) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
 		FROM fray_agents
 		WHERE left_at IS NULL
 		  AND last_seen > (strftime('%s', 'now') - ? * 3600)
@@ -252,7 +257,7 @@ func GetActiveAgents(db *sql.DB, staleHours int) ([]types.Agent, error) {
 // GetAllAgents returns all agents.
 func GetAllAgents(db *sql.DB) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
 		FROM fray_agents
 		ORDER BY agent_id
 	`)
@@ -596,7 +601,7 @@ func NextVersion(db *sql.DB, base string) (int, error) {
 
 func scanAgent(scanner interface{ Scan(dest ...any) error }) (types.Agent, error) {
 	var row agentRow
-	if err := scanner.Scan(&row.GUID, &row.AgentID, &row.Status, &row.Purpose, &row.Avatar, &row.RegisteredAt, &row.LastSeen, &row.LeftAt, &row.Managed, &row.Invoke, &row.Presence, &row.MentionWatermark, &row.ReactionWatermark, &row.LastHeartbeat, &row.LastSessionID, &row.SessionMode); err != nil {
+	if err := scanner.Scan(&row.GUID, &row.AgentID, &row.Status, &row.Purpose, &row.Avatar, &row.RegisteredAt, &row.LastSeen, &row.LeftAt, &row.Managed, &row.Invoke, &row.Presence, &row.MentionWatermark, &row.ReactionWatermark, &row.LastHeartbeat, &row.LastSessionID, &row.SessionMode, &row.JobID, &row.JobIdx, &row.IsEphemeral); err != nil {
 		return types.Agent{}, err
 	}
 	return row.toAgent(), nil
@@ -619,6 +624,9 @@ type agentRow struct {
 	LastHeartbeat     sql.NullInt64
 	LastSessionID     sql.NullString
 	SessionMode       sql.NullString
+	JobID             sql.NullString
+	JobIdx            sql.NullInt64
+	IsEphemeral       int
 }
 
 func (row agentRow) toAgent() types.Agent {
@@ -636,6 +644,12 @@ func (row agentRow) toAgent() types.Agent {
 		ReactionWatermark: nullIntPtr(row.ReactionWatermark),
 		LastHeartbeat:     nullIntPtr(row.LastHeartbeat),
 		LastSessionID:     nullStringPtr(row.LastSessionID),
+		JobID:             nullStringPtr(row.JobID),
+		IsEphemeral:       row.IsEphemeral != 0,
+	}
+	if row.JobIdx.Valid {
+		idx := int(row.JobIdx.Int64)
+		agent.JobIdx = &idx
 	}
 	if row.Presence.Valid {
 		agent.Presence = types.PresenceState(row.Presence.String)
@@ -655,7 +669,7 @@ func (row agentRow) toAgent() types.Agent {
 // GetManagedAgents returns all agents with managed = true.
 func GetManagedAgents(db *sql.DB) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode
+		SELECT guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
 		FROM fray_agents
 		WHERE managed = 1
 		ORDER BY agent_id

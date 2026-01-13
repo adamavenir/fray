@@ -25,7 +25,10 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   reaction_watermark INTEGER,          -- last processed reaction timestamp (ms)
   last_heartbeat INTEGER,              -- last silent checkin timestamp (ms)
   last_session_id TEXT,                -- Claude Code session UUID for --resume
-  session_mode TEXT                    -- "" (resumed), "n" (new), or 3-char fork prefix
+  session_mode TEXT,                   -- "" (resumed), "n" (new), or 3-char fork prefix
+  job_id TEXT,                         -- FK to fray_jobs.guid (null for regular agents)
+  job_idx INTEGER,                     -- worker index within job (0-based)
+  is_ephemeral INTEGER NOT NULL DEFAULT 0  -- 1 for job workers
 );
 
 -- Agent sessions (daemon-managed)
@@ -292,6 +295,19 @@ CREATE TABLE IF NOT EXISTS fray_wake_conditions (
 CREATE INDEX IF NOT EXISTS idx_fray_wake_conditions_agent ON fray_wake_conditions(agent_id);
 CREATE INDEX IF NOT EXISTS idx_fray_wake_conditions_type ON fray_wake_conditions(type);
 CREATE INDEX IF NOT EXISTS idx_fray_wake_conditions_expires ON fray_wake_conditions(expires_at);
+
+-- Jobs (parallel agent work units)
+CREATE TABLE IF NOT EXISTS fray_jobs (
+  guid TEXT PRIMARY KEY,               -- e.g., 'job-abc12345'
+  name TEXT NOT NULL,
+  context TEXT,                        -- JSON blob (issues, threads, messages, meta, instructions, refs)
+  owner_agent TEXT,                    -- agent who created the job
+  status TEXT DEFAULT 'running',       -- running/completed/failed/cancelled
+  thread_guid TEXT,                    -- auto-created job-<id> thread
+  created_at INTEGER NOT NULL,
+  completed_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_fray_jobs_status ON fray_jobs(status);
 `
 
 const defaultConfigSQL = `
@@ -781,6 +797,21 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(agentColumns, "reaction_watermark") {
 			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN reaction_watermark INTEGER"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "job_id") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN job_id TEXT"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "job_idx") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN job_idx INTEGER"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "is_ephemeral") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN is_ephemeral INTEGER NOT NULL DEFAULT 0"); err != nil {
 				return err
 			}
 		}

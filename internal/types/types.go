@@ -65,6 +65,9 @@ type Agent struct {
 	LastHeartbeat     *int64         `json:"last_heartbeat,omitempty"`     // last silent checkin timestamp (ms)
 	LastSessionID     *string        `json:"last_session_id,omitempty"`    // Claude Code session ID for --resume
 	SessionMode       string         `json:"session_mode,omitempty"`       // "" (resumed), "n" (new), or 3-char fork prefix
+	JobID             *string        `json:"job_id,omitempty"`             // FK to fray_jobs.guid (nil for regular agents)
+	JobIdx            *int           `json:"job_idx,omitempty"`            // worker index within job (0-based)
+	IsEphemeral       bool           `json:"is_ephemeral,omitempty"`       // true for job workers
 }
 
 // ReactionEntry represents a single reaction from an agent.
@@ -424,4 +427,33 @@ type AgentRoles struct {
 	AgentID  string   `json:"agent_id"`
 	Held     []string `json:"held"`
 	Playing  []string `json:"playing"`
+}
+
+// JobStatus represents job lifecycle state.
+type JobStatus string
+
+const (
+	JobStatusRunning   JobStatus = "running"
+	JobStatusCompleted JobStatus = "completed"
+	JobStatusFailed    JobStatus = "failed"
+	JobStatusCancelled JobStatus = "cancelled"
+)
+
+// JobContext holds optional context for a job (issues, threads, messages).
+type JobContext struct {
+	Issues   []string `json:"issues,omitempty"`
+	Threads  []string `json:"threads,omitempty"`
+	Messages []string `json:"messages,omitempty"`
+}
+
+// Job represents a parallel work session.
+type Job struct {
+	GUID        string      `json:"guid"`
+	Name        string      `json:"name"`
+	Context     *JobContext `json:"context,omitempty"`
+	OwnerAgent  string      `json:"owner_agent"`
+	Status      JobStatus   `json:"status"`
+	ThreadGUID  string      `json:"thread_guid"`
+	CreatedAt   int64       `json:"created_at"`
+	CompletedAt *int64      `json:"completed_at,omitempty"`
 }
