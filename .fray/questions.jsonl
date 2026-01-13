@@ -164,3 +164,9 @@
 {"type":"question_update","guid":"qstn-r8gsvcv8","status":"answered","answered_in":"msg-mrm1wl6i"}
 {"type":"question_update","guid":"qstn-pxbtoyf4","status":"answered","answered_in":"msg-mrm1wl6i"}
 {"type":"question_update","guid":"qstn-l9pn4hgw","status":"answered","answered_in":"msg-mrm1wl6i"}
+{"type":"question","guid":"qstn-vhyfo382","re":"Should the modal be closable by clicking outside it, or only x/esc?","from_agent":"clank","status":"open","thread_guid":"thrd-qs5cb9ec","asked_in":"msg-m1u0twvj","created_at":1768263831}
+{"type":"question","guid":"qstn-6fohzt2a","re":"What's the max content size before we truncate/paginate?","from_agent":"clank","status":"open","thread_guid":"thrd-qs5cb9ec","asked_in":"msg-m1u0twvj","created_at":1768263831}
+{"type":"question","guid":"qstn-4v941hpq","re":"Should we cache resolver output for recently-viewed items?","from_agent":"clank","status":"open","thread_guid":"thrd-qs5cb9ec","asked_in":"msg-m1u0twvj","created_at":1768263831}
+{"type":"question_update","guid":"qstn-vhyfo382","status":"answered","answered_in":"msg-pah312c7"}
+{"type":"question_update","guid":"qstn-6fohzt2a","status":"answered","answered_in":"msg-pah312c7"}
+{"type":"question_update","guid":"qstn-4v941hpq","status":"answered","answered_in":"msg-pah312c7"}
