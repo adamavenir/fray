@@ -9,11 +9,17 @@ import (
 )
 
 var (
-	mentionRe            = regexp.MustCompile(`@([a-z][a-z0-9]*(?:[-\.][a-z0-9]+)*)`)
-	mentionWithSessionRe = regexp.MustCompile(`@([a-z][a-z0-9]*(?:[-\.][a-z0-9]+)*)(?:#([a-zA-Z0-9]+))?`)
+	// Agent name pattern: base name + optional bracket suffix for job workers
+	// Base: alice, bob.frontend, pm.1
+	// Worker: dev[abc1-0], pm.frontend[xyz9-3]
+	agentNamePattern     = `[a-z][a-z0-9]*(?:[-\.][a-z0-9]+)*(?:\[[a-z0-9]+-\d+\])?`
+	mentionRe            = regexp.MustCompile(`@(` + agentNamePattern + `)`)
+	mentionWithSessionRe = regexp.MustCompile(`@(` + agentNamePattern + `)(?:#([a-zA-Z0-9]+))?`)
 	// interruptMentionRe captures: (1) prefix !!, (2) agent name, (3) suffix !
-	interruptMentionRe = regexp.MustCompile(`(!{1,2})@([a-z][a-z0-9]*(?:[-\.][a-z0-9]+)*)(!?)`)
+	interruptMentionRe = regexp.MustCompile(`(!{1,2})@(` + agentNamePattern + `)(!?)`)
 	issueRefRe         = regexp.MustCompile(`@([a-z]+-[a-zA-Z0-9]+)`)
+	// workerNameRe parses job worker names like dev[abc1-0]
+	workerNameRe = regexp.MustCompile(`^([a-z][a-z0-9.-]*)\[([a-z0-9]+)-(\d+)\]$`)
 )
 
 // MentionResult holds extracted mentions, fork sessions, and interrupts.
@@ -45,7 +51,7 @@ func ExtractMentions(body string, agentBases map[string]struct{}) []string {
 			mentions = append(mentions, name)
 			continue
 		}
-		if containsDot(name) {
+		if containsDot(name) || containsBracket(name) {
 			mentions = append(mentions, name)
 			continue
 		}
@@ -101,7 +107,7 @@ func ExtractMentionsWithSession(body string, agentBases map[string]struct{}) Men
 			result.Mentions = append(result.Mentions, name)
 			continue
 		}
-		if containsDot(name) {
+		if containsDot(name) || containsBracket(name) {
 			result.Mentions = append(result.Mentions, name)
 			if sessionID != "" {
 				result.ForkSessions[name] = sessionID
@@ -141,7 +147,7 @@ func ExtractMentionsWithSession(body string, agentBases map[string]struct{}) Men
 		isValid := false
 		if name == "all" {
 			isValid = true
-		} else if containsDot(name) {
+		} else if containsDot(name) || containsBracket(name) {
 			isValid = true
 		} else if agentBases != nil {
 			_, isValid = agentBases[name]
@@ -250,10 +256,37 @@ func containsDot(value string) bool {
 	return false
 }
 
+func containsBracket(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] == '[' {
+			return true
+		}
+	}
+	return false
+}
+
 func lower(value string) string {
 	buf := []rune(value)
 	for i, r := range buf {
 		buf[i] = unicode.ToLower(r)
 	}
 	return string(buf)
+}
+
+// ParseJobWorkerName extracts components from a worker ID.
+// Input: "dev[abc1-0]"
+// Returns: baseAgent="dev", jobSuffix="abc1", workerIdx=0, isWorker=true
+// Input: "dev"
+// Returns: baseAgent="dev", jobSuffix="", workerIdx=-1, isWorker=false
+func ParseJobWorkerName(agentID string) (baseAgent, jobSuffix string, workerIdx int, isWorker bool) {
+	match := workerNameRe.FindStringSubmatch(agentID)
+	if match == nil {
+		return agentID, "", -1, false
+	}
+	// match[1] = base agent, match[2] = job suffix, match[3] = worker index
+	idx := 0
+	for _, c := range match[3] {
+		idx = idx*10 + int(c-'0')
+	}
+	return match[1], match[2], idx, true
 }

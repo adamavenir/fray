@@ -29,6 +29,135 @@ func assertMention(t *testing.T, mentions []string, value string) {
 	t.Fatalf("expected mention %s", value)
 }
 
+func TestExtractMentionsWithWorkerIDs(t *testing.T) {
+	bases := map[string]struct{}{
+		"dev": {},
+		"pm":  {},
+	}
+
+	tests := []struct {
+		name     string
+		body     string
+		expected []string
+	}{
+		{
+			name:     "regular agent",
+			body:     "hey @dev",
+			expected: []string{"dev"},
+		},
+		{
+			name:     "worker ID simple",
+			body:     "hey @dev[abc1-0]",
+			expected: []string{"dev[abc1-0]"},
+		},
+		{
+			name:     "worker ID with dots",
+			body:     "hey @pm.frontend[xyz9-3]",
+			expected: []string{"pm.frontend[xyz9-3]"},
+		},
+		{
+			name:     "mixed regular and worker",
+			body:     "@dev and @pm[job1-2]",
+			expected: []string{"dev", "pm[job1-2]"},
+		},
+		{
+			name:     "multiple workers",
+			body:     "@dev[abc1-0] @dev[abc1-1] @dev[abc1-2]",
+			expected: []string{"dev[abc1-0]", "dev[abc1-1]", "dev[abc1-2]"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mentions := ExtractMentions(tt.body, bases)
+			if len(mentions) != len(tt.expected) {
+				t.Fatalf("expected %d mentions, got %d: %v", len(tt.expected), len(mentions), mentions)
+			}
+			for _, exp := range tt.expected {
+				assertMention(t, mentions, exp)
+			}
+		})
+	}
+}
+
+func TestParseJobWorkerName(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		wantBase      string
+		wantSuffix    string
+		wantIdx       int
+		wantIsWorker  bool
+	}{
+		{
+			name:         "regular agent",
+			input:        "dev",
+			wantBase:     "dev",
+			wantSuffix:   "",
+			wantIdx:      -1,
+			wantIsWorker: false,
+		},
+		{
+			name:         "regular agent with dot",
+			input:        "pm.frontend",
+			wantBase:     "pm.frontend",
+			wantSuffix:   "",
+			wantIdx:      -1,
+			wantIsWorker: false,
+		},
+		{
+			name:         "worker ID simple",
+			input:        "dev[abc1-0]",
+			wantBase:     "dev",
+			wantSuffix:   "abc1",
+			wantIdx:      0,
+			wantIsWorker: true,
+		},
+		{
+			name:         "worker ID higher index",
+			input:        "dev[abc1-3]",
+			wantBase:     "dev",
+			wantSuffix:   "abc1",
+			wantIdx:      3,
+			wantIsWorker: true,
+		},
+		{
+			name:         "worker ID with dots",
+			input:        "pm.frontend[xyz9-3]",
+			wantBase:     "pm.frontend",
+			wantSuffix:   "xyz9",
+			wantIdx:      3,
+			wantIsWorker: true,
+		},
+		{
+			name:         "worker ID double digit index",
+			input:        "dev[abcd-12]",
+			wantBase:     "dev",
+			wantSuffix:   "abcd",
+			wantIdx:      12,
+			wantIsWorker: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, suffix, idx, isWorker := ParseJobWorkerName(tt.input)
+			if base != tt.wantBase {
+				t.Errorf("baseAgent: got %q, want %q", base, tt.wantBase)
+			}
+			if suffix != tt.wantSuffix {
+				t.Errorf("jobSuffix: got %q, want %q", suffix, tt.wantSuffix)
+			}
+			if idx != tt.wantIdx {
+				t.Errorf("workerIdx: got %d, want %d", idx, tt.wantIdx)
+			}
+			if isWorker != tt.wantIsWorker {
+				t.Errorf("isWorker: got %v, want %v", isWorker, tt.wantIsWorker)
+			}
+		})
+	}
+}
+
 func TestExtractInterruptSyntax(t *testing.T) {
 	bases := map[string]struct{}{
 		"alice": {},
