@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/adamavenir/fray/internal/aap"
@@ -518,12 +519,20 @@ func NewAgentListCmd() *cobra.Command {
 					presence = "offline"
 				}
 
-				managed := ""
+				tags := []string{}
 				if agent.Managed {
-					managed = " [managed]"
+					tags = append(tags, "managed")
+				}
+				if agent.AAPGUID != nil {
+					tags = append(tags, "AAP")
 				}
 
-				fmt.Fprintf(out, "@%s: %s (driver: %s)%s\n", agent.AgentID, presence, driver, managed)
+				tagStr := ""
+				if len(tags) > 0 {
+					tagStr = " [" + strings.Join(tags, ", ") + "]"
+				}
+
+				fmt.Fprintf(out, "@%s: %s (driver: %s)%s\n", agent.AgentID, presence, driver, tagStr)
 			}
 
 			return nil

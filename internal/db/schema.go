@@ -12,6 +12,7 @@ const schemaSQL = `
 CREATE TABLE IF NOT EXISTS fray_agents (
   guid TEXT PRIMARY KEY,               -- e.g., "usr-x9y8z7w6"
   agent_id TEXT NOT NULL UNIQUE,       -- e.g., "alice.419", "pm.3.sub.1"
+  aap_guid TEXT,                       -- AAP identity GUID (e.g., "aap-a1b2c3d4...")
   status TEXT,                         -- current task/focus (mutable)
   purpose TEXT,                        -- static identity/role info
   avatar TEXT,                         -- single-char avatar for display
@@ -812,6 +813,11 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(agentColumns, "is_ephemeral") {
 			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN is_ephemeral INTEGER NOT NULL DEFAULT 0"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "aap_guid") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN aap_guid TEXT"); err != nil {
 				return err
 			}
 		}

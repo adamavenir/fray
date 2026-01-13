@@ -225,6 +225,7 @@ type AgentUpdateJSONLRecord struct {
 	Status           *string             `json:"status,omitempty"`
 	Purpose          *string             `json:"purpose,omitempty"`
 	Avatar           *string             `json:"avatar,omitempty"`
+	AAPGUID          *string             `json:"aap_guid,omitempty"`
 	LastSeen         *int64              `json:"last_seen,omitempty"`
 	LeftAt           *int64              `json:"left_at,omitempty"`
 	Managed          *bool               `json:"managed,omitempty"`

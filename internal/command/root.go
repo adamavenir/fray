@@ -108,6 +108,8 @@ func NewRootCmd(version string) *cobra.Command {
 		NewCursorCmd(),
 		NewWakeCmd(),
 		NewJobCmd(),
+		NewTrustCmd(),
+		NewMigrateAAPCmd(),
 		NewInstallNotifierCmd(),
 		hooks.NewHookInstallCmd(),
 		hooks.NewHookUninstallCmd(),
