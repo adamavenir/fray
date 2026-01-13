@@ -15,7 +15,7 @@ struct IdentityPromptView: View {
                 .font(FrayTypography.title)
                 .foregroundStyle(.primary)
 
-            Text("Enter your agent name to get started.")
+            Text("Enter your username to get started.")
                 .font(FrayTypography.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -25,7 +25,7 @@ struct IdentityPromptView: View {
                     Text("@")
                         .font(FrayTypography.agentName)
                         .foregroundStyle(.secondary)
-                    TextField("agent-name", text: $agentName)
+                    TextField("user", text: $agentName)
                         .textFieldStyle(.plain)
                         .font(FrayTypography.agentName)
                         .autocorrectionDisabled()
