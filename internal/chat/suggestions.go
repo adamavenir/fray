@@ -22,6 +22,7 @@ const (
 	suggestionMention
 	suggestionReply
 	suggestionCommand
+	suggestionScript // for /run script arguments
 )
 
 // commandDef defines a slash command with its name, description, and optional usage.
@@ -166,7 +167,7 @@ func (m *Model) refreshSuggestions() {
 					m.suggestions = scriptSuggestions
 					m.suggestionIndex = -1
 					m.suggestionStart = spaceIdx + 1
-					m.suggestionKind = suggestionCommand
+					m.suggestionKind = suggestionScript
 					m.resize()
 					return
 				}
@@ -284,6 +285,19 @@ func (m *Model) applySuggestion(item suggestionItem) {
 			// Space exists - replace only up to space, keep args
 			m.input.SetValue(item.Insert + valueStr[spaceIdx:])
 		}
+		m.input.CursorEnd()
+		m.clearSuggestions()
+		m.lastInputValue = m.input.Value()
+		m.lastInputPos = m.inputCursorPos()
+		m.resize()
+		return
+	}
+
+	// For script suggestions (after /run), replace from suggestionStart to cursor
+	if m.suggestionKind == suggestionScript {
+		valueStr := m.input.Value()
+		before := valueStr[:start]
+		m.input.SetValue(before + item.Insert + " ")
 		m.input.CursorEnd()
 		m.clearSuggestions()
 		m.lastInputValue = m.input.Value()

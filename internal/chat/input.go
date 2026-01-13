@@ -84,11 +84,11 @@ func (m *Model) updateInputStyle() {
 	_, reactionMode := reactionInputText(value)
 	replyMode := !reactionMode && replyPrefixRe.MatchString(value)
 
-	// Edit mode takes precedence - distinct background
+	// Edit mode takes precedence - red text to indicate editing
 	if m.editingMessageID != "" {
 		m.reactionMode = false
 		m.replyMode = false
-		applyInputStylesWithBg(&m.input, textColor, blurText, editBg)
+		applyInputStyles(&m.input, editColor, editColor)
 		return
 	}
 

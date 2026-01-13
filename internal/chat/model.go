@@ -56,7 +56,7 @@ var (
 	statusColor   = lipgloss.Color("241")
 	metaColor     = lipgloss.Color("242")
 	inputBg       = lipgloss.Color("236")
-	editBg        = lipgloss.Color("58")  // olive/amber background for edit mode
+	editColor     = lipgloss.Color("203") // bright red text for edit mode
 	peekBg        = lipgloss.Color("24")  // blue background for peek mode statusline
 	caretColor    = lipgloss.Color("243")
 	reactionColor = lipgloss.Color("220") // yellow for reaction input
@@ -179,15 +179,20 @@ type Model struct {
 	lastClickID         string
 	lastClickAt         time.Time
 	// Activity panel state
-	managedAgents        []types.Agent          // daemon-managed agents
-	agentUnreadCounts    map[string]int         // unread count per agent
-	agentTokenUsage      map[string]*TokenUsage // token usage per agent (by session ID)
-	activityDrillOffline bool                   // true when viewing offline agents only
-	statusInvoker        *StatusInvoker         // mlld invoker for status display customization
+	managedAgents         []types.Agent          // daemon-managed agents
+	agentUnreadCounts     map[string]int         // unread count per agent
+	agentTokenUsage       map[string]*TokenUsage // token usage per agent (by session ID)
+	activityDrillOffline  bool                   // true when viewing offline agents only
+	statusInvoker         *StatusInvoker         // mlld invoker for status display customization
+	expandedJobClusters   map[string]bool        // job ID -> expanded (true = show workers)
 	// Presence debounce state (suppress flicker from rapid presence changes)
 	agentDisplayPresence map[string]types.PresenceState // presence currently being displayed
 	agentActualPresence  map[string]types.PresenceState // actual presence from last poll
 	agentPresenceChanged map[string]time.Time      // when actual presence last changed
+	// Animation frame counter for spawn cycle (incremented every activity poll)
+	animationFrame       int
+	// New message notification state (when user has scrolled up)
+	newMessageAuthors    []string // authors of messages received while scrolled up
 	// Peek mode state (view thread without changing posting context)
 	peekThread       *types.Thread // thread being peeked (nil if not peeking)
 	peekPseudo       pseudoThreadKind // pseudo-thread being peeked (empty if not peeking)
@@ -251,15 +256,9 @@ func NewModel(opts Options) (*Model, error) {
 	threads, threadIndex := loadThreads(opts.DB, opts.Username)
 
 	// Load managed agents for activity panel (initial state before first poll)
+	// Note: Token usage is deferred to background poll to avoid blocking startup
 	managedAgents, _ := db.GetManagedAgents(opts.DB)
 	agentTokenUsage := make(map[string]*TokenUsage)
-	for _, agent := range managedAgents {
-		if agent.LastSessionID != nil && *agent.LastSessionID != "" {
-			if usage := getTokenUsage(*agent.LastSessionID); usage != nil {
-				agentTokenUsage[agent.AgentID] = usage
-			}
-		}
-	}
 
 	colorMap, err := buildColorMap(opts.DB, 50, opts.IncludeArchived)
 	if err != nil {
@@ -350,12 +349,13 @@ func NewModel(opts Options) (*Model, error) {
 		mutedThreads:       make(map[string]bool),
 		threadNicknames:    make(map[string]string),
 		avatarMap:          make(map[string]string),
-		agentUnreadCounts:    make(map[string]int),
-		agentDisplayPresence: make(map[string]types.PresenceState),
-		agentActualPresence:  make(map[string]types.PresenceState),
-		agentPresenceChanged: make(map[string]time.Time),
-		managedAgents:        managedAgents,
-		agentTokenUsage:      agentTokenUsage,
+		agentUnreadCounts:     make(map[string]int),
+		agentDisplayPresence:  make(map[string]types.PresenceState),
+		agentActualPresence:   make(map[string]types.PresenceState),
+		agentPresenceChanged:  make(map[string]time.Time),
+		expandedJobClusters:   make(map[string]bool),
+		managedAgents:         managedAgents,
+		agentTokenUsage:       agentTokenUsage,
 		statusInvoker:      NewStatusInvoker(filepath.Join(opts.ProjectRoot, ".fray")),
 		zoneManager:        zone.New(),
 		channels:        channels,
@@ -578,8 +578,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if handled, cmd := m.handleSlashCommand(value); handled {
+				// Slash commands don't clear the new message notification
 				return m, cmd
 			}
+			// Regular messages clear the new message notification and scroll to bottom
+			m.clearNewMessageNotification()
+			m.refreshViewport(true)
 			return m, m.handleSubmit(value)
 		case tea.KeyShiftTab:
 			// Shift-Tab: open channels panel
@@ -601,6 +605,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport, cmd = m.viewport.Update(msg)
 			if (msg.Type == tea.KeyPgUp || msg.Type == tea.KeyHome) && m.nearTop() {
 				m.loadOlderMessages()
+			}
+			// Clear new message notification if scrolled to bottom
+			if m.atBottom() {
+				m.clearNewMessageNotification()
 			}
 			return m, cmd
 		}
@@ -660,6 +668,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Button == tea.MouseButtonWheelUp && m.nearTop() {
 			m.loadOlderMessages()
 		}
+		// Clear new message notification if scrolled to bottom
+		if m.atBottom() {
+			m.clearNewMessageNotification()
+		}
 		return m, cmd
 	case pollMsg:
 		// Build set of room message IDs to avoid double-notifying
@@ -683,7 +695,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.maybeNotify(incomingMsg)
 				}
 				if m.currentThread == nil && m.currentPseudo == "" {
-					m.refreshViewport(true)
+					// Check if user has scrolled up before deciding scroll behavior
+					if m.atBottom() {
+						m.refreshViewport(true)
+						m.newMessageAuthors = nil // Clear any pending notifications
+					} else {
+						// User has scrolled up - track new message authors instead of scrolling
+						m.refreshViewport(false)
+						for _, incomingMsg := range incoming {
+							m.addNewMessageAuthor(incomingMsg.FromAgent)
+						}
+					}
 					// Mark as read since user is viewing the room
 					m.markRoomAsRead()
 				}
@@ -775,6 +797,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.pollCmd()
 	case activityPollMsg:
 		// Fast poll for activity panel updates (250ms)
+		m.animationFrame++ // Increment animation frame for spawn cycle animation
 		if msg.managedAgents != nil {
 			// Track presence changes for debouncing (suppress flicker)
 			now := time.Now()
@@ -898,17 +921,18 @@ func (m *Model) View() string {
 func (m *Model) renderInput() string {
 	var parts []string
 
+	// Add new messages notification bar if user has scrolled up
+	if newMsgBar := m.renderNewMessagesBar(); newMsgBar != "" {
+		parts = append(parts, newMsgBar)
+	}
+
 	// Add reply preview if replying
 	if replyPreview := m.renderReplyPreview(); replyPreview != "" {
 		parts = append(parts, replyPreview)
 	}
 
 	content := m.input.View()
-	bg := inputBg
-	if m.editingMessageID != "" {
-		bg = editBg
-	}
-	style := lipgloss.NewStyle().Background(bg).Padding(0, inputPadding, 0, 0)
+	style := lipgloss.NewStyle().Background(inputBg).Padding(0, inputPadding, 0, 0)
 	if width := m.mainWidth(); width > 0 {
 		style = style.Width(width)
 	}
@@ -941,6 +965,37 @@ func (m *Model) renderReplyPreview() string {
 		}
 	}
 	return preview + " " + cancel
+}
+
+// renderNewMessagesBar renders a blue notification bar when new messages arrive while scrolled up
+func (m *Model) renderNewMessagesBar() string {
+	if len(m.newMessageAuthors) == 0 {
+		return ""
+	}
+
+	// Build message text
+	var text string
+	if len(m.newMessageAuthors) == 1 {
+		text = fmt.Sprintf("new message from @%s", m.newMessageAuthors[0])
+	} else {
+		mentions := make([]string, len(m.newMessageAuthors))
+		for i, author := range m.newMessageAuthors {
+			mentions[i] = "@" + author
+		}
+		text = fmt.Sprintf("new messages from %s", strings.Join(mentions, " "))
+	}
+
+	barStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("15")).  // white text
+		Background(lipgloss.Color("24")).   // blue background (same as peek mode)
+		Padding(0, 1)
+
+	width := m.mainWidth()
+	if width > 0 {
+		barStyle = barStyle.Width(width)
+	}
+
+	return barStyle.Render(text)
 }
 
 // renderPeekStatusline renders a blue statusline for peek mode.
@@ -1183,6 +1238,18 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) (bool, tea.Cmd) {
 	if m.threadPanelOpen {
 		threadWidth = m.threadPanelWidth()
 		if msg.X < threadWidth {
+			// Check for job cluster zone clicks (activity panel)
+			for _, agent := range m.managedAgents {
+				if agent.JobID != nil && *agent.JobID != "" {
+					zoneID := "job-cluster-" + *agent.JobID
+					if m.zoneManager.Get(zoneID).InBounds(msg) {
+						// Toggle cluster expansion
+						m.expandedJobClusters[*agent.JobID] = !m.expandedJobClusters[*agent.JobID]
+						return true, nil
+					}
+				}
+			}
+
 			// Check for agent zone clicks (activity panel at bottom)
 			for _, agent := range m.managedAgents {
 				zoneID := "agent-" + agent.AgentID

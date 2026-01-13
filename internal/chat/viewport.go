@@ -266,6 +266,7 @@ func (m *Model) refreshViewport(scrollToBottom bool) {
 	m.viewport.SetContent(content)
 	if scrollToBottom {
 		m.viewport.GotoBottom()
+		m.clearNewMessageNotification() // Clear notification when scrolling to bottom
 		return
 	}
 	if m.viewport.Height <= 0 {
@@ -282,6 +283,36 @@ func (m *Model) refreshViewport(scrollToBottom bool) {
 
 func (m *Model) nearTop() bool {
 	return m.viewport.YOffset <= 5
+}
+
+// atBottom returns true if the viewport is scrolled to (or near) the bottom
+func (m *Model) atBottom() bool {
+	if m.viewport.Height <= 0 {
+		return true
+	}
+	content := m.viewport.View()
+	contentHeight := lipgloss.Height(content)
+	maxOffset := contentHeight - m.viewport.Height
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	// Consider "at bottom" if within 3 lines of the bottom
+	return m.viewport.YOffset >= maxOffset-3
+}
+
+// addNewMessageAuthor adds an author to the pending new message notification list
+func (m *Model) addNewMessageAuthor(author string) {
+	for _, existing := range m.newMessageAuthors {
+		if existing == author {
+			return // already tracked
+		}
+	}
+	m.newMessageAuthors = append(m.newMessageAuthors, author)
+}
+
+// clearNewMessageNotification clears the new message bar
+func (m *Model) clearNewMessageNotification() {
+	m.newMessageAuthors = nil
 }
 
 func (m *Model) loadOlderMessages() {

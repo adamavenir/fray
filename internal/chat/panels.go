@@ -1931,7 +1931,10 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 		now = t
 	}
 
+	// Categorize agents into active/offline, separating job workers
 	var activeAgents, offlineAgents []types.Agent
+	jobWorkers := make(map[string][]types.Agent) // job_id -> workers
+
 	for _, agent := range m.managedAgents {
 		// Fork sessions (SessionMode is 3-char prefix, not "n" or "") hide after 5m idle
 		isForkSession := agent.SessionMode != "" && agent.SessionMode != "n"
@@ -1945,48 +1948,54 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 			}
 		}
 
-		// Presence takes priority over LeftAt for categorization
-		// This handles the case where daemon sets LeftAt on process exit but agent is just idle
+		// Determine if this is a job worker
+		isJobWorker := agent.JobID != nil && *agent.JobID != ""
+
+		// Categorize by presence state
+		isActive := false
 		if agent.Presence == types.PresenceOffline {
-			offlineAgents = append(offlineAgents, agent)
-			continue
-		}
-		// Active states: spawning/prompting/prompted/active/error are all "active" for display
-		if agent.Presence == types.PresenceSpawning || agent.Presence == types.PresencePrompting ||
+			// Offline
+		} else if agent.Presence == types.PresenceSpawning || agent.Presence == types.PresencePrompting ||
 			agent.Presence == types.PresencePrompted || agent.Presence == types.PresenceActive ||
-			agent.Presence == types.PresenceError {
-			activeAgents = append(activeAgents, agent)
-			continue
-		}
-		// Idle presence: show in active section (resumable session)
-		if agent.Presence == types.PresenceIdle {
-			activeAgents = append(activeAgents, agent)
-			continue
-		}
-		// For empty presence or LeftAt set without explicit offline, use time-based threshold
-		if agent.LeftAt != nil {
-			// Agent has left - check if recently active (within threshold)
+			agent.Presence == types.PresenceError || agent.Presence == types.PresenceIdle {
+			isActive = true
+		} else if agent.LeftAt != nil {
 			timeSinceActive := now - agent.LastSeen
-			if timeSinceActive > int64(staleThreshold) {
-				offlineAgents = append(offlineAgents, agent)
-			} else {
-				activeAgents = append(activeAgents, agent)
-			}
-			continue
-		}
-		// Default: use time-based threshold
-		timeSinceActive := now - agent.LastSeen
-		if timeSinceActive > int64(staleThreshold) {
-			offlineAgents = append(offlineAgents, agent)
+			isActive = timeSinceActive <= int64(staleThreshold)
 		} else {
+			timeSinceActive := now - agent.LastSeen
+			isActive = timeSinceActive <= int64(staleThreshold)
+		}
+
+		if isJobWorker {
+			jobWorkers[*agent.JobID] = append(jobWorkers[*agent.JobID], agent)
+		} else if isActive {
 			activeAgents = append(activeAgents, agent)
+		} else {
+			offlineAgents = append(offlineAgents, agent)
 		}
 	}
 
-	// Render active agents
+	// Render regular active agents
 	for _, agent := range activeAgents {
 		line := m.renderAgentRow(agent, width)
 		lines = append(lines, line)
+	}
+
+	// Render job worker clusters
+	for jobID, workers := range jobWorkers {
+		if m.expandedJobClusters[jobID] {
+			// Expanded: show all workers
+			for _, worker := range workers {
+				line := m.renderAgentRow(worker, width)
+				// Add indent for expanded workers
+				lines = append(lines, "  "+line)
+			}
+		} else {
+			// Collapsed: show cluster summary
+			line := m.renderJobClusterRow(jobID, workers, width)
+			lines = append(lines, line)
+		}
 	}
 
 	// Render offline summary (collapsed)
@@ -2015,6 +2024,65 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 	}
 
 	return lines, len(lines)
+}
+
+// renderJobClusterRow renders a collapsed job worker cluster row.
+// Format: "▶ baseAgent × count [suffix]"
+func (m *Model) renderJobClusterRow(jobID string, workers []types.Agent, width int) string {
+	if width <= 0 {
+		width = 30
+	}
+	rowWidth := width - 3
+
+	// Extract base agent name and suffix from first worker
+	baseAgent := ""
+	if len(workers) > 0 && workers[0].JobID != nil {
+		// Worker ID format: baseAgent[suffix-idx]
+		// Parse to extract base agent name
+		workerID := workers[0].AgentID
+		if idx := strings.Index(workerID, "["); idx > 0 {
+			baseAgent = workerID[:idx]
+		} else {
+			baseAgent = workerID
+		}
+	}
+
+	// Extract 4-char suffix from job ID (job-abc12345 -> abc1)
+	suffix := ""
+	if len(jobID) >= 8 {
+		suffix = jobID[4:8]
+	}
+
+	// Count active vs total workers
+	activeCount := 0
+	for _, w := range workers {
+		if w.Presence == types.PresenceActive || w.Presence == types.PresenceSpawning ||
+			w.Presence == types.PresencePrompting || w.Presence == types.PresencePrompted {
+			activeCount++
+		}
+	}
+
+	// Determine dominant presence icon
+	icon := "▶"
+	if activeCount == 0 {
+		icon = "▷" // all idle/offline
+	}
+
+	// Build label: "▶ baseAgent × count [suffix]"
+	label := fmt.Sprintf(" %s %s × %d [%s]", icon, baseAgent, len(workers), suffix)
+
+	// Truncate if needed
+	if len(label) > rowWidth {
+		label = label[:rowWidth]
+	}
+
+	// Style with agent color
+	agentColor := m.colorForAgent(baseAgent)
+	style := lipgloss.NewStyle().Foreground(agentColor).Bold(true)
+
+	// Wrap in bubblezone for click handling
+	zoneID := "job-cluster-" + jobID
+	return m.zoneManager.Mark(zoneID, style.Render(label))
 }
 
 // renderAgentRow renders a single agent row with token usage progress bar.
