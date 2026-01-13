@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showActivityPanel = false
     @State private var showCommandPalette = false
+    @State private var showIdentityPrompt = false
+    @State private var currentAgentId: String?
     @State private var agentsVM: AgentsViewModel?
     @State private var allThreads: [FrayThread] = []
     @FocusState private var isInputFocused: Bool
@@ -32,9 +34,9 @@ struct ContentView: View {
                     }
 
                     if let thread = selectedThread {
-                        MessageListView(thread: thread)
+                        MessageListView(thread: thread, currentAgentId: currentAgentId)
                     } else {
-                        RoomView()
+                        RoomView(currentAgentId: currentAgentId)
                     }
                 }
             } detail: {
@@ -49,6 +51,7 @@ struct ContentView: View {
             }
             .task {
                 await connectToProject()
+                await checkIdentity()
                 agentsVM = AgentsViewModel(bridge: bridge)
                 await loadThreads()
                 restoreState()
@@ -60,6 +63,14 @@ struct ContentView: View {
                 activityPanelVisible = newValue
             }
             .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    if let agentId = currentAgentId {
+                        Text("@\(agentId)")
+                            .font(FrayTypography.agentName)
+                            .foregroundStyle(FrayColors.colorForAgent(agentId))
+                    }
+                }
+
                 ToolbarItem(placement: .navigation) {
                     Button(action: {
                         withAnimation {
@@ -97,6 +108,11 @@ struct ContentView: View {
                 CommandPalette { result in
                     handleCommandResult(result)
                 }
+            }
+        }
+        .sheet(isPresented: $showIdentityPrompt) {
+            IdentityPromptView(isPresented: $showIdentityPrompt) { agentId in
+                currentAgentId = agentId
             }
         }
     }
@@ -162,6 +178,20 @@ struct ContentView: View {
         if !selectedThreadId.isEmpty,
            let thread = allThreads.first(where: { $0.guid == selectedThreadId }) {
             selectedThread = thread
+        }
+    }
+
+    private func checkIdentity() async {
+        guard bridge.isConnected else { return }
+
+        do {
+            if let username = try bridge.getConfig(key: "username"), !username.isEmpty {
+                currentAgentId = username
+            } else {
+                showIdentityPrompt = true
+            }
+        } catch {
+            showIdentityPrompt = true
         }
     }
 }

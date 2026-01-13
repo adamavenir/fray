@@ -180,12 +180,14 @@ func GetThreadByName(db *sql.DB, name string, parent *string) (*types.Thread, er
 }
 
 // GetThreadByNameAny returns a thread by name regardless of parent.
-// If multiple threads have the same name, returns the one with most recent activity.
+// Prefers root threads (no parent) over sub-threads. Among peers, prefers oldest.
 func GetThreadByNameAny(db *sql.DB, name string) (*types.Thread, error) {
 	row := db.QueryRow(`
 		SELECT guid, name, parent_thread, status, type, created_at, anchor_message_guid, anchor_hidden, last_activity_at
 		FROM fray_threads WHERE name = ?
-		ORDER BY last_activity_at DESC NULLS LAST
+		ORDER BY
+			CASE WHEN parent_thread IS NULL THEN 0 ELSE 1 END,
+			created_at ASC
 		LIMIT 1
 	`, name)
 

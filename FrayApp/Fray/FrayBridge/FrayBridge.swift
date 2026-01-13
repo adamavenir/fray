@@ -359,6 +359,68 @@ final class FrayBridge {
         }
     }
 
+    // MARK: - Agent Registration
+
+    /// Register a new agent or return existing one
+    func registerAgent(agentId: String) throws -> FrayAgent {
+        try ensureConnected()
+
+        let result = agentId.withCString { cAgentId in
+            callFFI {
+                FrayRegisterAgent(handle, UnsafeMutablePointer(mutating: cAgentId))
+            }
+        }
+        return try decode(FrayAgent.self, from: result)
+    }
+
+    // MARK: - Config
+
+    /// Get a config value
+    func getConfig(key: String) throws -> String? {
+        try ensureConnected()
+
+        let result = key.withCString { cKey in
+            callFFI {
+                FrayGetConfig(handle, UnsafeMutablePointer(mutating: cKey))
+            }
+        }
+
+        guard let data = result.data(using: .utf8) else {
+            throw FrayError.decodingFailed("Invalid UTF-8 response")
+        }
+
+        let response = try JSONDecoder.fray.decode(FFIResponse<String?>.self, from: data)
+        if !response.ok {
+            throw FrayError.ffi(response.error ?? "unknown error")
+        }
+        return response.data ?? nil
+    }
+
+    /// Set a config value
+    func setConfig(key: String, value: String) throws {
+        try ensureConnected()
+
+        let result = key.withCString { cKey in
+            value.withCString { cValue in
+                callFFI {
+                    FraySetConfig(
+                        handle,
+                        UnsafeMutablePointer(mutating: cKey),
+                        UnsafeMutablePointer(mutating: cValue)
+                    )
+                }
+            }
+        }
+
+        let response = try JSONDecoder.fray.decode(
+            FFIResponse<EmptyData>.self,
+            from: result.data(using: .utf8)!
+        )
+        if !response.ok {
+            throw FrayError.ffi(response.error ?? "unknown error")
+        }
+    }
+
     // MARK: - Private Helpers
 
     private func ensureConnected() throws {

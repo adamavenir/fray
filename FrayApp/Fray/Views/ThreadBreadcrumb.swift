@@ -223,7 +223,7 @@ struct ThreadNavigationRow: View {
     }
 
     private func formatRelativeTime(_ timestamp: Int64) -> String {
-        let date = Date(timeIntervalSince1970: Double(timestamp) / 1000.0)
+        let date = Date(timeIntervalSince1970: Double(timestamp))
         let interval = Date().timeIntervalSince(date)
 
         if interval < 60 { return "just now" }
