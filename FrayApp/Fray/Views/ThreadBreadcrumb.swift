@@ -3,6 +3,7 @@ import SwiftUI
 struct ThreadBreadcrumb: View {
     let thread: FrayThread?
     let allThreads: [FrayThread]
+    var channelName: String?
     let onNavigate: (FrayThread?) -> Void
 
     var body: some View {
@@ -11,7 +12,7 @@ struct ThreadBreadcrumb: View {
                 HStack(spacing: 4) {
                     Image(systemName: "house")
                         .font(.caption)
-                    Text("Room")
+                    Text(channelName ?? "Room")
                         .font(FrayTypography.caption)
                 }
             }

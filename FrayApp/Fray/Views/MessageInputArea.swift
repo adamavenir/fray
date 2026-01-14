@@ -35,7 +35,9 @@ struct MessageInputArea: View {
                 .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .keyboardShortcut(.return, modifiers: [.command])
             }
-            .padding(FraySpacing.sm)
+            .padding(.leading, FraySpacing.inputLeadingPadding)
+            .padding(.trailing, FraySpacing.sm)
+            .padding(.vertical, FraySpacing.sm)
             .background {
                 RoundedRectangle(cornerRadius: FraySpacing.cornerRadius)
                     .fill(.regularMaterial)

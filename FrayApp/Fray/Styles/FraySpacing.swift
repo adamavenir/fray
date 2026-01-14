@@ -18,4 +18,7 @@ enum FraySpacing {
     static let cornerRadius: CGFloat = 12
     static let smallCornerRadius: CGFloat = 8
     static let badgeCornerRadius: CGFloat = 6
+
+    // Input alignment: matches avatar column + gap so input aligns with message content
+    static let inputLeadingPadding: CGFloat = avatarSize + sm
 }

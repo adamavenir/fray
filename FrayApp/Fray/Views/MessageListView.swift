@@ -38,8 +38,15 @@ struct MessageListView: View {
                     // Only show messages if they match current view
                     if loadedForId == viewId {
                         ForEach(messages) { message in
-                            MessageBubble(message: message, onReply: { replyTo = message })
-                                .id(message.id)
+                            // Check for interactive events (like permission requests)
+                            if message.type == .event,
+                               let event = parseInteractiveEvent(from: message.body) {
+                                PermissionRequestBubble(message: message, event: event)
+                                    .id(message.id)
+                            } else {
+                                MessageBubble(message: message, onReply: { replyTo = message })
+                                    .id(message.id)
+                            }
                         }
                     }
                 }

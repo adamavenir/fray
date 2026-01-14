@@ -1,5 +1,9 @@
 import SwiftUI
 
+enum SidebarConstants {
+    static let iconColumnWidth: CGFloat = 20
+}
+
 struct SidebarView: View {
     @Binding var selectedThread: FrayThread?
     @Binding var currentChannel: FrayChannel?
@@ -10,6 +14,7 @@ struct SidebarView: View {
     @State private var threads: [FrayThread] = []
     @State private var channels: [FrayChannel] = []
     @State private var favedThreadGuids: Set<String> = []
+    @State private var pollTimer: Timer?
 
     var favedThreads: [FrayThread] {
         threads.filter { favedThreadGuids.contains($0.guid) }
@@ -30,10 +35,41 @@ struct SidebarView: View {
         .navigationTitle(currentChannel?.name ?? "Fray")
         .task {
             await loadData()
+            startPolling()
+        }
+        .onDisappear {
+            stopPolling()
         }
         .onChange(of: bridge.projectPath) { _, _ in
             // Reload when bridge connects to a different project
             Task { await loadThreadsAndFaves() }
+        }
+    }
+
+    private func startPolling() {
+        stopPolling()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+            Task { @MainActor in
+                await pollThreads()
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
+    private func pollThreads() async {
+        do {
+            let newThreads = try bridge.getThreads()
+            // Only update if there's a change
+            if newThreads.count != threads.count ||
+               newThreads.map({ $0.guid }).sorted() != threads.map({ $0.guid }).sorted() {
+                threads = newThreads
+            }
+        } catch {
+            // Silent failure for polling
         }
     }
 
@@ -54,30 +90,34 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var roomSection: some View {
-        HStack(spacing: FraySpacing.md) {
-            Image(systemName: "bubble.left.and.bubble.right")
-            Text(currentChannel?.name ?? "Room")
-                .fontWeight(.semibold)
-                .lineLimit(1)
-            Spacer()
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectedThread = nil
-        }
-        .listRowBackground(selectedThread == nil ? Color.accentColor.opacity(0.15) : nil)
+        SidebarRow(
+            icon: "❖",
+            title: currentChannel?.name ?? "Room",
+            isChannel: true,
+            isSelected: selectedThread == nil,
+            isFaved: false,
+            onSelect: { selectedThread = nil },
+            onFaveToggle: nil
+        )
     }
 
     @ViewBuilder
     private var favedThreadsSection: some View {
         if !favedThreads.isEmpty {
             ForEach(favedThreads) { thread in
-                FavedThreadRow(
-                    thread: thread,
-                    selectedThread: $selectedThread,
-                    onUnfave: { unfaveThread(thread.guid) }
+                SidebarRow(
+                    icon: nil,
+                    title: thread.name,
+                    isChannel: false,
+                    isSelected: selectedThread?.guid == thread.guid,
+                    isFaved: true,
+                    onSelect: { selectedThread = thread },
+                    onFaveToggle: { unfaveThread(thread.guid) }
                 )
             }
+            // Divider under faved section
+            Divider()
+                .padding(.vertical, FraySpacing.xs)
         }
     }
 
@@ -170,39 +210,54 @@ struct SidebarView: View {
     }
 }
 
-struct FavedThreadRow: View {
-    let thread: FrayThread
-    @Binding var selectedThread: FrayThread?
-    let onUnfave: () -> Void
+// Unified sidebar row with consistent hover/select styling
+struct SidebarRow: View {
+    let icon: String?
+    let title: String
+    let isChannel: Bool
+    let isSelected: Bool
+    let isFaved: Bool
+    let onSelect: () -> Void
+    var onFaveToggle: (() -> Void)?
 
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: FraySpacing.md) {
-            Image(systemName: "star.fill")
-                .foregroundStyle(.yellow)
-                .font(.caption)
+        HStack(spacing: FraySpacing.sm) {
+            // Icon column (optional - for channel)
+            if let icon = icon {
+                Text(icon)
+                    .font(.system(size: 12))
+                    .frame(width: SidebarConstants.iconColumnWidth, alignment: .center)
+            }
 
-            Text(thread.name)
+            Text(title)
+                .font(isChannel ? FrayTypography.sidebarChannel : FrayTypography.sidebarThread)
                 .lineLimit(1)
+                .foregroundStyle(isSelected ? .white : .primary)
 
             Spacer()
 
-            if isHovering {
-                Button(action: onUnfave) {
-                    Image(systemName: "star.slash")
+            // Star on the right (only show on hover for non-faved, always show for faved)
+            if onFaveToggle != nil {
+                Button(action: { onFaveToggle?() }) {
+                    Image(systemName: isFaved ? "star.fill" : "star")
                         .font(.caption)
+                        .foregroundStyle(isSelected ? .white : (isFaved ? .yellow : .secondary))
                 }
                 .buttonStyle(.borderless)
-                .help("Remove from favorites")
+                .opacity(isFaved || isHovering ? 1 : 0)
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectedThread = thread
+        .padding(.horizontal, FraySpacing.sm)
+        .padding(.vertical, FraySpacing.xs)
+        .background {
+            RoundedRectangle(cornerRadius: FraySpacing.smallCornerRadius)
+                .fill(isSelected ? Color.accentColor : (isHovering ? Color.secondary.opacity(0.15) : Color.clear))
         }
+        .contentShape(Rectangle())
+        .onTapGesture { onSelect() }
         .onHover { isHovering = $0 }
-        .tag(thread)
     }
 }
 
@@ -302,9 +357,15 @@ struct ThreadListItem: View {
         !childThreads.isEmpty
     }
 
+    var isSelected: Bool {
+        selectedThread?.guid == thread.guid
+    }
+
     var body: some View {
-        if hasChildren {
-            DisclosureGroup(isExpanded: $isExpanded) {
+        VStack(spacing: 0) {
+            threadRow
+
+            if hasChildren && isExpanded {
                 ForEach(childThreads) { child in
                     ThreadListItem(
                         thread: child,
@@ -313,44 +374,59 @@ struct ThreadListItem: View {
                         selectedThread: $selectedThread,
                         onFave: onFave
                     )
+                    .padding(.leading, FraySpacing.md)
                 }
-            } label: {
-                threadLabel
             }
-            .tag(thread)
-        } else {
-            threadLabel
-                .tag(thread)
         }
     }
 
-    private var threadLabel: some View {
-        HStack(spacing: FraySpacing.md) {
-            Text(thread.name)
-                .lineLimit(1)
-                .foregroundStyle(thread.status == .archived ? .secondary : .primary)
-
-            Spacer()
-
-            if isHovering {
-                Button(action: { onFave(thread.guid) }) {
-                    Image(systemName: "star")
-                        .font(.caption)
+    private var threadRow: some View {
+        HStack(spacing: FraySpacing.sm) {
+            // Expand/collapse chevron for threads with children
+            if hasChildren {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isExpanded.toggle()
+                    }
+                }) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.tertiary))
                 }
                 .buttonStyle(.borderless)
-                .help("Add to favorites")
+                .frame(width: 16)
             }
+
+            Text(thread.name)
+                .font(FrayTypography.sidebarThread)
+                .lineLimit(1)
+                .foregroundStyle(isSelected ? .white : (thread.status == .archived ? .secondary : .primary))
+
+            Spacer()
 
             if thread.type == .knowledge {
                 Image(systemName: "brain")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isSelected ? .white.opacity(0.7) : .secondary)
             }
+
+            // Star on the right
+            Button(action: { onFave(thread.guid) }) {
+                Image(systemName: "star")
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? .white : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .opacity(isHovering ? 1 : 0)
+        }
+        .padding(.horizontal, FraySpacing.sm)
+        .padding(.vertical, FraySpacing.xs)
+        .background {
+            RoundedRectangle(cornerRadius: FraySpacing.smallCornerRadius)
+                .fill(isSelected ? Color.accentColor : (isHovering ? Color.secondary.opacity(0.15) : Color.clear))
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            selectedThread = thread
-        }
+        .onTapGesture { selectedThread = thread }
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(threadAccessibilityLabel)
