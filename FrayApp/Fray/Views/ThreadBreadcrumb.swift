@@ -57,6 +57,7 @@ struct ThreadBreadcrumb: View {
 struct ThreadNavigationView: View {
     @Environment(FrayBridge.self) private var bridge
     @Binding var selectedThread: FrayThread?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var allThreads: [FrayThread] = []
     @State private var navigationStack: [FrayThread] = []
@@ -126,29 +127,51 @@ struct ThreadNavigationView: View {
     }
 
     private func navigateTo(_ thread: FrayThread?) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        if reduceMotion {
             selectedThread = thread
             if thread == nil {
                 navigationStack = []
+            }
+        } else {
+            withAnimation(.spring()) {
+                selectedThread = thread
+                if thread == nil {
+                    navigationStack = []
+                }
             }
         }
     }
 
     private func drillInto(_ thread: FrayThread) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        if reduceMotion {
             if let current = selectedThread {
                 navigationStack.append(current)
             }
             selectedThread = thread
+        } else {
+            withAnimation(.spring()) {
+                if let current = selectedThread {
+                    navigationStack.append(current)
+                }
+                selectedThread = thread
+            }
         }
     }
 
     private func drillOut() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        if reduceMotion {
             if let parent = navigationStack.popLast() {
                 selectedThread = parent
             } else {
                 selectedThread = nil
+            }
+        } else {
+            withAnimation(.spring()) {
+                if let parent = navigationStack.popLast() {
+                    selectedThread = parent
+                } else {
+                    selectedThread = nil
+                }
             }
         }
     }
@@ -170,6 +193,7 @@ struct ThreadNavigationRow: View {
     let onDrillIn: () -> Void
 
     @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: FraySpacing.sm) {
@@ -209,7 +233,7 @@ struct ThreadNavigationRow: View {
         }
         .padding(.horizontal, FraySpacing.md)
         .padding(.vertical, FraySpacing.sm)
-        .background(isHovered ? Color.secondary.opacity(0.1) : Color.clear)
+        .background(isHovered ? FrayColors.hoverFill.resolve(for: colorScheme) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
         .onHover { isHovered = $0 }

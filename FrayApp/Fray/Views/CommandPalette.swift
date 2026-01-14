@@ -3,6 +3,7 @@ import SwiftUI
 struct CommandPalette: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(FrayBridge.self) private var bridge
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var query: String = ""
     @State private var results: [CommandResult] = []
@@ -78,8 +79,12 @@ struct CommandPalette: View {
                     .listStyle(.plain)
                     .onChange(of: selectedIndex) { _, newIndex in
                         if let result = results[safe: newIndex] {
-                            withAnimation {
+                            if reduceMotion {
                                 proxy.scrollTo(result.id, anchor: .center)
+                            } else {
+                                withAnimation {
+                                    proxy.scrollTo(result.id, anchor: .center)
+                                }
                             }
                         }
                     }

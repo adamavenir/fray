@@ -13,7 +13,7 @@ struct ContentView: View {
     @State private var currentAgentId: String?
     @State private var agentsVM: AgentsViewModel?
     @State private var allThreads: [FrayThread] = []
-    @FocusState private var isInputFocused: Bool
+    @State private var isInputFocused: Bool = false
 
     @SceneStorage("sidebarWidth") private var sidebarWidth: Double = 280
     @SceneStorage("selectedThreadId") private var selectedThreadId: String = ""
@@ -44,13 +44,15 @@ struct ContentView: View {
                         MessageListView(
                             thread: thread,
                             currentAgentId: currentAgentId,
-                            channelName: currentChannel?.name
+                            channelName: currentChannel?.name,
+                            inputFocused: $isInputFocused
                         )
                         .id(thread.guid)
                     } else {
                         RoomView(
                             currentAgentId: currentAgentId,
-                            channelName: currentChannel?.name
+                            channelName: currentChannel?.name,
+                            inputFocused: $isInputFocused
                         )
                         .id("room-\(currentChannel?.id ?? "default")")
                     }
@@ -109,6 +111,14 @@ struct ContentView: View {
                     }
                     .help("Command Palette (⌘K)")
                     .keyboardShortcut("k", modifiers: [.command])
+                }
+
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { isInputFocused = true }) {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .help("New Message (⌘N)")
+                    .keyboardShortcut("n", modifiers: [.command])
                 }
 
                 ToolbarItem(placement: .primaryAction) {

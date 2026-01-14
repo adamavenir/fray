@@ -10,6 +10,7 @@ enum FraySpacing {
 
     static let messagePadding: CGFloat = 12
     static let messageSpacing: CGFloat = 16
+    static let groupedMessageSpacing: CGFloat = 4
     static let avatarSize: CGFloat = 32
     static let sidebarWidth: CGFloat = 280
     static let activityPanelWidth: CGFloat = 200

@@ -221,6 +221,7 @@ struct SidebarRow: View {
     var onFaveToggle: (() -> Void)?
 
     @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: FraySpacing.sm) {
@@ -247,17 +248,21 @@ struct SidebarRow: View {
                 }
                 .buttonStyle(.borderless)
                 .opacity(isFaved || isHovering ? 1 : 0)
+                .accessibilityLabel(isFaved ? "Remove from favorites" : "Add to favorites")
             }
         }
         .padding(.horizontal, FraySpacing.sm)
         .padding(.vertical, FraySpacing.xs)
         .background {
             RoundedRectangle(cornerRadius: FraySpacing.smallCornerRadius)
-                .fill(isSelected ? Color.accentColor : (isHovering ? Color.secondary.opacity(0.15) : Color.clear))
+                .fill(isSelected ? Color.accentColor : (isHovering ? FrayColors.hoverFill.resolve(for: colorScheme) : Color.clear))
         }
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
         .onHover { isHovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isChannel ? "Channel: \(title)" : (isFaved ? "Favorited thread: \(title)" : "Thread: \(title)"))
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -348,6 +353,8 @@ struct ThreadListItem: View {
 
     @State private var isExpanded = false
     @State private var isHovering = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var childThreads: [FrayThread] {
         allThreads.filter { $0.parentThread == thread.guid && !favedIds.contains($0.guid) }
@@ -385,8 +392,12 @@ struct ThreadListItem: View {
             // Expand/collapse chevron for threads with children
             if hasChildren {
                 Button(action: {
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    if reduceMotion {
                         isExpanded.toggle()
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isExpanded.toggle()
+                        }
                     }
                 }) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -423,7 +434,7 @@ struct ThreadListItem: View {
         .padding(.vertical, FraySpacing.xs)
         .background {
             RoundedRectangle(cornerRadius: FraySpacing.smallCornerRadius)
-                .fill(isSelected ? Color.accentColor : (isHovering ? Color.secondary.opacity(0.15) : Color.clear))
+                .fill(isSelected ? Color.accentColor : (isHovering ? FrayColors.hoverFill.resolve(for: colorScheme) : Color.clear))
         }
         .contentShape(Rectangle())
         .onTapGesture { selectedThread = thread }

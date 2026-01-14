@@ -4,6 +4,7 @@ struct MessageListView: View {
     let thread: FrayThread?
     let currentAgentId: String?
     var channelName: String?
+    @Binding var inputFocused: Bool
 
     @Environment(FrayBridge.self) private var bridge
 
@@ -25,6 +26,12 @@ struct MessageListView: View {
         thread?.guid ?? "room"
     }
 
+    private struct MessageGroup: Identifiable {
+        let id: String  // first message id
+        let messages: [FrayMessage]
+        var isGrouped: Bool { messages.count > 1 }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -37,15 +44,22 @@ struct MessageListView: View {
 
                     // Only show messages if they match current view
                     if loadedForId == viewId {
-                        ForEach(messages) { message in
-                            // Check for interactive events (like permission requests)
-                            if message.type == .event,
-                               let event = parseInteractiveEvent(from: message.body) {
-                                PermissionRequestBubble(message: message, event: event)
-                                    .id(message.id)
-                            } else {
-                                MessageBubble(message: message, onReply: { replyTo = message })
-                                    .id(message.id)
+                        ForEach(groupMessages(messages)) { group in
+                            VStack(spacing: group.isGrouped ? FraySpacing.groupedMessageSpacing : 0) {
+                                ForEach(Array(group.messages.enumerated()), id: \.element.id) { idx, msg in
+                                    if msg.type == .event,
+                                       let event = parseInteractiveEvent(from: msg.body) {
+                                        PermissionRequestBubble(message: msg, event: event)
+                                            .id(msg.id)
+                                    } else {
+                                        MessageBubble(
+                                            message: msg,
+                                            onReply: { replyTo = msg },
+                                            showHeader: idx == 0
+                                        )
+                                        .id(msg.id)
+                                    }
+                                }
                             }
                         }
                     }
@@ -88,9 +102,10 @@ struct MessageListView: View {
             MessageInputArea(
                 text: $inputText,
                 replyTo: $replyTo,
-                onSubmit: handleSubmit
+                onSubmit: handleSubmit,
+                focused: $inputFocused
             )
-            .padding()
+            .padding(.horizontal, FraySpacing.md)
             .background(.regularMaterial)
         }
         .navigationTitle(navigationTitle)
@@ -109,6 +124,38 @@ struct MessageListView: View {
         } else {
             return channelName ?? "Room"
         }
+    }
+
+    private func groupMessages(_ messages: [FrayMessage]) -> [MessageGroup] {
+        var groups: [MessageGroup] = []
+        var currentGroup: [FrayMessage] = []
+        var lastAgent: String?
+        var lastTimestamp: Int64?
+
+        for message in messages {
+            let shouldGroup = message.fromAgent == lastAgent &&
+                             message.type == .agent &&
+                             lastTimestamp != nil &&
+                             (message.ts - lastTimestamp!) < 120
+
+            if shouldGroup {
+                currentGroup.append(message)
+            } else {
+                if !currentGroup.isEmpty {
+                    groups.append(MessageGroup(id: currentGroup[0].id, messages: currentGroup))
+                }
+                currentGroup = [message]
+            }
+
+            lastAgent = message.fromAgent
+            lastTimestamp = message.ts
+        }
+
+        if !currentGroup.isEmpty {
+            groups.append(MessageGroup(id: currentGroup[0].id, messages: currentGroup))
+        }
+
+        return groups
     }
 
     private func startPolling() {
@@ -201,13 +248,14 @@ struct MessageListView: View {
 struct RoomView: View {
     let currentAgentId: String?
     var channelName: String?
+    @Binding var inputFocused: Bool
 
     var body: some View {
-        MessageListView(thread: nil, currentAgentId: currentAgentId, channelName: channelName)
+        MessageListView(thread: nil, currentAgentId: currentAgentId, channelName: channelName, inputFocused: $inputFocused)
     }
 }
 
 #Preview {
-    MessageListView(thread: nil, currentAgentId: "preview-user", channelName: "fray")
+    MessageListView(thread: nil, currentAgentId: "preview-user", channelName: "fray", inputFocused: .constant(false))
         .environment(FrayBridge())
 }

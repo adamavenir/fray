@@ -57,6 +57,11 @@ enum FrayColors {
         dark: Color(hex: "2C2C2E").opacity(0.95)
     )
 
+    static let hoverFill = AdaptiveColor(
+        light: Color.black.opacity(0.05),
+        dark: Color.white.opacity(0.08)
+    )
+
     static let threadHover = AdaptiveColor(
         light: Color.black.opacity(0.05),
         dark: Color.white.opacity(0.08)

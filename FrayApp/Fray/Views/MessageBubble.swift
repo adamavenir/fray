@@ -4,6 +4,7 @@ import AppKit
 struct MessageBubble: View {
     let message: FrayMessage
     var onReply: (() -> Void)?
+    var showHeader: Bool = true
 
     @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -13,25 +14,27 @@ struct MessageBubble: View {
             AgentAvatar(agentId: message.fromAgent)
 
             VStack(alignment: .leading, spacing: FraySpacing.xs) {
-                HStack(spacing: FraySpacing.sm) {
-                    Text("@\(message.fromAgent)")
-                        .font(FrayTypography.agentName)
-                        .foregroundStyle(FrayColors.colorForAgent(message.fromAgent))
+                if showHeader {
+                    HStack(spacing: FraySpacing.sm) {
+                        Text("@\(message.fromAgent)")
+                            .font(FrayTypography.agentName)
+                            .foregroundStyle(FrayColors.colorForAgent(message.fromAgent))
 
-                    Text(formatTimestamp(message.ts))
-                        .font(FrayTypography.timestamp)
-                        .foregroundStyle(.secondary)
+                        Text(formatTimestamp(message.ts))
+                            .font(FrayTypography.timestamp)
+                            .foregroundStyle(.secondary)
 
-                    if message.edited == true {
-                        Text("(edited)")
-                            .font(FrayTypography.caption)
-                            .foregroundStyle(.tertiary)
-                    }
+                        if message.edited == true {
+                            Text("(edited)")
+                                .font(FrayTypography.caption)
+                                .foregroundStyle(.tertiary)
+                        }
 
-                    Spacer()
+                        Spacer()
 
-                    if isHovering {
-                        MessageActions(message: message, onReply: onReply)
+                        if isHovering {
+                            MessageActions(message: message, onReply: onReply)
+                        }
                     }
                 }
 
@@ -55,7 +58,7 @@ struct MessageBubble: View {
             if reduceMotion {
                 isHovering = hovering
             } else {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     isHovering = hovering
                 }
             }
@@ -95,18 +98,21 @@ struct MessageActions: View {
             }
             .buttonStyle(.borderless)
             .help("Reply")
+            .accessibilityLabel("Reply to message")
 
             Button(action: { print("React") }) {
                 Image(systemName: "face.smiling")
             }
             .buttonStyle(.borderless)
             .help("Add reaction")
+            .accessibilityLabel("Add reaction")
 
             Button(action: { print("More") }) {
                 Image(systemName: "ellipsis")
             }
             .buttonStyle(.borderless)
             .help("More actions")
+            .accessibilityLabel("More actions")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -231,6 +237,7 @@ struct CopyableIdText: View {
     let id: String
     var copyValue: String?
     @State private var isCopied = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var valueToCopy: String {
         copyValue ?? id
@@ -244,12 +251,19 @@ struct CopyableIdText: View {
             .onTapGesture {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(valueToCopy, forType: .string)
-                withAnimation(.easeIn(duration: 0.1)) {
+                if reduceMotion {
                     isCopied = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                    withAnimation(.easeOut(duration: 0.4)) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                         isCopied = false
+                    }
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        isCopied = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            isCopied = false
+                        }
                     }
                 }
             }

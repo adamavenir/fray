@@ -5,6 +5,7 @@ struct MessageInputArea: View {
     @Binding var text: String
     @Binding var replyTo: FrayMessage?
     let onSubmit: (String) -> Void
+    @Binding var focused: Bool
 
     @FocusState private var isFocused: Bool
     @State private var suggestions: [Suggestion] = []
@@ -41,6 +42,20 @@ struct MessageInputArea: View {
             .background {
                 RoundedRectangle(cornerRadius: FraySpacing.cornerRadius)
                     .fill(.regularMaterial)
+            }
+            .onKeyPress(.escape) {
+                if replyTo != nil {
+                    replyTo = nil
+                    return .handled
+                }
+                isFocused = false
+                return .handled
+            }
+            .onChange(of: focused) { _, newValue in
+                isFocused = newValue
+            }
+            .onChange(of: isFocused) { _, newValue in
+                focused = newValue
             }
         }
     }
@@ -256,7 +271,8 @@ struct SuggestionRow: View {
     MessageInputArea(
         text: .constant("Hello"),
         replyTo: .constant(nil),
-        onSubmit: { _ in }
+        onSubmit: { _ in },
+        focused: .constant(false)
     )
     .padding()
     .frame(width: 400)
