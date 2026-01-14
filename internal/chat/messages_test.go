@@ -17,6 +17,13 @@ func TestInlineIDPattern(t *testing.T) {
 		{"#", nil},
 		{"#ABC", nil}, // uppercase not matched
 		{"#123", nil}, // must start with letter or have prefix
+		// .n suffix tests (beads issue IDs)
+		{"#fray-abc.1", []string{"#fray-abc.1"}},
+		{"#fray-abc123.2", []string{"#fray-abc123.2"}},
+		{"See #fray-abc.1 and #fray-def.2", []string{"#fray-abc.1", "#fray-def.2"}},
+		// Period starting new sentence should NOT include the period
+		{"#fray-abc. New sentence", []string{"#fray-abc"}},
+		{"#fray-abc.  Double space", []string{"#fray-abc"}},
 	}
 
 	for _, tt := range tests {

@@ -125,6 +125,15 @@ Examples:
 							}},
 						},
 					},
+					"PermissionRequest": []any{
+						map[string]any{
+							"hooks": []any{map[string]any{
+								"type":    "command",
+								"command": "fray hook-permission",
+								"timeout": 30,
+							}},
+						},
+					},
 				},
 			}
 
@@ -196,6 +205,7 @@ Examples:
 			fmt.Fprintln(out, "  PreCompact - reminds to preserve work before context compaction")
 			fmt.Fprintln(out, "  SessionEnd - records session end for presence tracking")
 			fmt.Fprintln(out, "  PreToolUse (fray post) - reminds to use --reply-to and post in threads")
+			fmt.Fprintln(out, "  PermissionRequest - posts permission requests with approval buttons")
 			fmt.Fprintln(out, "")
 			fmt.Fprintln(out, "Added permission: Bash(fray:*)")
 

@@ -81,6 +81,8 @@ func NewRootCmd(version string) *cobra.Command {
 		NewQuestionsCmd(),
 		NewQuestionCmd(),
 		NewAnswerCmd(),
+		NewApproveCmd(),
+		NewDenyCmd(),
 		NewSurfaceCmd(),
 		NewReactCmd(),
 		NewFaveCmd(),
@@ -120,6 +122,7 @@ func NewRootCmd(version string) *cobra.Command {
 		hooks.NewHookSessionEndCmd(),
 		hooks.NewHookStatuslineCmd(),
 		hooks.NewHookPreToolCmd(),
+		hooks.NewHookPermissionCmd(),
 	)
 
 	return cmd

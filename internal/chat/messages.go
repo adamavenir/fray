@@ -18,8 +18,11 @@ import (
 // inlineIDPattern matches #-prefixed IDs like #fray-abc123, #msg-xyz789, #abc123
 // Format: # followed by either:
 //   - prefix-id: word followed by dash and alphanumeric (e.g., #fray-abc123)
+//   - prefix-id with suffix: includes .n suffix when followed by non-space (e.g., #fray-abc123.1)
 //   - short id: alphanumeric with at least one letter (e.g., #abc123, #a1b2)
-var inlineIDPattern = regexp.MustCompile(`#([a-zA-Z]+-[a-z0-9]+|[a-z0-9]*[a-z][a-z0-9]*)`)
+// Note: The .n suffix is included only when followed by a non-space character (e.g., #fray-abc.1)
+// but not when the period starts a new sentence (e.g., "#fray-abc. New sentence")
+var inlineIDPattern = regexp.MustCompile(`#([a-zA-Z]+-[a-z0-9]+(?:\.[a-z0-9]+)?|[a-z0-9]*[a-z][a-z0-9]*)`)
 
 func (m *Model) renderMessages() string {
 	messages := m.currentMessages()
@@ -59,6 +62,11 @@ func (m *Model) renderMessages() string {
 
 func (m *Model) formatMessage(msg types.Message, prefixLength int, readToMap map[string][]string) string {
 	if msg.Type == types.MessageTypeEvent {
+		// Check for interactive event
+		if event := parseInteractiveEvent(msg); event != nil {
+			return m.renderInteractiveEvent(msg, event, m.mainWidth())
+		}
+
 		body := msg.Body
 		hasANSI := strings.Contains(body, "\x1b[")
 		width := m.mainWidth()
