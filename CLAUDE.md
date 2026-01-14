@@ -469,8 +469,9 @@ fray job list                                 # List all jobs
 fray job status job-abc12345                  # Show job details + workers
 
 # Ghost cursors (session handoffs)
-fray cursor set <agent> <home> <msg>       # Set ghost cursor for handoff
-fray cursor set <agent> <home> <msg> --must-read  # Mark as must-read
+fray cursor stage <home> <msg>             # Stage cursor for commit on bye/brb (uses FRAY_AGENT_ID)
+fray cursor stage <home> <msg> --must-read # Mark as must-read
+fray cursor set <agent> <home> <msg>       # Immediately set ghost cursor (manual control)
 fray cursor show <agent>                   # Show ghost cursors for agent
 fray cursor clear <agent>                  # Clear all ghost cursors
 fray cursor clear <agent> <home>           # Clear cursor for specific home
