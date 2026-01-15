@@ -44,6 +44,10 @@ struct MessageListView: View {
 
                     // Only show messages if they match current view
                     if loadedForId == viewId {
+                        let messageDict = Dictionary(uniqueKeysWithValues:
+                            messages.map { ($0.id, $0) }
+                        )
+
                         ForEach(groupMessages(messages)) { group in
                             VStack(spacing: group.isGrouped ? FraySpacing.groupedMessageSpacing : 0) {
                                 ForEach(Array(group.messages.enumerated()), id: \.element.id) { idx, msg in
@@ -55,7 +59,8 @@ struct MessageListView: View {
                                         MessageBubble(
                                             message: msg,
                                             onReply: { replyTo = msg },
-                                            showHeader: idx == 0
+                                            showHeader: idx == 0,
+                                            parentMessage: msg.replyTo.flatMap { messageDict[$0] }
                                         )
                                         .id(msg.id)
                                     }
@@ -103,7 +108,8 @@ struct MessageListView: View {
                 text: $inputText,
                 replyTo: $replyTo,
                 onSubmit: handleSubmit,
-                focused: $inputFocused
+                focused: $inputFocused,
+                contextName: thread?.name ?? (channelName.map { "#\($0)" })
             )
             .padding(.horizontal, FraySpacing.md)
             .background(.regularMaterial)

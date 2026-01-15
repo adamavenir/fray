@@ -38,7 +38,7 @@ struct CodeBlockView: View {
                     .padding(FraySpacing.sm)
             }
         }
-        .background(FrayColors.tertiaryBackground)
+        .adaptiveBackground(FrayColors.codeBackground)
         .clipShape(RoundedRectangle(cornerRadius: FraySpacing.smallCornerRadius))
     }
 

@@ -5,6 +5,7 @@ struct MessageBubble: View {
     let message: FrayMessage
     var onReply: (() -> Void)?
     var showHeader: Bool = true
+    var parentMessage: FrayMessage?
 
     @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -12,42 +13,7 @@ struct MessageBubble: View {
     var body: some View {
         HStack(alignment: .top, spacing: FraySpacing.sm) {
             AgentAvatar(agentId: message.fromAgent)
-
-            VStack(alignment: .leading, spacing: FraySpacing.xs) {
-                if showHeader {
-                    HStack(spacing: FraySpacing.sm) {
-                        Text("@\(message.fromAgent)")
-                            .font(FrayTypography.agentName)
-                            .foregroundStyle(FrayColors.colorForAgent(message.fromAgent))
-
-                        Text(formatTimestamp(message.ts))
-                            .font(FrayTypography.timestamp)
-                            .foregroundStyle(.secondary)
-
-                        if message.edited == true {
-                            Text("(edited)")
-                                .font(FrayTypography.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        Spacer()
-
-                        if isHovering {
-                            MessageActions(message: message, onReply: onReply)
-                        }
-                    }
-                }
-
-                MessageContent(content: message.body)
-
-                if !message.reactions.isEmpty {
-                    ReactionBar(reactions: message.reactions) { emoji in
-                        print("React with \(emoji)")
-                    }
-                }
-
-                MessageFooter(message: message)
-            }
+            messageBody
         }
         .padding(FraySpacing.messagePadding)
         .background {
@@ -72,6 +38,30 @@ struct MessageBubble: View {
         }
     }
 
+    private var messageBody: some View {
+        VStack(alignment: .leading, spacing: FraySpacing.xs) {
+            if showHeader {
+                MessageHeader(
+                    message: message,
+                    isHovering: isHovering,
+                    onReply: onReply
+                )
+            }
+
+            if let parent = parentMessage {
+                ParentMessageQuote(parent: parent)
+            }
+
+            MessageContent(content: message.body)
+
+            if !message.reactions.isEmpty {
+                ReactionBar(reactions: message.reactions, onReact: { _ in }, isHovering: isHovering)
+            }
+
+            MessageFooter(message: message)
+        }
+    }
+
     private func formatTimestamp(_ ts: Int64) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(ts))
         let interval = Date().timeIntervalSince(date)
@@ -84,6 +74,75 @@ struct MessageBubble: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+struct MessageHeader: View {
+    let message: FrayMessage
+    let isHovering: Bool
+    var onReply: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: FraySpacing.sm) {
+            Text("@\(message.fromAgent)")
+                .font(FrayTypography.agentName)
+                .foregroundStyle(FrayColors.colorForAgent(message.fromAgent))
+
+            Text(formatTimestamp(message.ts))
+                .font(FrayTypography.timestamp)
+                .foregroundStyle(.secondary)
+
+            if message.edited == true {
+                Text("(edited)")
+                    .font(FrayTypography.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+
+            if isHovering {
+                MessageActions(message: message, onReply: onReply)
+            }
+        }
+    }
+
+    private func formatTimestamp(_ ts: Int64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(ts))
+        let interval = Date().timeIntervalSince(date)
+
+        if interval < 60 { return "just now" }
+        if interval < 3600 { return "\(Int(interval / 60))m ago" }
+        if interval < 86400 { return "\(Int(interval / 3600))h ago" }
+        if interval < 604800 { return "\(Int(interval / 86400))d ago" }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+struct ParentMessageQuote: View {
+    let parent: FrayMessage
+
+    var body: some View {
+        HStack(spacing: FraySpacing.xs) {
+            Rectangle()
+                .fill(FrayColors.colorForAgent(parent.fromAgent))
+                .frame(width: 2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("@\(parent.fromAgent)")
+                    .font(FrayTypography.caption)
+                    .foregroundStyle(FrayColors.colorForAgent(parent.fromAgent))
+                Text(parent.body)
+                    .font(FrayTypography.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(FraySpacing.sm)
+        .background(FrayColors.tertiaryBackground)
+        .cornerRadius(FraySpacing.smallCornerRadius)
     }
 }
 
@@ -119,23 +178,89 @@ struct MessageActions: View {
     }
 }
 
+enum ContentSegment: Identifiable {
+    case text(AttributedString)
+    case codeBlock(language: String?, code: String)
+
+    var id: String {
+        switch self {
+        case .text(let attr): return "text-\(attr.hashValue)"
+        case .codeBlock(_, let code): return "code-\(code.hashValue)"
+        }
+    }
+}
+
 struct MessageContent: View {
     let content: String
 
     var body: some View {
-        Text(parseContent(content))
-            .font(FrayTypography.messageBody)
-            .lineSpacing(FrayTypography.messageLineSpacing)
-            .textSelection(.enabled)
-            .environment(\.openURL, OpenURLAction { url in
-                if url.scheme == "frayid" {
-                    let id = "#\(url.host ?? "")"
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(id, forType: .string)
-                    return .handled
+        let segments = parseSegments(content)
+        VStack(alignment: .leading, spacing: FraySpacing.sm) {
+            ForEach(segments) { segment in
+                segmentView(segment)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func segmentView(_ segment: ContentSegment) -> some View {
+        switch segment {
+        case .text(let attr):
+            MessageTextView(attributedText: attr)
+        case .codeBlock(let language, let code):
+            CodeBlockView(code: code, language: language)
+        }
+    }
+
+    private func parseSegments(_ text: String) -> [ContentSegment] {
+        var segments: [ContentSegment] = []
+        let pattern = "```(\\w*)\\n([\\s\\S]*?)```"
+
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return [.text(parseContent(text))]
+        }
+
+        var lastEnd = text.startIndex
+        let nsRange = NSRange(text.startIndex..., in: text)
+        let matches = regex.matches(in: text, options: [], range: nsRange)
+
+        for match in matches {
+            guard let fullRange = Range(match.range, in: text),
+                  let langRange = Range(match.range(at: 1), in: text),
+                  let codeRange = Range(match.range(at: 2), in: text) else {
+                continue
+            }
+
+            // Add text before this code block
+            if lastEnd < fullRange.lowerBound {
+                let textBefore = String(text[lastEnd..<fullRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !textBefore.isEmpty {
+                    segments.append(.text(parseContent(textBefore)))
                 }
-                return .systemAction
-            })
+            }
+
+            // Add the code block
+            let language = String(text[langRange])
+            let code = String(text[codeRange]).trimmingCharacters(in: .newlines)
+            segments.append(.codeBlock(language: language.isEmpty ? nil : language, code: code))
+
+            lastEnd = fullRange.upperBound
+        }
+
+        // Add remaining text after last code block
+        if lastEnd < text.endIndex {
+            let remaining = String(text[lastEnd...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !remaining.isEmpty {
+                segments.append(.text(parseContent(remaining)))
+            }
+        }
+
+        // If no segments found (no code blocks), return the whole text
+        if segments.isEmpty {
+            segments.append(.text(parseContent(text)))
+        }
+
+        return segments
     }
 
     private func parseContent(_ text: String) -> AttributedString {
@@ -168,9 +293,30 @@ struct MessageContent: View {
     }
 }
 
+struct MessageTextView: View {
+    let attributedText: AttributedString
+
+    var body: some View {
+        Text(attributedText)
+            .font(FrayTypography.messageBody)
+            .lineSpacing(FrayTypography.messageLineSpacing)
+            .textSelection(.enabled)
+            .environment(\.openURL, OpenURLAction { url in
+                if url.scheme == "frayid" {
+                    let id = "#\(url.host ?? "")"
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(id, forType: .string)
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
+}
+
 struct ReactionBar: View {
     let reactions: [String: [ReactionEntry]]
     let onReact: (String) -> Void
+    var isHovering: Bool = false
 
     var body: some View {
         HStack(spacing: FraySpacing.xs) {
@@ -184,7 +330,7 @@ struct ReactionBar: View {
                     .font(.caption)
             }
             .buttonStyle(.borderless)
-            .opacity(0.5)
+            .opacity(isHovering ? 1 : 0)
         }
     }
 }

@@ -6,9 +6,20 @@ struct MessageInputArea: View {
     @Binding var replyTo: FrayMessage?
     let onSubmit: (String) -> Void
     @Binding var focused: Bool
+    var contextName: String?
 
     @FocusState private var isFocused: Bool
     @State private var suggestions: [Suggestion] = []
+
+    private var placeholder: String {
+        if let reply = replyTo {
+            return "Reply to @\(reply.fromAgent)..."
+        } else if let name = contextName {
+            return "Message \(name)"
+        } else {
+            return "Message..."
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,6 +35,7 @@ struct MessageInputArea: View {
                 FrayTextEditor(
                     text: $text,
                     isFocused: $isFocused,
+                    placeholder: placeholder,
                     onSubmit: handleSubmit
                 )
                 .frame(minHeight: 36, maxHeight: 120)
@@ -108,6 +120,7 @@ struct ReplyPreview: View {
 struct FrayTextEditor: NSViewRepresentable {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
+    var placeholder: String
     var onSubmit: () -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -138,11 +151,14 @@ struct FrayTextEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
+        guard let textView = scrollView.documentView as? FrayNSTextView else { return }
 
         if textView.string != text {
             textView.string = text
         }
+
+        // Update placeholder
+        textView.placeholderText = text.isEmpty ? placeholder : nil
 
         if isFocused.wrappedValue && textView.window?.firstResponder != textView {
             textView.window?.makeFirstResponder(textView)
@@ -181,6 +197,32 @@ struct FrayTextEditor: NSViewRepresentable {
 
 class FrayNSTextView: NSTextView {
     var onSubmit: (() -> Void)?
+    var placeholderText: String? {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // Draw placeholder if text is empty
+        if string.isEmpty, let placeholder = placeholderText {
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.placeholderTextColor
+            ]
+            let attributedPlaceholder = NSAttributedString(string: placeholder, attributes: attributes)
+            let textInset = textContainerInset
+            let placeholderRect = NSRect(
+                x: textInset.width,
+                y: textInset.height,
+                width: bounds.width - textInset.width * 2,
+                height: bounds.height - textInset.height * 2
+            )
+            attributedPlaceholder.draw(in: placeholderRect)
+        }
+    }
 
     override func keyDown(with event: NSEvent) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? event.modifierFlags
@@ -272,7 +314,8 @@ struct SuggestionRow: View {
         text: .constant("Hello"),
         replyTo: .constant(nil),
         onSubmit: { _ in },
-        focused: .constant(false)
+        focused: .constant(false),
+        contextName: "#fraydev"
     )
     .padding()
     .frame(width: 400)

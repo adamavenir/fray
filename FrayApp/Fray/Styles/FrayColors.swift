@@ -48,8 +48,8 @@ enum FrayColors {
     )
 
     static let codeBackground = AdaptiveColor(
-        light: Color(hex: "F5F5F7"),
-        dark: Color(hex: "1C1C1E")
+        light: Color(hex: "F0F0F2"),
+        dark: Color(hex: "1A1A1C")
     )
 
     static let commandPaletteBackground = AdaptiveColor(
