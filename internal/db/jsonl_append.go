@@ -193,6 +193,30 @@ func AppendSessionEnd(projectPath string, event types.SessionEnd) error {
 	return nil
 }
 
+// AppendUsageSnapshot appends a usage snapshot event to JSONL.
+// Called on session end to persist token usage for durability.
+func AppendUsageSnapshot(projectPath string, snapshot types.UsageSnapshot) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := UsageSnapshotJSONLRecord{
+		Type:           "usage_snapshot",
+		AgentID:        snapshot.AgentID,
+		SessionID:      snapshot.SessionID,
+		Driver:         snapshot.Driver,
+		Model:          snapshot.Model,
+		InputTokens:    snapshot.InputTokens,
+		OutputTokens:   snapshot.OutputTokens,
+		CachedTokens:   snapshot.CachedTokens,
+		ContextLimit:   snapshot.ContextLimit,
+		ContextPercent: snapshot.ContextPercent,
+		CapturedAt:     snapshot.CapturedAt,
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
 // AppendSessionHeartbeat appends a session heartbeat event to JSONL.
 func AppendSessionHeartbeat(projectPath string, event types.SessionHeartbeat) error {
 	frayDir := resolveFrayDir(projectPath)

@@ -61,6 +61,7 @@ type Agent struct {
 	Managed          bool           `json:"managed,omitempty"`           // whether daemon controls this agent
 	Invoke           *InvokeConfig  `json:"invoke,omitempty"`            // daemon invocation config
 	Presence         PresenceState  `json:"presence,omitempty"`          // daemon-tracked presence state
+	PresenceChangedAt *int64        `json:"presence_changed_at,omitempty"` // when presence last changed (Unix ms)
 	MentionWatermark  *string        `json:"mention_watermark,omitempty"`  // last processed mention msg_id
 	ReactionWatermark *int64         `json:"reaction_watermark,omitempty"` // last processed reaction timestamp (ms)
 	LastHeartbeat     *int64         `json:"last_heartbeat,omitempty"`     // last silent checkin timestamp (ms)
@@ -438,6 +439,21 @@ type SessionEnd struct {
 	EndedAt    int64   `json:"ended_at"`
 	LastMsgID  *string `json:"last_msg_id,omitempty"`
 	Stderr     *string `json:"stderr,omitempty"`
+}
+
+// UsageSnapshot captures token usage at a point in time.
+// Persisted in agents.jsonl for durability across daemon restarts and transcript rotation.
+type UsageSnapshot struct {
+	AgentID        string `json:"agent_id"`
+	SessionID      string `json:"session_id"`
+	Driver         string `json:"driver"`                    // "claude" or "codex"
+	Model          string `json:"model,omitempty"`
+	InputTokens    int64  `json:"input_tokens"`
+	OutputTokens   int64  `json:"output_tokens"`
+	CachedTokens   int64  `json:"cached_tokens"`
+	ContextLimit   int64  `json:"context_limit"`
+	ContextPercent int    `json:"context_percent"`
+	CapturedAt     int64  `json:"captured_at"`
 }
 
 // SessionHeartbeat records periodic session health updates.

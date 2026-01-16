@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   managed INTEGER NOT NULL DEFAULT 0,  -- whether daemon controls this agent
   invoke TEXT,                         -- JSON: driver config for spawning
   presence TEXT DEFAULT 'offline',     -- active, spawning, idle, error, offline
+  presence_changed_at INTEGER,         -- when presence last changed (Unix ms, for TTL detection)
   mention_watermark TEXT,              -- last processed mention msg_id
   reaction_watermark INTEGER,          -- last processed reaction timestamp (ms)
   last_heartbeat INTEGER,              -- last silent checkin timestamp (ms)
@@ -829,6 +830,11 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(agentColumns, "aap_guid") {
 			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN aap_guid TEXT"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "presence_changed_at") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN presence_changed_at INTEGER"); err != nil {
 				return err
 			}
 		}

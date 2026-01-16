@@ -257,6 +257,22 @@ type SessionEndJSONLRecord struct {
 	EndedAt    int64  `json:"ended_at"`
 }
 
+// UsageSnapshotJSONLRecord represents a usage snapshot in JSONL.
+// Persisted on session end for durability across transcript rotation.
+type UsageSnapshotJSONLRecord struct {
+	Type           string `json:"type"` // "usage_snapshot"
+	AgentID        string `json:"agent_id"`
+	SessionID      string `json:"session_id"`
+	Driver         string `json:"driver"`
+	Model          string `json:"model,omitempty"`
+	InputTokens    int64  `json:"input_tokens"`
+	OutputTokens   int64  `json:"output_tokens"`
+	CachedTokens   int64  `json:"cached_tokens"`
+	ContextLimit   int64  `json:"context_limit"`
+	ContextPercent int    `json:"context_percent"`
+	CapturedAt     int64  `json:"captured_at"`
+}
+
 // SessionHeartbeatJSONLRecord represents a session heartbeat event in JSONL.
 type SessionHeartbeatJSONLRecord struct {
 	Type      string `json:"type"`
