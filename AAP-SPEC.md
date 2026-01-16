@@ -129,15 +129,15 @@ Example: `aap-a1b2c3d4e5f6g7h8`
 
 ### 3.1 Resolution Flow
 
-Resolution behavior depends on whether `@host` is present in the address.
+Resolution behavior depends on whether `@location` is present in the address.
 
-#### Without @host (e.g., `@devrel.mlld`)
+#### Without @location (e.g., `@devrel.mlld`)
 
 Resolution is LOCAL ONLY:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│              Resolution Order (no @host)                  │
+│              Resolution Order (no @location)              │
 ├──────────────────────────────────────────────────────────┤
 │ 1. Local registry (~/.config/aap/agents/)                │
 │    └─ Check for agents/<agent>/identity.json             │
@@ -145,17 +145,17 @@ Resolution is LOCAL ONLY:
 │ 2. Project registry (.aap/ or compatible like .fray/)    │
 │    └─ Check for agents/<agent>/identity.json             │
 │                                                           │
-│ 3. STOP - no remote lookup without explicit @host        │
+│ 3. STOP - no remote lookup without explicit @location    │
 └──────────────────────────────────────────────────────────┘
 ```
 
-#### With @host (e.g., `@devrel@anthropic.com`)
+#### With @location (e.g., `@devrel@anthropic.com`)
 
-Resolution queries the specified host:
+Resolution queries the specified location:
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│              Resolution Order (with @host)                │
+│              Resolution Order (with @location)            │
 ├──────────────────────────────────────────────────────────┤
 │ 1. Check if host is local machine name                   │
 │    └─ If yes, use local registry                         │
@@ -231,11 +231,11 @@ The `registry_hosts` array contains full host addresses (with `@` prefix) normal
 "registry_hosts": ["@workstation", "@server", "@github.com/team/shared"]
 ```
 
-Implementations MUST compare the address's `@host` component against entries using normalized (lowercase) string comparison. The `@` prefix ensures unambiguous parsing when hosts contain dots or slashes.
+Implementations MUST compare the address's `@location` component against entries using normalized (lowercase) string comparison. The `@` prefix ensures unambiguous parsing when locations contain dots or slashes.
 
-### 3.5 Host Types
+### 3.5 Location Types
 
-The `@host` component specifies WHERE the agent's identity is REGISTERED, not where code executes. Think of it as "which registry holds this identity."
+The `@location` component specifies WHERE the agent's identity is REGISTERED, not where code executes. Think of it as "which registry holds this identity."
 
 | Protocol | Host Format | Resolution |
 |----------|-------------|------------|
@@ -255,11 +255,11 @@ For git-based hosts, implementations MUST support integrity verification:
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `context_uri` | Resource location (see format below) |
-| `context_ref` | Git ref (tag, branch, or commit) - RECOMMENDED to use tags |
-| `context_sha` | Expected commit SHA - verification fails if mismatch |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `context_uri` | Yes | Resource location with scheme (see format below) |
+| `context_ref` | No | Git ref (tag, branch, or commit) - RECOMMENDED to use tags |
+| `context_sha` | RECOMMENDED | Content hash for integrity - verification fails if mismatch |
 
 **`context_uri` Format:**
 
@@ -277,7 +277,7 @@ When `context_sha` is present, implementations MUST verify the fetched content m
 
 #### Execution vs Registry
 
-The `@host` specifies the REGISTRY, not execution location. Execution configuration is in the `invoke` block:
+The `@location` specifies the REGISTRY, not execution location. Execution configuration is in the `invoke` block:
 
 ```json
 {
@@ -288,7 +288,7 @@ The `@host` specifies the REGISTRY, not execution location. Execution configurat
 }
 ```
 
-Policy conditions like `exclude_execution_hosts` apply to `invoke.execution_host`, NOT to the registry `@host`.
+Policy conditions like `exclude_execution_hosts` apply to `invoke.execution_host`, NOT to the registry `@location`.
 
 ---
 
@@ -457,10 +457,10 @@ Conditions are evaluated against the execution context, NOT the registry address
 | Condition | Evaluated Against |
 |-----------|-------------------|
 | `require_variants` | The variant components in the resolved address (e.g., `.frontend` in `@dev.frontend`) |
-| `exclude_execution_hosts` | The `invoke.execution_host` from the invoke config, NOT the `@host` from the address |
+| `exclude_execution_hosts` | The `invoke.execution_host` from the invoke config, NOT the `@location` from the address |
 | `require_execution_hosts` | The `invoke.execution_host` from the invoke config |
 
-Example: An attestation with `"exclude_execution_hosts": ["prod-server"]` blocks invocation when `invoke.execution_host == "prod-server"`, regardless of which registry (`@host`) was used to resolve the identity.
+Example: An attestation with `"exclude_execution_hosts": ["prod-server"]` blocks invocation when `invoke.execution_host == "prod-server"`, regardless of which registry (`@location`) was used to resolve the identity.
 
 ### 5.6 Trust Chains
 
@@ -659,7 +659,7 @@ type Address struct {
     Agent    string
     Variants []string
     Job      *JobRef
-    Host     string
+    Location string
     Session  string
 }
 
@@ -681,11 +681,11 @@ func GetIdentity(agent string) (*Identity, error)
 
 // Resolution
 type Resolution struct {
-    Identity      *Identity
-    Invoke        *InvokeConfig
-    Variants      map[string]*VariantContext
-    RegistryHosts []string
-    Attestations  []*Attestation
+    Identity           *Identity
+    Invoke             *InvokeConfig
+    Variants           map[string]*VariantContext
+    RegistryLocations  []string
+    Attestations       []*Attestation
 }
 
 func Resolve(addr string) (*Resolution, error)
@@ -746,14 +746,15 @@ aap host list                    # List known hosts
 ## Appendix A: ABNF Grammar
 
 ```abnf
-address       = "@" agent [variants] [job-ref] [host] [session]
+address       = "@" agent [variants] [job-ref] [location] [session]
 agent         = name
 variants      = 1*("." variant)
 variant       = name
 job-ref       = "[" job-suffix "-" job-index "]"
 job-suffix    = 4ALPHANUM
 job-index     = 1*DIGIT
-host          = "@" (hostname / domain / git-repo)
+location      = "@" (machine-name / domain / git-repo)
+machine-name  = name
 git-repo      = git-host "/" repo-owner "/" repo-name
 git-host      = "github.com" / "gitlab.com" / "bitbucket.org" / domain
 repo-owner    = repo-char *(repo-char)
@@ -761,7 +762,6 @@ repo-name     = repo-char *(repo-char)
 repo-char     = LOWER / UPPER / DIGIT / "-" / "_" / "."
 session       = "#" 1*ALPHANUM
 name          = LOWER *(LOWER / DIGIT / "-")
-hostname      = name
 domain        = name *("." name)
 LOWER         = %x61-7A                    ; a-z
 UPPER         = %x41-5A                    ; A-Z
