@@ -5,7 +5,7 @@ exe @safe(obj, field) = js { return (obj && obj[field]) || [] }
 exe @at(name) = js { return "@" + name }
 
 >> Get session context for standup
-var @notes = @fray(`get meta/@agent/notes --last 3`)
+var @notes = @fray(`get meta/@agent/notes`)
 var @claimsData = @fray(`claims @$@agent`)
 var @notesList = @safe(@notes, "messages")
 var @claimsList = @safe(@claimsData, "claims")
@@ -30,7 +30,7 @@ Generate a standup report and clean up your session (longterm closeout):
 
 1. Post a brief standup to the room summarizing what you did
 2. Review session notes - ensure all balls land somewhere (beads, handoff, or delete)
-3. Update your notes with handoff context (Suggested Next Steps are SUGGESTIONS - may become stale)
+3. Update your notes thread in fray at meta/@agent/notes with handoff context (Suggested Next Steps are SUGGESTIONS - may become stale)
 4. Commit code (your work only)
 5. Update changelog if user-facing changes
 6. Clear your claims: fray clear @at(@agent)

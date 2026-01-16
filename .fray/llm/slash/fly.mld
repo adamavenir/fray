@@ -3,11 +3,12 @@ import { @agent } from @payload
 exe @fray(args) = cmd { fray @args --json }
 exe @safe(obj, field) = js { return (obj && obj[field]) || [] }
 exe @at(name) = js { return "@" + name }
+exe @truncate(text, len) = js { return text && text.length > len ? text.substring(0, len) + "..." : text }
 
->> Pull context from fray
-var @notes = @fray(`get meta/@agent/notes --last 5`)
-var @meta = @fray(`get meta --last 10`)
-var @mentions = @fray(`@$@agent --last 10`)
+>> Pull context from fray (uses smart unread boundaries, no --last needed)
+var @notes = @fray(`get meta/@agent/notes`)
+var @meta = @fray(`get meta`)
+var @mentions = @fray(`@$@agent`)
 var @claimsData = @fray(`claims @$@agent`)
 var @ready = cmd { bd ready }
 
@@ -22,17 +23,17 @@ var @context = `**You are @at(@agent).** Check fray for context.
 
 ## Your Notes (prior session handoffs)
 /for @m in @notesList
-- [@m.id] @m.body
+- [@m.id] @truncate(@m.body, 500)
 /end
 
 ## Project Meta (shared context)
 /for @m in @metaList
-- [@m.id] @m.from_agent: @m.body
+- [@m.id] @m.from_agent: @truncate(@m.body, 300)
 /end
 
-## Recent @mentions
+## Recent @mentions (run fray @at(@agent) for full messages)
 /for @m in @mentionsList
-- [@m.id] @m.from_agent: @m.body
+- [@m.id] @m.from_agent: @truncate(@m.body, 200)
 /end
 
 ## Your Claims
@@ -48,9 +49,11 @@ var @context = `**You are @at(@agent).** Check fray for context.
 ---
 Run: fray get @at(@agent)
 
-As you work, write notes to meta/@agent/notes (scratch pad style - you'll clean up at session end).
+As you work, write notes to your notes thread in fray at meta/@agent/notes (scratch pad style - you'll clean up at session end).
 
-IMPORTANT: Users only see messages posted to fray. Your stdout is not visible. Post progress updates and summaries to fray so users can follow your work.`
+IMPORTANT: Users only see messages posted to fray, so:
+1. Send a quick casual acknowledgement of the request ASAP so the user knows you received their message.
+2. Your stdout is not visible. Post progress updates and summaries to fray as you go so users can follow your work.`
 
 show @context
 

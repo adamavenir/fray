@@ -399,12 +399,17 @@ Legacy (deprecated):
 				if ctx.JSONMode {
 					readTo, _ := db.GetReadToForHome(ctx.DB, "room")
 					threadHints, _ := getThreadActivityHints(ctx, agentBase)
+					// Convert to compact JSON format to save tokens
+					compactThreads := make([]ThreadActivityHintJSON, len(threadHints))
+					for i, h := range threadHints {
+						compactThreads[i] = h.toJSON()
+					}
 					payload := map[string]any{
 						"project":       projectName,
 						"room_messages": roomMessages,
 						"mentions":      filtered,
 						"read_to":       readTo,
-						"threads":       threadHints,
+						"threads":       compactThreads,
 					}
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
 				}
@@ -858,9 +863,14 @@ func getNotifications(cmd *cobra.Command, ctx *CommandContext, asRef, projectNam
 	threadHints, _ := getThreadActivityHints(ctx, agentBase)
 
 	if ctx.JSONMode {
+		// Convert to compact JSON format to save tokens
+		compactThreads := make([]ThreadActivityHintJSON, len(threadHints))
+		for i, h := range threadHints {
+			compactThreads[i] = h.toJSON()
+		}
 		payload := map[string]any{
 			"mentions": filtered,
-			"threads":  threadHints,
+			"threads":  compactThreads,
 		}
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(payload)
 	}
@@ -964,8 +974,39 @@ type ThreadActivityHint struct {
 	ThreadGUID  string
 	ThreadName  string
 	NewCount    int
-	LastMessage *types.Message
-	MustRead    bool // from ghost cursor
+	LastMessage *types.Message `json:"-"` // Exclude from JSON to save tokens
+	MustRead    bool           // from ghost cursor
+}
+
+// ThreadActivityHintJSON is a compact version for JSON output.
+type ThreadActivityHintJSON struct {
+	ThreadGUID   string `json:"thread_guid"`
+	ThreadName   string `json:"thread_name"`
+	NewCount     int    `json:"new_count"`
+	LastMsgID    string `json:"last_msg_id,omitempty"`
+	LastMsgFrom  string `json:"last_msg_from,omitempty"`
+	LastMsgShort string `json:"last_msg_short,omitempty"` // First 80 chars
+	MustRead     bool   `json:"must_read,omitempty"`
+}
+
+// toJSON converts a ThreadActivityHint to its compact JSON representation.
+func (h *ThreadActivityHint) toJSON() ThreadActivityHintJSON {
+	result := ThreadActivityHintJSON{
+		ThreadGUID: h.ThreadGUID,
+		ThreadName: h.ThreadName,
+		NewCount:   h.NewCount,
+		MustRead:   h.MustRead,
+	}
+	if h.LastMessage != nil {
+		result.LastMsgID = h.LastMessage.ID
+		result.LastMsgFrom = h.LastMessage.FromAgent
+		body := h.LastMessage.Body
+		if len(body) > 80 {
+			body = body[:77] + "..."
+		}
+		result.LastMsgShort = body
+	}
+	return result
 }
 
 // getThreadActivityHints returns activity hints for subscribed threads.

@@ -5,7 +5,7 @@ exe @safe(obj, field) = js { return (obj && obj[field]) || [] }
 exe @at(name) = js { return "@" + name }
 
 >> Minimal context for quick hop-in tasks
-var @mentionsData = @fray(`@$@agent --last 3`)
+var @mentionsData = @fray(`@$@agent`)
 var @mentionsList = @safe(@mentionsData, "mentions")
 
 var @prompt = `**You are @at(@agent).** Quick hop-in task.
@@ -23,7 +23,9 @@ Complete this task efficiently. Run "fray bye @agent" when done.
 
 If you go idle without completing, your session will end automatically.
 
-IMPORTANT: Users only see fray messages. Post progress updates to fray.`
+IMPORTANT: Users only see messages posted to fray, so:
+1. Send a quick casual acknowledgement of the request ASAP so the user knows you received their message.
+2. Your stdout is not visible. Post progress updates to fray as you go so users can follow your work.`
 
 show @prompt
 
