@@ -1,0 +1,23 @@
+/import { @message } from @payload
+
+/exe @haiku(prompt) = @prompt | cmd { claude -p --model haiku }
+
+/exe @route(text) = [
+  let @prompt = `You're deciding whether to wake an agent for this message.
+
+The agent was mentioned but NOT directly addressed (not "@agent message" at start).
+Should they be woken up to read this, or can they wait until they're next online?
+
+Return JSON: {"wake": true} or {"wake": false}
+
+Message: @text`
+  let @result = @haiku(@prompt) | @json.llm
+  => {
+    shouldSpawn: @result.wake,
+    confidence: 0.7
+  }
+]
+
+/show @route(@message)
+
+/export { @route }
