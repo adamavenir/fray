@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Token tracking: Claude context now includes cached tokens (was showing 0% when caching active)
+- Token tracking: Codex transcript discovery handles modern filename format
+
 ### Added
 - `fray cursor stage <home> <msg>`: stage ghost cursor for commit on bye/brb
   - Uses FRAY_AGENT_ID, supports multiple homes (room + threads)
