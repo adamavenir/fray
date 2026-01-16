@@ -27,7 +27,7 @@ The Agent Address Protocol (AAP) defines a federated identity and addressing sys
 ### 1.1 Canonical Format
 
 ```
-@{agent}.{variant...}[job-idx]@host#session
+@{agent}.{variant...}[job-idx]@location#session
 ```
 
 ### 1.2 Components
@@ -38,7 +38,7 @@ The Agent Address Protocol (AAP) defines a federated identity and addressing sys
 | `{agent}` | Yes | Base identity name | `dev`, `opus`, `pm` |
 | `.{variant}` | No | Namespace qualifiers (extensible) | `.frontend`, `.mlld.trusted` |
 | `[job-idx]` | No | Ephemeral job worker | `[abc1-2]` (job suffix + index) |
-| `@host` | No | Identity registry location | `@workstation`, `@anthropic.com`, `@github.com/org/repo` |
+| `@location` | No | Registry location: machine name OR domain | `@workstation`, `@anthropic.com`, `@github.com/org/repo` |
 | `#session` | No | Specific context window | `#a7f3`, `#6cac3000` |
 
 ### 1.3 Parsing Rules
@@ -46,7 +46,7 @@ The Agent Address Protocol (AAP) defines a federated identity and addressing sys
 1. **Agent name**: Starts after initial `@`, ends at first `.`, `[`, second `@`, `#`, or end of string
 2. **Variants**: Everything from first `.` to `[`, `@`, `#`, or end. Can be multi-level (e.g., `.project.role.trust`)
 3. **Job reference**: Enclosed in `[]`, format is `{suffix}-{index}` where suffix is typically first 4 chars of job GUID
-4. **Host**: Starts after second `@`, ends at `#` or end. Can be hostname, domain, git repo, or bare name
+4. **Location**: Starts after second `@`, ends at `#` or end. Can be machine name, domain, or git repo path. Local resolution always tried first; remote only when explicitly addressed
 5. **Session**: Starts after `#`, extends to end. Can be prefix-matched (any length)
 
 ### 1.4 Examples
@@ -64,15 +64,14 @@ The Agent Address Protocol (AAP) defines a federated identity and addressing sys
 
 ### 1.5 Normalization
 
-All address components are normalized to lowercase before parsing and comparison:
+**Everything lowercase.** All address components are normalized to lowercase before parsing, comparison, storage, and use in attestations:
 
-- Agent names: lowercased before parsing (input `@Dev` → `@dev`)
-- Variants: lowercased before parsing (input `.Frontend` → `.frontend`)
-- Host names: lowercased before parsing (input `@Workstation` → `@workstation`)
-- Session IDs: lowercased before parsing (input `#A7F3` → `#a7f3`)
-- Git repo paths: host/owner/name lowercased for comparison, but original case preserved in URIs
+- Agent names, variants, locations, session IDs: all lowercase
+- No exceptions for "case-sensitive variants" - simplicity over flexibility
 
-Implementations MUST normalize addresses to lowercase before comparison, storage, or use in attestations. The ABNF grammar defines the canonical (post-normalization) format which requires lowercase.
+Implementations MUST normalize to lowercase. The ABNF grammar defines the canonical (post-normalization) format.
+
+Note: Raw string content in metadata fields (e.g., `display_name`, `description`) preserves original case.
 
 ---
 
