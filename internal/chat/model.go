@@ -176,6 +176,7 @@ type Model struct {
 	pendingNicknameGUID  string            // thread GUID for pending /n command (set by Ctrl-N)
 	helpMessageID       string
 	initialScroll       bool
+	pendingScrollBottom bool // scroll to bottom on next viewport refresh
 	lastClickID         string
 	lastClickAt         time.Time
 	// Activity panel state
@@ -202,6 +203,8 @@ type Model struct {
 	// Reply reference state (for reply preview UI)
 	replyToID        string // message ID being replied to (empty if no reply)
 	replyToPreview   string // preview text of reply target
+	// Paste collapse state
+	pastedText       string // original pasted text when collapsed
 	// Debug sync state
 	debugSync        bool
 	stopSyncChecker  chan struct{}
@@ -535,7 +538,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.Type == tea.KeyRunes && msg.Paste {
-			m.insertInputText(normalizeNewlines(string(msg.Runes)))
+			pastedText := normalizeNewlines(string(msg.Runes))
+			// Collapse multiline pastes into placeholder
+			lines := strings.Split(pastedText, "\n")
+			if len(lines) > 1 {
+				// Replace with collapsed placeholder
+				placeholder := fmt.Sprintf("[%d lines pasted]", len(lines))
+				m.insertInputText(placeholder)
+				// Store original pasted text for potential expansion
+				m.pastedText = pastedText
+			} else {
+				m.insertInputText(pastedText)
+			}
 			return m, nil
 		}
 		switch msg.Type {
@@ -546,6 +560,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Clear reply reference without status message (silent clear)
 				m.replyToID = ""
 				m.replyToPreview = ""
+				m.pastedText = "" // clear any stored paste
 				m.lastInputValue = m.input.Value()
 				m.lastInputPos = m.inputCursorPos()
 				m.updateInputStyle()
@@ -592,6 +607,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// DEBUG: log replyToID state at Enter press time
 			debugLog(fmt.Sprintf("KeyEnter: replyToID=%q replyToPreview=%q", m.replyToID, m.replyToPreview))
 			value := strings.TrimSpace(m.input.Value())
+			// Expand collapsed paste placeholder before submission
+			if m.pastedText != "" && strings.HasPrefix(value, "[") && strings.HasSuffix(value, " lines pasted]") {
+				value = m.pastedText
+				m.pastedText = "" // clear stored paste
+			}
 			m.input.Reset()
 			m.clearSuggestions()
 			m.lastInputValue = m.input.Value()
@@ -642,6 +662,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		canType := !m.sidebarFocus && !m.threadPanelFocus
 		canType = canType || (m.isPeeking() && !m.threadFilterActive)
 		if canType {
+			// Clear stored paste text if user modifies the input
+			if m.pastedText != "" && msg.Type == tea.KeyRunes && !msg.Paste {
+				m.pastedText = ""
+			}
 			cmd = m.safeInputUpdate(msg)
 			m.refreshSuggestions()
 			m.resize()

@@ -302,6 +302,11 @@ func (m *Model) activityPollCmd() tea.Cmd {
 func (m *Model) refreshViewport(scrollToBottom bool) {
 	content := m.renderMessages()
 	m.viewport.SetContent(content)
+	// Check pending scroll flag first
+	if m.pendingScrollBottom {
+		scrollToBottom = true
+		m.pendingScrollBottom = false
+	}
 	if scrollToBottom {
 		m.viewport.GotoBottom()
 		m.clearNewMessageNotification() // Clear notification when scrolling to bottom

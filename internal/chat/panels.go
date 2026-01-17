@@ -1469,6 +1469,7 @@ func (m *Model) selectThreadEntry() {
 		m.currentThread = nil
 		m.currentPseudo = ""
 		m.threadMessages = nil
+		m.pendingScrollBottom = true // scroll to bottom when returning to main
 		m.markRoomAsRead()
 	case threadEntryThread:
 		// If selecting from search mode, drill sidebar to parent level (Option A)
@@ -1498,6 +1499,7 @@ func (m *Model) selectThreadEntry() {
 
 		m.currentThread = entry.Thread
 		m.currentPseudo = ""
+		m.pendingScrollBottom = true // ensure scroll to bottom on thread switch
 		// Track visited threads for persistence in list
 		if entry.Thread != nil {
 			m.visitedThreads[entry.Thread.GUID] = *entry.Thread
@@ -1514,6 +1516,7 @@ func (m *Model) selectThreadEntry() {
 		m.currentThread = nil
 		m.threadMessages = nil
 		m.currentPseudo = pseudoThreadKind(entry.MessageCollection)
+		m.pendingScrollBottom = true // scroll to bottom when viewing message collection
 	case threadEntryThreadCollection:
 		// Handle thread collection views
 		if entry.ThreadCollection == threadCollectionMuted {

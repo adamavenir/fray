@@ -228,7 +228,7 @@ func (m *Model) showHelp() {
 	m.helpMessageID = msg.ID
 	m.messages = append(m.messages, msg)
 	m.status = ""
-	m.refreshViewport(true)
+	m.refreshViewport(false)
 }
 
 func buildHelpText() string {
@@ -809,7 +809,7 @@ func (m *Model) reloadMessages() error {
 	m.messageCount = count
 	m.hasMore = len(rawMessages) >= m.lastLimit
 	m.colorMap = colorMap
-	m.refreshViewport(true)
+	m.refreshViewport(false)
 	return nil
 }
 
@@ -1205,7 +1205,7 @@ func (m *Model) runArchiveCommand(args []string) (tea.Cmd, error) {
 	if m.currentThread != nil && m.currentThread.GUID == thread.GUID {
 		m.currentThread = nil
 		m.threadMessages = nil
-		m.refreshViewport(true)
+		m.refreshViewport(false)
 	}
 
 	m.status = fmt.Sprintf("Archived %s", thread.Name)
@@ -1692,7 +1692,7 @@ func (m *Model) createThread(name string, parentGUID *string, anchorText string)
 		m.status = fmt.Sprintf("Created %s", path)
 	}
 	m.input.SetValue("")
-	m.refreshViewport(true)
+	m.refreshViewport(false)
 	return nil, nil
 }
 
@@ -1904,7 +1904,7 @@ func (m *Model) runMlldScriptCommand(args []string) error {
 		}
 		msg := newEventMessage(strings.Join(lines, "\n"))
 		m.messages = append(m.messages, msg)
-		m.refreshViewport(true)
+		m.refreshViewport(false)
 		return nil
 	}
 
@@ -1948,7 +1948,7 @@ func (m *Model) runMlldScriptCommand(args []string) error {
 	}
 
 	m.status = fmt.Sprintf("Ran %s", scriptName)
-	m.refreshViewport(true)
+	m.refreshViewport(false)
 	m.input.SetValue("")
 	return nil
 }
