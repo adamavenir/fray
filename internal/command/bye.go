@@ -141,10 +141,70 @@ func NewByeCmd() *cobra.Command {
 				return writeCommandError(cmd, err)
 			}
 
-			// For managed agents, set presence to offline
+			// For managed agents, emit shutdown event and set presence to offline
 		// Note: We preserve LastSessionID for token usage display in activity panel.
 		// The daemon will start fresh based on presence being offline.
 			if agent.Managed {
+				// Emit session_shutdown event with unprocessed mentions
+				// This prevents daemon race where bye clears cooldown but unprocessed mentions trigger respawn
+				watermark := ""
+				if agent.MentionWatermark != nil {
+					watermark = *agent.MentionWatermark
+				}
+
+				// Get unprocessed mentions (messages after watermark)
+				unprocessedMsgs := []string{}
+				if watermark != "" {
+					msgs, err := db.GetMessagesWithMention(ctx.DB, agentID, &types.MessageQueryOptions{
+						SinceID: watermark,
+					})
+					if err == nil {
+						for _, msg := range msgs {
+							unprocessedMsgs = append(unprocessedMsgs, msg.ID)
+						}
+					}
+				}
+
+				// Find the latest message to use as new watermark
+				var newWatermark *string
+				if len(unprocessedMsgs) > 0 {
+					// Get latest message ID
+					latestMsgs, err := db.GetMessages(ctx.DB, &types.MessageQueryOptions{Limit: 1})
+					if err == nil && len(latestMsgs) > 0 {
+						newWatermark = &latestMsgs[0].ID
+					}
+				}
+
+				// Emit shutdown event
+				sessionID := ""
+				if agent.LastSessionID != nil {
+					sessionID = *agent.LastSessionID
+				}
+				shutdownEvent := types.SessionShutdown{
+					AgentID:         agentID,
+					SessionID:       sessionID,
+					UnprocessedMsgs: unprocessedMsgs,
+					NewWatermark:    newWatermark,
+					ShutdownAt:      nowMs,
+					ShutdownReason:  "bye",
+				}
+				if err := db.AppendSessionShutdown(ctx.Project.DBPath, shutdownEvent); err != nil {
+					return writeCommandError(cmd, err)
+				}
+
+				// Advance watermark if we had unprocessed mentions
+				if newWatermark != nil {
+					if err := db.UpdateAgentWatermark(ctx.DB, agentID, *newWatermark); err != nil {
+						return writeCommandError(cmd, err)
+					}
+					if err := db.AppendAgentUpdate(ctx.Project.DBPath, db.AgentUpdateJSONLRecord{
+						AgentID:          agentID,
+						MentionWatermark: newWatermark,
+					}); err != nil {
+						return writeCommandError(cmd, err)
+					}
+				}
+
 				if err := db.UpdateAgentPresenceWithAudit(ctx.DB, ctx.Project.DBPath, agentID, agent.Presence, types.PresenceOffline, "bye", "command", agent.Status); err != nil {
 					return writeCommandError(cmd, err)
 				}

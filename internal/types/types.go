@@ -464,6 +464,17 @@ type SessionHeartbeat struct {
 	At        int64         `json:"at"`
 }
 
+// SessionShutdown records graceful session shutdown with unprocessed mentions.
+// Prevents daemon race where bye clears cooldown but unprocessed mentions trigger respawn.
+type SessionShutdown struct {
+	AgentID           string   `json:"agent_id"`
+	SessionID         string   `json:"session_id"`
+	UnprocessedMsgs   []string `json:"unprocessed_msgs,omitempty"`    // msg_ids after watermark
+	NewWatermark      *string  `json:"new_watermark,omitempty"`       // advanced past unprocessed
+	ShutdownAt        int64    `json:"shutdown_at"`
+	ShutdownReason    string   `json:"shutdown_reason"` // "bye", "brb", "land"
+}
+
 // GhostCursor represents a recommended read position for session handoff.
 // Unlike read_to (actual read position), ghost cursor is where an outgoing
 // agent says the next agent should START reading from.

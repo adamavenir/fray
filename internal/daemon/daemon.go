@@ -689,6 +689,8 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 		if currentAgent != nil {
 			agent.Presence = currentAgent.Presence
 			// Clear cooldown if agent ran `fray bye` (presence is offline)
+			// Note: bye command advances watermark past unprocessed mentions,
+			// so GetMessagesWithMention won't return them even with cooldown cleared
 			if agent.Presence == types.PresenceOffline {
 				if _, hasCooldown := d.cooldownUntil[agent.AgentID]; hasCooldown {
 					delete(d.cooldownUntil, agent.AgentID)

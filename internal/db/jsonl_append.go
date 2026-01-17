@@ -193,6 +193,25 @@ func AppendSessionEnd(projectPath string, event types.SessionEnd) error {
 	return nil
 }
 
+// AppendSessionShutdown appends a graceful shutdown event to JSONL.
+func AppendSessionShutdown(projectPath string, event types.SessionShutdown) error {
+	frayDir := resolveFrayDir(projectPath)
+	record := SessionShutdownJSONLRecord{
+		Type:            "session_shutdown",
+		AgentID:         event.AgentID,
+		SessionID:       event.SessionID,
+		UnprocessedMsgs: event.UnprocessedMsgs,
+		NewWatermark:    event.NewWatermark,
+		ShutdownAt:      event.ShutdownAt,
+		ShutdownReason:  event.ShutdownReason,
+	}
+	if err := appendJSONLine(filepath.Join(frayDir, agentsFile), record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
 // AppendUsageSnapshot appends a usage snapshot event to JSONL.
 // Called on session end to persist token usage for durability.
 func AppendUsageSnapshot(projectPath string, snapshot types.UsageSnapshot) error {

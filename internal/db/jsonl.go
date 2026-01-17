@@ -257,6 +257,17 @@ type SessionEndJSONLRecord struct {
 	EndedAt    int64  `json:"ended_at"`
 }
 
+// SessionShutdownJSONLRecord represents a graceful shutdown event in JSONL.
+type SessionShutdownJSONLRecord struct {
+	Type            string   `json:"type"` // "session_shutdown"
+	AgentID         string   `json:"agent_id"`
+	SessionID       string   `json:"session_id"`
+	UnprocessedMsgs []string `json:"unprocessed_msgs,omitempty"`
+	NewWatermark    *string  `json:"new_watermark,omitempty"`
+	ShutdownAt      int64    `json:"shutdown_at"`
+	ShutdownReason  string   `json:"shutdown_reason"`
+}
+
 // UsageSnapshotJSONLRecord represents a usage snapshot in JSONL.
 // Persisted on session end for durability across transcript rotation.
 type UsageSnapshotJSONLRecord struct {
