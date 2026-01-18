@@ -3,7 +3,11 @@ package hooks
 import (
 	"fmt"
 	"os"
+	"time"
 
+	"github.com/adamavenir/fray/internal/core"
+	"github.com/adamavenir/fray/internal/db"
+	"github.com/adamavenir/fray/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +22,39 @@ func NewHookPrecompactCmd() *cobra.Command {
 			agentID := os.Getenv("FRAY_AGENT_ID")
 			if agentID == "" {
 				agentID = "<you>"
+			}
+
+			// Send heartbeat to keep agent active through compaction.
+			// This resets error state to active if needed.
+			if agentID != "<you>" {
+				projectPath := os.Getenv("CLAUDE_PROJECT_DIR")
+				if project, err := core.DiscoverProject(projectPath); err == nil {
+					if dbConn, err := db.OpenDatabase(project); err == nil {
+						defer dbConn.Close()
+						if err := db.InitSchema(dbConn); err == nil {
+							if agent, err := db.GetAgent(dbConn, agentID); err == nil && agent != nil {
+								now := time.Now().UnixMilli()
+								if agent.Presence == "error" {
+									// Reset error state to active
+									active := "active"
+									_ = db.UpdateAgentPresence(dbConn, agentID, types.PresenceActive)
+									_ = db.AppendAgentUpdate(project.DBPath, db.AgentUpdateJSONLRecord{
+										AgentID:       agentID,
+										Presence:      &active,
+										LastHeartbeat: &now,
+									})
+								} else {
+									// Just update heartbeat
+									_ = db.UpdateAgentHeartbeat(dbConn, agentID, now)
+									_ = db.AppendAgentUpdate(project.DBPath, db.AgentUpdateJSONLRecord{
+										AgentID:       agentID,
+										LastHeartbeat: &now,
+									})
+								}
+							}
+						}
+					}
+				}
 			}
 
 			output.AdditionalContext = buildPrecompactContext(agentID)

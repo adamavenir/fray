@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/adamavenir/fray/internal/db"
+	"github.com/adamavenir/fray/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -45,28 +46,52 @@ Any fray activity (posts, replies, threads) also resets the timer automatically.
 			}
 
 			now := time.Now().UnixMilli()
+			presenceReset := false
 
-			// Update heartbeat in SQLite
-			if err := db.UpdateAgentHeartbeat(ctx.DB, agentID, now); err != nil {
-				return writeCommandError(cmd, err)
-			}
+			// If agent is in error state, reset to active
+			if agent.Presence == "error" {
+				presenceReset = true
+				active := "active"
+				if err := db.UpdateAgentPresence(ctx.DB, agentID, types.PresenceActive); err != nil {
+					return writeCommandError(cmd, err)
+				}
+				// Persist presence change to JSONL
+				if err := db.AppendAgentUpdate(ctx.Project.DBPath, db.AgentUpdateJSONLRecord{
+					AgentID:       agentID,
+					Presence:      &active,
+					LastHeartbeat: &now,
+				}); err != nil {
+					return writeCommandError(cmd, err)
+				}
+			} else {
+				// Update heartbeat in SQLite
+				if err := db.UpdateAgentHeartbeat(ctx.DB, agentID, now); err != nil {
+					return writeCommandError(cmd, err)
+				}
 
-			// Persist to JSONL
-			if err := db.AppendAgentUpdate(ctx.Project.DBPath, db.AgentUpdateJSONLRecord{
-				AgentID:       agentID,
-				LastHeartbeat: &now,
-			}); err != nil {
-				return writeCommandError(cmd, err)
+				// Persist to JSONL
+				if err := db.AppendAgentUpdate(ctx.Project.DBPath, db.AgentUpdateJSONLRecord{
+					AgentID:       agentID,
+					LastHeartbeat: &now,
+				}); err != nil {
+					return writeCommandError(cmd, err)
+				}
 			}
 
 			if ctx.JSONMode {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-					"agent_id":  agentID,
-					"heartbeat": now,
-				})
+				result := map[string]any{
+					"agent_id":       agentID,
+					"heartbeat":      now,
+					"presence_reset": presenceReset,
+				}
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Heartbeat sent for @%s\n", agentID)
+			if presenceReset {
+				fmt.Fprintf(cmd.OutOrStdout(), "Heartbeat sent for @%s (presence reset: error → active)\n", agentID)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "Heartbeat sent for @%s\n", agentID)
+			}
 			return nil
 		},
 	}
