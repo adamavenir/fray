@@ -230,14 +230,15 @@ type TokenUsageEntry struct {
 }
 
 // ContextTokens returns an estimate of current context window usage.
-// Uses cacheReadTokens from the most recent entry as proxy for context size.
+// InputTokens already includes cache_read_tokens (via effectiveInputTokens in claude.go),
+// so we only return InputTokens to avoid double-counting cache.
+// OutputTokens are not part of context (they're what the model generates).
 func (t *TokenUsage) ContextTokens() int64 {
 	if t == nil || len(t.Entries) == 0 {
 		return 0
 	}
-	// Most recent entry's cacheReadTokens approximates context size
 	lastEntry := t.Entries[len(t.Entries)-1]
-	return lastEntry.CacheReadTokens + lastEntry.InputTokens + lastEntry.OutputTokens
+	return lastEntry.InputTokens
 }
 
 type errMsg struct {
