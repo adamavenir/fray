@@ -43,6 +43,21 @@ func NewHookSessionCmd() *cobra.Command {
 				return writeHookOutput(cmd, output)
 			}
 
+			// Update presence to active for managed agents on session start/resume.
+			// This handles manual `claude --resume` cases where daemon isn't tracking.
+			agent, err := db.GetAgent(dbConn, agentID)
+			if err == nil && agent != nil && agent.Managed {
+				// Only update if not already in an active-ish state (avoid overwriting daemon's tracking)
+				if agent.Presence == types.PresenceOffline || agent.Presence == types.PresenceIdle {
+					db.UpdateAgentPresenceWithAudit(
+						dbConn, project.DBPath, agentID,
+						agent.Presence, types.PresenceActive,
+						"session_"+event, "hook",
+						agent.Status,
+					)
+				}
+			}
+
 			roomMessages, mentionMessages, agentBase := fetchHookMessages(dbConn, agentID, 10, 5)
 			output.AdditionalContext = buildHookSessionContext(event, agentID, agentBase, roomMessages, mentionMessages)
 			return writeHookOutput(cmd, output)

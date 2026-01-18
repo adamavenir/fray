@@ -1960,15 +1960,16 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 	}
 
 	var lines []string
-	staleThreshold := 1 * 60 * 60  // 1 hour in seconds
-	forkIdleThreshold := 5 * 60    // 5 minutes for fork sessions
+	recentOfflineThreshold := 4 * 60 * 60  // 4 hours in seconds (for recently offline agents)
+	forkIdleThreshold := 5 * 60            // 5 minutes for fork sessions
 	now := int64(0)
 	if t := time.Now().Unix(); t > 0 {
 		now = t
 	}
 
-	// Categorize agents into active/offline, separating job workers
-	var activeAgents, offlineAgents []types.Agent
+	// Categorize agents into active/idle/offline, separating job workers
+	var activeAgents, idleAgents, recentlyOfflineAgents []types.Agent
+	offlineCount := 0                            // count of agents offline > 4h (hidden individually but shown in summary)
 	jobWorkers := make(map[string][]types.Agent) // job_id -> workers
 
 	for _, agent := range m.managedAgents {
@@ -1988,27 +1989,36 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 		isJobWorker := agent.JobID != nil && *agent.JobID != ""
 
 		// Categorize by presence state
-		isActive := false
-		if agent.Presence == types.PresenceOffline {
-			// Offline
-		} else if agent.Presence == types.PresenceSpawning || agent.Presence == types.PresencePrompting ||
+		// Active: spawning, prompting, prompted, active, error
+		// Idle: idle presence (has active session but idle)
+		// Recently offline: offline within 4h
+		// Offline: offline beyond 4h (hidden)
+		category := ""
+		if agent.Presence == types.PresenceSpawning || agent.Presence == types.PresencePrompting ||
 			agent.Presence == types.PresencePrompted || agent.Presence == types.PresenceActive ||
-			agent.Presence == types.PresenceError || agent.Presence == types.PresenceIdle {
-			isActive = true
-		} else if agent.LeftAt != nil {
+			agent.Presence == types.PresenceError {
+			category = "active"
+		} else if agent.Presence == types.PresenceIdle {
+			category = "idle"
+		} else if agent.Presence == types.PresenceOffline {
 			timeSinceActive := now - agent.LastSeen
-			isActive = timeSinceActive <= int64(staleThreshold)
-		} else {
-			timeSinceActive := now - agent.LastSeen
-			isActive = timeSinceActive <= int64(staleThreshold)
+			if timeSinceActive <= int64(recentOfflineThreshold) {
+				category = "recently-offline"
+			} else {
+				category = "offline" // hidden
+			}
 		}
 
 		if isJobWorker {
 			jobWorkers[*agent.JobID] = append(jobWorkers[*agent.JobID], agent)
-		} else if isActive {
+		} else if category == "active" {
 			activeAgents = append(activeAgents, agent)
-		} else {
-			offlineAgents = append(offlineAgents, agent)
+		} else if category == "idle" {
+			idleAgents = append(idleAgents, agent)
+		} else if category == "recently-offline" {
+			recentlyOfflineAgents = append(recentlyOfflineAgents, agent)
+		} else if category == "offline" {
+			offlineCount++
 		}
 	}
 
@@ -2034,29 +2044,28 @@ func (m *Model) renderActivitySection(width int) ([]string, int) {
 		}
 	}
 
-	// Render offline summary (collapsed)
-	if len(offlineAgents) > 0 && !m.activityDrillOffline {
-		totalOfflineUnread := 0
-		for _, agent := range offlineAgents {
-			totalOfflineUnread += m.agentUnreadCounts[agent.AgentID]
-		}
-		offlineLabel := fmt.Sprintf(" · %d offline", len(offlineAgents))
-		if totalOfflineUnread > 0 {
-			offlineLabel += fmt.Sprintf(" (%d)", totalOfflineUnread)
-		}
+	// Render idle agents (have session but idle)
+	for _, agent := range idleAgents {
+		line := m.renderAgentRow(agent, width)
+		lines = append(lines, line)
+	}
+
+	// Render recently offline agents (offline within 4h) with distinct visual
+	for _, agent := range recentlyOfflineAgents {
+		line := m.renderAgentRow(agent, width)
+		// Apply italic grey styling to distinguish from idle
+		styledLine := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true).Render(line)
+		lines = append(lines, styledLine)
+	}
+
+	// Render offline summary (agents offline > 4h)
+	if offlineCount > 0 {
+		offlineLabel := fmt.Sprintf(" · %d offline", offlineCount)
 		if width > 0 && len(offlineLabel) > width-1 {
 			offlineLabel = offlineLabel[:width-1]
 		}
 		offlineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 		lines = append(lines, offlineStyle.Render(offlineLabel))
-	}
-
-	// Render individual offline agents when drilled in
-	if m.activityDrillOffline {
-		for _, agent := range offlineAgents {
-			line := m.renderAgentRow(agent, width)
-			lines = append(lines, line)
-		}
 	}
 
 	return lines, len(lines)

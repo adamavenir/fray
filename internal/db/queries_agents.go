@@ -239,6 +239,7 @@ func GetActiveAgents(db *sql.DB, staleHours int) ([]types.Agent, error) {
 		SELECT guid, agent_id, aap_guid, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, presence_changed_at, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
 		FROM fray_agents
 		WHERE left_at IS NULL
+		  AND presence != 'offline'
 		  AND last_seen > (strftime('%s', 'now') - ? * 3600)
 		ORDER BY last_seen DESC
 	`, staleHours)

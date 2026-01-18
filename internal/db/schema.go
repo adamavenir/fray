@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   left_at INTEGER,                     -- set by "bye", null if active
   managed INTEGER NOT NULL DEFAULT 0,  -- whether daemon controls this agent
   invoke TEXT,                         -- JSON: driver config for spawning
-  presence TEXT DEFAULT 'offline',     -- active, spawning, idle, error, offline
+  presence TEXT DEFAULT 'offline',     -- spawning/prompting/prompted/active (busy), idle (resumable), offline (left via bye), error
   presence_changed_at INTEGER,         -- when presence last changed (Unix ms, for TTL detection)
   mention_watermark TEXT,              -- last processed mention msg_id
   reaction_watermark INTEGER,          -- last processed reaction timestamp (ms)

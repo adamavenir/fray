@@ -72,12 +72,9 @@ func NewHookSessionEndCmd() *cobra.Command {
 				)
 			}
 
-			// Set left_at if not already set (by fray bye)
-			if agent.LeftAt == nil {
-				db.UpdateAgent(dbConn, agentID, db.AgentUpdates{
-					LeftAt: types.OptionalInt64{Set: true, Value: &now},
-				})
-			}
+			// Note: left_at should ONLY be set by fray bye, not when sessions naturally end.
+			// Sessions that end without fray bye are resumable via @mention (presence=idle).
+			// Sessions that end with fray bye are explicitly offline (presence=offline, left_at set).
 
 			return writeHookOutput(cmd, output)
 		},
