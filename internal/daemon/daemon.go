@@ -414,6 +414,7 @@ func (d *Daemon) cleanupStalePresence() {
 		types.PresencePrompting,
 		types.PresencePrompted,
 		types.PresenceActive,
+		// Note: PresenceIdle is NOT stale - it means session ended naturally but agent is resumable
 	}
 
 	for _, agent := range agents {
@@ -430,9 +431,9 @@ func (d *Daemon) cleanupStalePresence() {
 		}
 
 		// Agent has a "busy" presence but daemon just started (no tracked processes)
-		// Reset to idle so mentions can spawn fresh, and set LeftAt to indicate session ended
-		d.debugf("startup cleanup: @%s was %s, resetting to idle", agent.AgentID, agent.Presence)
-		if err := db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, agent.Presence, types.PresenceIdle, "startup_cleanup", "startup", agent.Status); err != nil {
+		// Reset to offline so mentions can spawn fresh, and set LeftAt to indicate session ended
+		d.debugf("startup cleanup: @%s was %s, resetting to offline", agent.AgentID, agent.Presence)
+		if err := db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agent.AgentID, agent.Presence, types.PresenceOffline, "startup_cleanup", "startup", agent.Status); err != nil {
 			d.debugf("startup cleanup: error updating @%s presence: %v", agent.AgentID, err)
 		}
 		// Also set LeftAt if not already set, to indicate the orphaned session ended
@@ -2010,7 +2011,7 @@ Generate a standup report and clean up your session:
 2. Update your notes thread in fray in meta/%s/notes with handoff context
 3. Clear claims: fray clear @%s
 4. Leave: fray bye %s "standup message"`,
-		agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID)
+		agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID, agent.AgentID)
 }
 
 func (d *Daemon) buildHandPromptInline(agent types.Agent, triggerInfo string) string {
@@ -2024,7 +2025,7 @@ Hand off to fresh context:
 3. Update your notes thread in fray in meta/%s/notes with current state (preserve details, don't condense)
 4. Clear claims: fray clear @%s
 5. Hand off: fray brb %s "handing off to fresh context"`,
-		agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID)
+		agent.AgentID, triggerInfo, agent.AgentID, agent.AgentID, agent.AgentID)
 }
 
 // buildResumePromptInline creates the fallback prompt for regular @mention wakes.
@@ -2409,15 +2410,18 @@ func (d *Daemon) handleProcessExit(agentID string, proc *Process) bool {
 			var newPresence types.PresenceState
 			if exitCode == 0 {
 				reason = "exit_ok"
+				// Clean exit without fray bye → idle (resumable via @mention)
+				// Only fray bye sets presence to offline (explicit logout)
 				newPresence = types.PresenceIdle
 				// Set 30s cooldown after clean exit - prevents immediate re-spawn
 				// Cooldown is cleared by: fray bye, interrupt syntax, or expiration
 				d.cooldownUntil[agentID] = time.Now().Add(30 * time.Second)
 				d.debugf("@%s: setting 30s cooldown (expires %s)", agentID, d.cooldownUntil[agentID].Format(time.RFC3339))
 			} else if exitCode == -1 {
-				// Signal kill (SIGTERM/SIGINT) - treat as idle, not error
+				// Signal kill (SIGTERM/SIGINT) - treat as idle (resumable)
 				// This handles: user Ctrl-C, daemon restart, network interruption
-				d.debugf("@%s: exit_code=-1 (signal kill) → idle (not error)", agentID)
+				// Session context on disk is typically still valid after signal
+				d.debugf("@%s: exit_code=-1 (signal kill) → idle (resumable)", agentID)
 				reason = "signal_kill"
 				newPresence = types.PresenceIdle
 			} else {
@@ -2427,11 +2431,11 @@ func (d *Daemon) handleProcessExit(agentID string, proc *Process) bool {
 				// - Had a session ID (was trying to resume)
 				durationSec := time.Since(proc.StartedAt).Seconds()
 				if durationSec < 30 && proc.SessionID != "" {
-					// Likely resume failure - set to idle so next spawn starts fresh
+					// Likely resume failure - set to offline so next spawn starts fresh
 					d.debugf("@%s: quick failure (%ds, exit=%d) with session %s - likely resume failure, clearing session",
 						agentID, int(durationSec), exitCode, proc.SessionID)
 					reason = "resume_failure"
-					newPresence = types.PresenceIdle
+					newPresence = types.PresenceOffline
 					// Clear session ID to prevent retry loop
 					db.UpdateAgentSessionID(d.database, agentID, "")
 				} else {

@@ -1588,6 +1588,7 @@ func TestErrorRecovery_SignalKillSetsIdle(t *testing.T) {
 	time.Sleep(3 * time.Second)
 
 	// Presence should be idle (signal kill exit_code=-1 should NOT be error)
+	// Session context on disk is typically still valid after signal, so agent is resumable
 	updated, _ := db.GetAgent(h.db, "alice")
 	if updated.Presence != types.PresenceIdle {
 		t.Errorf("expected presence 'idle' after signal kill, got %q", updated.Presence)
