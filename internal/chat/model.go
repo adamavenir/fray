@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -608,8 +609,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			debugLog(fmt.Sprintf("KeyEnter: replyToID=%q replyToPreview=%q", m.replyToID, m.replyToPreview))
 			value := strings.TrimSpace(m.input.Value())
 			// Expand collapsed paste placeholder before submission
-			if m.pastedText != "" && strings.HasPrefix(value, "[") && strings.HasSuffix(value, " lines pasted]") {
-				value = m.pastedText
+			// The placeholder can be anywhere in the text, not just the whole message
+			if m.pastedText != "" {
+				// Find placeholder pattern like "[61 lines pasted]"
+				placeholderPattern := regexp.MustCompile(`\[\d+ lines pasted\]`)
+				if placeholderPattern.MatchString(value) {
+					value = placeholderPattern.ReplaceAllString(value, m.pastedText)
+				}
 				m.pastedText = "" // clear stored paste
 			}
 			m.input.Reset()
@@ -662,10 +668,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		canType := !m.sidebarFocus && !m.threadPanelFocus
 		canType = canType || (m.isPeeking() && !m.threadFilterActive)
 		if canType {
-			// Clear stored paste text if user modifies the input
-			if m.pastedText != "" && msg.Type == tea.KeyRunes && !msg.Paste {
-				m.pastedText = ""
-			}
+			// Note: We no longer clear pastedText on typing - the placeholder
+			// will be expanded with the original paste content on submit.
+			// This allows users to type context around their paste.
 			cmd = m.safeInputUpdate(msg)
 			m.refreshSuggestions()
 			m.resize()
