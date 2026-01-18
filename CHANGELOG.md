@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Daemon: agents now remain 'idle' (resumable) after clean exit instead of 'offline'
 - Chat: auto-scroll to bottom when navigating to long threads
 - Chat: click-to-copy and click-to-reply targets now accurate (were off by 1-2 lines)
 - Chat: scroll position now preserved when running slash commands (was forcing scroll to bottom)
