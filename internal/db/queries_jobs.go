@@ -64,7 +64,7 @@ func UpdateJobStatus(db *sql.DB, guid string, status types.JobStatus, completedA
 // GetJobWorkers returns all agents that are workers for a given job.
 func GetJobWorkers(db *sql.DB, jobGuid string) ([]types.Agent, error) {
 	rows, err := db.Query(`
-		SELECT guid, agent_id, aap_guid, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral
+		SELECT guid, agent_id, aap_guid, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, presence_changed_at, mention_watermark, reaction_watermark, last_heartbeat, last_session_id, session_mode, job_id, job_idx, is_ephemeral, last_known_input, last_known_output, tokens_updated_at
 		FROM fray_agents
 		WHERE job_id = ?
 		ORDER BY job_idx

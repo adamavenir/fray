@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   session_mode TEXT,                   -- "" (resumed), "n" (new), or 3-char fork prefix
   job_id TEXT,                         -- FK to fray_jobs.guid (null for regular agents)
   job_idx INTEGER,                     -- worker index within job (0-based)
-  is_ephemeral INTEGER NOT NULL DEFAULT 0  -- 1 for job workers
+  is_ephemeral INTEGER NOT NULL DEFAULT 0,  -- 1 for job workers
+  last_known_input INTEGER DEFAULT 0,  -- token watermark: last seen input tokens
+  last_known_output INTEGER DEFAULT 0, -- token watermark: last seen output tokens
+  tokens_updated_at INTEGER            -- when token watermarks were last updated (Unix ms)
 );
 
 -- Agent sessions (daemon-managed)
@@ -835,6 +838,21 @@ func migrateSchema(db DBTX) error {
 		}
 		if !hasColumn(agentColumns, "presence_changed_at") {
 			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN presence_changed_at INTEGER"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "last_known_input") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN last_known_input INTEGER DEFAULT 0"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "last_known_output") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN last_known_output INTEGER DEFAULT 0"); err != nil {
+				return err
+			}
+		}
+		if !hasColumn(agentColumns, "tokens_updated_at") {
+			if _, err := db.Exec("ALTER TABLE fray_agents ADD COLUMN tokens_updated_at INTEGER"); err != nil {
 				return err
 			}
 		}

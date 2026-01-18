@@ -413,6 +413,62 @@ func IsLocked(frayDir string) bool {
 	return syscall.Kill(info.PID, 0) == nil
 }
 
+// isActiveByTokens checks if an agent is actively working based on token activity.
+// This is used for spawn decisions: if tokens changed recently, the agent is active
+// and @mentions should be queued rather than spawning a new session.
+//
+// Returns true if:
+// - Agent has a session AND tokens changed within the idle threshold (5s default)
+// - Agent is generating tokens right now (comparing current vs stored watermarks)
+//
+// This replaces the process-based check (hasProcess) which doesn't survive daemon restarts.
+func (d *Daemon) isActiveByTokens(agent types.Agent) bool {
+	// No session = not active
+	if agent.LastSessionID == nil || *agent.LastSessionID == "" {
+		return false
+	}
+
+	// Get idle threshold (default 5s)
+	idleThresholdMs := int64(5000)
+	if agent.Invoke != nil && agent.Invoke.IdleAfterMs > 0 {
+		idleThresholdMs = agent.Invoke.IdleAfterMs
+	}
+
+	// Try to get current tokens via usage watcher or direct fetch
+	var currentInput, currentOutput int64
+	var hasCurrentTokens bool
+
+	if d.usageWatcher != nil {
+		if usageState := d.usageWatcher.GetSessionUsageSnapshot(*agent.LastSessionID); usageState != nil {
+			currentInput = usageState.InputTokens
+			currentOutput = usageState.OutputTokens
+			hasCurrentTokens = true
+		}
+	}
+
+	// If we have current tokens, compare against stored watermarks
+	if hasCurrentTokens {
+		// If tokens have changed (increased or mini-compaction happened), agent is active
+		tokensChanged := currentInput != agent.LastKnownInput || currentOutput != agent.LastKnownOutput
+		if tokensChanged {
+			// Update watermarks for next check
+			db.UpdateAgentTokenWatermarks(d.database, agent.AgentID, currentInput, currentOutput)
+			return true
+		}
+	}
+
+	// Fall back to time-based check using stored TokensUpdatedAt
+	// If tokens were updated recently, consider agent active
+	if agent.TokensUpdatedAt > 0 {
+		timeSinceUpdate := time.Now().UnixMilli() - agent.TokensUpdatedAt
+		if timeSinceUpdate < idleThresholdMs {
+			return true
+		}
+	}
+
+	return false
+}
+
 // cleanupStalePresence resets stale presence states on daemon startup.
 // Agents may be stuck in active/spawning/prompting states from a previous
 // daemon run that crashed or was killed. Since we have no tracked processes
@@ -745,6 +801,15 @@ func (d *Daemon) checkMentions(ctx context.Context, agent types.Agent) {
 			// Agent has running process - queue regardless of presence state
 			// (presence may be 'idle' if stdout went quiet, but process is still running)
 			d.debugf("    %s: queued (process running)", msg.ID)
+			d.debouncer.QueueMention(agent.AgentID, msg.ID)
+			hasQueued = true
+			continue
+		}
+
+		// Token-based activity check: if agent has recent token activity, they're working
+		// This survives daemon restarts (unlike process map) and uses 5s idle threshold
+		if !isInterrupt && d.isActiveByTokens(agent) {
+			d.debugf("    %s: queued (agent active by tokens)", msg.ID)
 			d.debouncer.QueueMention(agent.AgentID, msg.ID)
 			hasQueued = true
 			continue
@@ -2180,6 +2245,10 @@ func (d *Daemon) updatePresence() {
 				newInput := ccState.TotalInput - proc.BaselineInput
 				newOutput := ccState.TotalOutput - proc.BaselineOutput
 
+				// Update token watermarks for spawn decision detection
+				// This persists across daemon restarts
+				db.UpdateAgentTokenWatermarks(d.database, agentID, ccState.TotalInput, ccState.TotalOutput)
+
 				if newOutput > 0 {
 					// Agent is generating response (new output tokens)
 					if agent.Presence != types.PresencePrompted {
@@ -2218,6 +2287,8 @@ func (d *Daemon) updatePresence() {
 			ccState := GetCCUsageStateForDriver(agent.Invoke.Driver, proc.SessionID)
 			if ccState != nil {
 				currentOutput := ccState.TotalOutput
+				// Update token watermarks for spawn decision detection
+				db.UpdateAgentTokenWatermarks(d.database, agentID, ccState.TotalInput, currentOutput)
 				if currentOutput > proc.LastOutputTokens {
 					// Still generating output - update tracking
 					proc.LastOutputTokens = currentOutput

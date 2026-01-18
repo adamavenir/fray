@@ -70,6 +70,9 @@ type Agent struct {
 	JobID             *string        `json:"job_id,omitempty"`             // FK to fray_jobs.guid (nil for regular agents)
 	JobIdx            *int           `json:"job_idx,omitempty"`            // worker index within job (0-based)
 	IsEphemeral       bool           `json:"is_ephemeral,omitempty"`       // true for job workers
+	LastKnownInput    int64          `json:"last_known_input,omitempty"`   // token watermark: last seen input tokens
+	LastKnownOutput   int64          `json:"last_known_output,omitempty"`  // token watermark: last seen output tokens
+	TokensUpdatedAt   int64          `json:"tokens_updated_at,omitempty"`  // when token watermarks were last updated (Unix ms)
 }
 
 // ReactionEntry represents a single reaction from an agent.
