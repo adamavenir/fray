@@ -20,8 +20,9 @@ import (
 // NewDaemonCmd creates the daemon command.
 func NewDaemonCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "daemon",
-		Short: "Run the agent orchestration daemon",
+		Use:     "daemon",
+		Aliases: []string{"d"},
+		Short:   "Run the agent orchestration daemon",
 		Long: `Start the daemon that watches for @mentions and spawns managed agents.
 
 The daemon:
@@ -252,14 +253,12 @@ Examples:
 
 // NewDaemonStatusCmd creates the daemon status command.
 func NewDaemonStatusCmd() *cobra.Command {
-	var debugMode bool
-
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Check if daemon is running",
-		Long: `Check if the daemon is running and show agent status.
+		Short: "Check daemon status and show agent info",
+		Long: `Check if the daemon is running and show managed agent status.
 
-Use --debug for detailed info about each managed agent including:
+Shows detailed info for each managed agent including:
 - Presence state and when it changed
 - Session ID and mode
 - Token usage (input/output/context %)
@@ -276,14 +275,6 @@ Use --debug for detailed info about each managed agent including:
 
 			// Get all managed agents
 			managedAgents, _ := db.GetManagedAgents(cmdCtx.DB)
-
-			// Separate error agents for backward compat
-			var errorAgents []types.Agent
-			for _, agent := range managedAgents {
-				if agent.Presence == types.PresenceError {
-					errorAgents = append(errorAgents, agent)
-				}
-			}
 
 			if cmdCtx.JSONMode {
 				// Build detailed agent info for JSON output
@@ -338,8 +329,8 @@ Use --debug for detailed info about each managed agent including:
 				fmt.Fprintln(cmd.OutOrStdout(), "Daemon is not running")
 			}
 
-			// Debug mode: show detailed info for all managed agents
-			if debugMode {
+			// Show detailed info for all managed agents
+			if len(managedAgents) > 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "")
 				fmt.Fprintln(cmd.OutOrStdout(), "Managed agents:")
 				now := time.Now()
@@ -430,29 +421,11 @@ Use --debug for detailed info about each managed agent including:
 
 					fmt.Fprintln(cmd.OutOrStdout(), line)
 				}
-				return nil
-			}
-
-			// Show agents in error state with session UUIDs for debugging
-			if len(errorAgents) > 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "")
-				fmt.Fprintln(cmd.OutOrStdout(), "Agents in error state:")
-				for _, agent := range errorAgents {
-					sessionID := "(no session)"
-					if agent.LastSessionID != nil && *agent.LastSessionID != "" {
-						sessionID = *agent.LastSessionID
-					}
-					fmt.Fprintf(cmd.OutOrStdout(), "  @%s: %s\n", agent.AgentID, sessionID)
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), "")
-				fmt.Fprintln(cmd.OutOrStdout(), "To recover: fray back <agent>")
 			}
 
 			return nil
 		},
 	}
-
-	cmd.Flags().BoolVar(&debugMode, "debug", false, "show detailed info for all managed agents")
 
 	return cmd
 }
