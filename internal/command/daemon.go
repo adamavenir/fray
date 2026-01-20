@@ -13,6 +13,7 @@ import (
 	"github.com/adamavenir/fray/internal/daemon"
 	"github.com/adamavenir/fray/internal/db"
 	"github.com/adamavenir/fray/internal/types"
+	"github.com/adamavenir/fray/internal/usage"
 	"github.com/spf13/cobra"
 )
 
@@ -251,9 +252,18 @@ Examples:
 
 // NewDaemonStatusCmd creates the daemon status command.
 func NewDaemonStatusCmd() *cobra.Command {
+	var debugMode bool
+
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Check if daemon is running",
+		Long: `Check if the daemon is running and show agent status.
+
+Use --debug for detailed info about each managed agent including:
+- Presence state and when it changed
+- Session ID and mode
+- Token usage (input/output/context %)
+- Time since last activity`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmdCtx, err := GetContext(cmd)
 			if err != nil {
@@ -264,8 +274,10 @@ func NewDaemonStatusCmd() *cobra.Command {
 			frayDir := cmdCtx.Project.Root + "/.fray"
 			isLocked := daemon.IsLocked(frayDir)
 
-			// Get agents in error state for debugging
+			// Get all managed agents
 			managedAgents, _ := db.GetManagedAgents(cmdCtx.DB)
+
+			// Separate error agents for backward compat
 			var errorAgents []types.Agent
 			for _, agent := range managedAgents {
 				if agent.Presence == types.PresenceError {
@@ -274,20 +286,49 @@ func NewDaemonStatusCmd() *cobra.Command {
 			}
 
 			if cmdCtx.JSONMode {
-				errorInfo := make([]map[string]any, 0, len(errorAgents))
-				for _, agent := range errorAgents {
+				// Build detailed agent info for JSON output
+				agentInfo := make([]map[string]any, 0, len(managedAgents))
+				for _, agent := range managedAgents {
 					info := map[string]any{
 						"agent_id": agent.AgentID,
 						"presence": string(agent.Presence),
 					}
-					if agent.LastSessionID != nil {
-						info["session_id"] = *agent.LastSessionID
+					if agent.PresenceChangedAt != nil {
+						info["presence_changed_at"] = *agent.PresenceChangedAt
+						info["presence_age_sec"] = (time.Now().UnixMilli() - *agent.PresenceChangedAt) / 1000
 					}
-					errorInfo = append(errorInfo, info)
+					if agent.LastSessionID != nil && *agent.LastSessionID != "" {
+						info["session_id"] = *agent.LastSessionID
+						// Get token usage for session
+						if sessionUsage, err := usage.GetSessionUsage(*agent.LastSessionID); err == nil && sessionUsage != nil {
+							info["input_tokens"] = sessionUsage.InputTokens
+							info["output_tokens"] = sessionUsage.OutputTokens
+							info["cached_tokens"] = sessionUsage.CachedTokens
+							info["context_percent"] = sessionUsage.ContextPercent
+							info["context_limit"] = sessionUsage.ContextLimit
+						}
+					}
+					if agent.SessionMode != "" {
+						info["session_mode"] = agent.SessionMode
+					}
+					if agent.LastKnownInput > 0 {
+						info["last_known_input"] = agent.LastKnownInput
+					}
+					if agent.LastKnownOutput > 0 {
+						info["last_known_output"] = agent.LastKnownOutput
+					}
+					if agent.TokensUpdatedAt > 0 {
+						info["tokens_updated_at"] = agent.TokensUpdatedAt
+						info["tokens_age_sec"] = (time.Now().UnixMilli() - agent.TokensUpdatedAt) / 1000
+					}
+					if agent.Invoke != nil {
+						info["driver"] = agent.Invoke.Driver
+					}
+					agentInfo = append(agentInfo, info)
 				}
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-					"running":      isLocked,
-					"error_agents": errorInfo,
+					"running": isLocked,
+					"agents":  agentInfo,
 				})
 			}
 
@@ -295,6 +336,101 @@ func NewDaemonStatusCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), "Daemon is running")
 			} else {
 				fmt.Fprintln(cmd.OutOrStdout(), "Daemon is not running")
+			}
+
+			// Debug mode: show detailed info for all managed agents
+			if debugMode {
+				fmt.Fprintln(cmd.OutOrStdout(), "")
+				fmt.Fprintln(cmd.OutOrStdout(), "Managed agents:")
+				now := time.Now()
+				for _, agent := range managedAgents {
+					// Skip offline agents without sessions unless they're in error
+					if agent.Presence == types.PresenceOffline && agent.LastSessionID == nil && agent.PresenceChangedAt == nil {
+						continue
+					}
+
+					driver := "-"
+					if agent.Invoke != nil {
+						driver = agent.Invoke.Driver
+					}
+
+					// Presence age
+					presenceAge := ""
+					if agent.PresenceChangedAt != nil {
+						age := now.Sub(time.UnixMilli(*agent.PresenceChangedAt))
+						if age < time.Minute {
+							presenceAge = fmt.Sprintf("%ds", int(age.Seconds()))
+						} else if age < time.Hour {
+							presenceAge = fmt.Sprintf("%dm", int(age.Minutes()))
+						} else {
+							presenceAge = fmt.Sprintf("%dh", int(age.Hours()))
+						}
+					}
+
+					// Token info
+					tokenInfo := ""
+					if agent.LastSessionID != nil && *agent.LastSessionID != "" {
+						if sessionUsage, err := usage.GetSessionUsage(*agent.LastSessionID); err == nil && sessionUsage != nil {
+							tokenInfo = fmt.Sprintf("in:%dk out:%dk ctx:%d%%",
+								sessionUsage.InputTokens/1000,
+								sessionUsage.OutputTokens/1000,
+								sessionUsage.ContextPercent)
+						}
+					}
+
+					// Token watermark age
+					watermarkAge := ""
+					if agent.TokensUpdatedAt > 0 {
+						age := now.Sub(time.UnixMilli(agent.TokensUpdatedAt))
+						if age < time.Minute {
+							watermarkAge = fmt.Sprintf("tok:%ds", int(age.Seconds()))
+						} else if age < time.Hour {
+							watermarkAge = fmt.Sprintf("tok:%dm", int(age.Minutes()))
+						} else {
+							watermarkAge = fmt.Sprintf("tok:%dh", int(age.Hours()))
+						}
+					}
+
+					// Session mode
+					sessionMode := ""
+					if agent.SessionMode != "" {
+						sessionMode = fmt.Sprintf("#%s", agent.SessionMode)
+					}
+
+					// Session ID (truncated)
+					sessionID := ""
+					if agent.LastSessionID != nil && *agent.LastSessionID != "" {
+						sid := *agent.LastSessionID
+						if len(sid) > 8 {
+							sessionID = sid[:8]
+						} else {
+							sessionID = sid
+						}
+					}
+
+					// Build output line
+					line := fmt.Sprintf("  @%-12s %-10s %-6s %-6s",
+						agent.AgentID,
+						agent.Presence,
+						driver,
+						presenceAge)
+
+					if sessionID != "" {
+						line += fmt.Sprintf(" sess:%s", sessionID)
+					}
+					if sessionMode != "" {
+						line += fmt.Sprintf(" %s", sessionMode)
+					}
+					if tokenInfo != "" {
+						line += fmt.Sprintf(" %s", tokenInfo)
+					}
+					if watermarkAge != "" {
+						line += fmt.Sprintf(" %s", watermarkAge)
+					}
+
+					fmt.Fprintln(cmd.OutOrStdout(), line)
+				}
+				return nil
 			}
 
 			// Show agents in error state with session UUIDs for debugging
@@ -315,6 +451,8 @@ func NewDaemonStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&debugMode, "debug", false, "show detailed info for all managed agents")
 
 	return cmd
 }
