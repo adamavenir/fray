@@ -212,13 +212,13 @@ func NewInitCmd() *cobra.Command {
 					fmt.Fprintln(out, "")
 					if promptYesNo("Install Claude Code hooks?", true) {
 						fmt.Fprintln(out, "")
-						fmt.Fprintln(out, "Run: fray hook-install")
+						fmt.Fprintln(out, "Run: fray hook-install --safety")
 						fmt.Fprintln(out, "  (restart Claude Code after installing)")
 					}
 				} else {
 					fmt.Fprintln(out, "")
 					fmt.Fprintln(out, "Next steps:")
-					fmt.Fprintln(out, "  fray hook-install              # Install Claude Code hooks")
+					fmt.Fprintln(out, "  fray hook-install --safety     # Install hooks with safety guards")
 					fmt.Fprintln(out, "  fray hook-install --precommit  # Add git pre-commit hook for claims")
 				}
 			}
