@@ -10,6 +10,15 @@ import (
 	"github.com/adamavenir/fray/internal/types"
 )
 
+// normalizeTimestamp converts millisecond timestamps to seconds.
+// Timestamps > 10 trillion are assumed to be in milliseconds and are divided by 1000.
+func normalizeTimestamp(ts int64) int64 {
+	if ts > 10000000000 {
+		return ts / 1000
+	}
+	return ts
+}
+
 func resolveFrayDir(projectPath string) string {
 	if strings.HasSuffix(projectPath, ".db") {
 		return filepath.Dir(projectPath)
@@ -335,7 +344,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 
 		if _, err := db.Exec(insertMessage,
 			message.ID,
-			message.TS,
+			normalizeTimestamp(message.TS),
 			message.ChannelID,
 			home,
 			message.FromAgent,
