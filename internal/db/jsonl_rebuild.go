@@ -242,8 +242,8 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 
 	insertAgent := `
 		INSERT OR REPLACE INTO fray_agents (
-			guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, presence_changed_at, mention_watermark, last_heartbeat, session_mode
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			guid, agent_id, status, purpose, avatar, registered_at, last_seen, left_at, managed, invoke, presence, presence_changed_at, mention_watermark, last_heartbeat, session_mode, last_session_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, agent := range agents {
@@ -293,6 +293,7 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 			agent.MentionWatermark,
 			agent.LastHeartbeat,
 			agent.SessionMode,
+			agent.LastSessionID,
 		); err != nil {
 			return err
 		}

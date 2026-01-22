@@ -1257,6 +1257,54 @@ func TestSessionLifecycle_OfflineAgentStartsFreshSession(t *testing.T) {
 	}
 }
 
+func TestSessionLifecycle_ForkSessionOverridesOffline(t *testing.T) {
+	h := newDaemonHarness(t)
+	defer h.daemon.Stop()
+
+	// Create agent in offline state
+	_ = h.createManagedAgent("alice")
+	// Agent is already offline from createManagedAgent
+
+	h.createAgent("bob", false)
+
+	// Bob mentions alice with fork session syntax: @alice#abc123
+	forkSessionID := "abc123def456"
+	msg := types.Message{
+		TS:           time.Now().Unix(),
+		FromAgent:    "bob",
+		Body:         "@alice#" + forkSessionID + " please help",
+		Type:         types.MessageTypeUser,
+		Home:         "room",
+		Mentions:     []string{"alice"},
+		ForkSessions: map[string]string{"alice": forkSessionID},
+	}
+	if _, err := db.CreateMessage(h.db, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	// Start daemon
+	ctx := context.Background()
+	if err := h.daemon.Start(ctx); err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify spawn occurred
+	spawn := h.mockDriver.LastSpawn()
+	if spawn == nil {
+		t.Fatal("expected spawn record")
+	}
+
+	// Agent passed to driver should have the fork session ID, not nil
+	// This allows the driver to resume that specific session
+	if spawn.Agent.LastSessionID == nil {
+		t.Error("expected LastSessionID to be set from fork session")
+	} else if *spawn.Agent.LastSessionID != forkSessionID {
+		t.Errorf("expected LastSessionID %q, got %q", forkSessionID, *spawn.Agent.LastSessionID)
+	}
+}
+
 func TestSessionLifecycle_BackReactivatesAgent(t *testing.T) {
 	h := newDaemonHarness(t)
 

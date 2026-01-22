@@ -1540,9 +1540,11 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 	// Determine session mode: fork (#XXX), new (#n), or resumed (empty)
 	// Check for fork spawn first: was this agent mentioned with @agent#sessid syntax?
 	var sessionMode string
+	var forkSessionID string
 	triggerMsg, _ := db.GetMessage(d.database, triggerMsgID)
 	if triggerMsg != nil && triggerMsg.ForkSessions != nil {
 		if forkSessID, ok := triggerMsg.ForkSessions[agent.AgentID]; ok && forkSessID != "" {
+			forkSessionID = forkSessID
 			// Fork spawn: use first 3 chars of fork session ID
 			if len(forkSessID) >= 3 {
 				sessionMode = forkSessID[:3]
@@ -1555,8 +1557,13 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 
 	// If agent was offline (from bye), clear session ID so driver starts fresh.
 	// We keep LastSessionID in DB for token usage display, but clear it for spawning.
+	// Exception: if a fork session ID was specified via @agent#sessid, use that instead.
 	isNewSession := false
-	if agent.Presence == types.PresenceOffline {
+	if forkSessionID != "" {
+		// Fork spawn: use the explicitly specified session ID
+		agent.LastSessionID = &forkSessionID
+		d.debugf("  fork spawn: using session %s from mention", forkSessionID)
+	} else if agent.Presence == types.PresenceOffline {
 		d.debugf("  agent was offline, starting fresh session")
 		agent.LastSessionID = nil // Clear locally for driver, DB retains for display
 		isNewSession = true
@@ -1635,7 +1642,15 @@ func (d *Daemon) spawnAgent(ctx context.Context, agent types.Agent, triggerMsgID
 
 	// Store session ID for future resume - this ensures each agent keeps their own session
 	if proc.SessionID != "" {
-		db.UpdateAgentSessionID(d.database, agent.AgentID, proc.SessionID)
+		d.debugf("  storing session ID %s for @%s", proc.SessionID, agent.AgentID)
+		if err := db.UpdateAgentSessionID(d.database, agent.AgentID, proc.SessionID); err != nil {
+			d.debugf("  ERROR storing session ID: %v", err)
+		}
+		// Also persist to JSONL for durability across DB rebuilds
+		db.AppendAgentUpdate(d.project.DBPath, db.AgentUpdateJSONLRecord{
+			AgentID:       agent.AgentID,
+			LastSessionID: &proc.SessionID,
+		})
 	}
 
 	// Store session mode for display in activity panel (#n, #XXX, or empty for resume)
@@ -1755,6 +1770,11 @@ func (d *Daemon) spawnBRBAgent(ctx context.Context, agent types.Agent) error {
 	// Store session ID for future resume
 	if proc.SessionID != "" {
 		db.UpdateAgentSessionID(d.database, agent.AgentID, proc.SessionID)
+		// Also persist to JSONL for durability across DB rebuilds
+		db.AppendAgentUpdate(d.project.DBPath, db.AgentUpdateJSONLRecord{
+			AgentID:       agent.AgentID,
+			LastSessionID: &proc.SessionID,
+		})
 	}
 
 	// Track process

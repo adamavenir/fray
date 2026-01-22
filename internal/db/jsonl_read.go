@@ -726,6 +726,9 @@ func ReadAgents(projectPath string) ([]AgentJSONLRecord, error) {
 			if update.SessionMode != nil {
 				existing.SessionMode = *update.SessionMode
 			}
+			if update.LastSessionID != nil {
+				existing.LastSessionID = update.LastSessionID
+			}
 			agentMap[update.AgentID] = existing
 		case "presence_event":
 			var event PresenceEventJSONLRecord
