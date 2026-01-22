@@ -2280,6 +2280,7 @@ func (d *Daemon) updatePresence() {
 						db.UpdateAgentPresence(d.database, agentID, types.PresencePrompted)
 					}
 					// Initialize token tracking for active state idle detection
+					proc.LastInputTokens = tokenState.TotalInput
 					proc.LastOutputTokens = tokenState.TotalOutput
 					proc.LastTokenCheck = time.Now()
 				} else if newInput > 0 {
@@ -2297,6 +2298,11 @@ func (d *Daemon) updatePresence() {
 			if lastPostTs > proc.StartedAt.UnixMilli() {
 				d.debugf("  @%s: %s→active (fray post detected)", agentID, agent.Presence)
 				db.UpdateAgentPresence(d.database, agentID, types.PresenceActive)
+				// Sync token tracking to current values so we don't immediately trigger idle
+				if tokenState != nil {
+					proc.LastInputTokens = tokenState.TotalInput
+					proc.LastOutputTokens = tokenState.TotalOutput
+				}
 				proc.LastTokenCheck = time.Now() // Reset idle timer
 				continue // Skip spawn timeout check since agent is clearly working
 			}
@@ -2307,19 +2313,30 @@ func (d *Daemon) updatePresence() {
 			}
 
 		case types.PresenceActive:
-			// Poll for idle detection - if output tokens stop increasing, go idle
+			// Check fray post FIRST - if agent posted, reset idle timer before checking idle
+			lastPostTs, _ := db.GetAgentLastPostTime(d.database, agentID)
+			if lastPostTs > proc.LastTokenCheck.UnixMilli() {
+				proc.LastTokenCheck = time.Now()
+			}
+
+			// Poll for idle detection - if tokens stop changing, go idle
+			// Track both input AND output tokens: output = Claude responding, input = tool results
 			tokenState := GetTokenStateForDriver(agent.Invoke.Driver, proc.SessionID)
 			if tokenState != nil {
+				currentInput := tokenState.TotalInput
 				currentOutput := tokenState.TotalOutput
 				// Update token watermarks for spawn decision detection
-				db.UpdateAgentTokenWatermarks(d.database, agentID, tokenState.TotalInput, currentOutput)
-				if currentOutput > proc.LastOutputTokens {
-					// Still generating output - update tracking
+				db.UpdateAgentTokenWatermarks(d.database, agentID, currentInput, currentOutput)
+
+				// Activity detected if EITHER input or output tokens increased
+				// Input increases during tool use (tool results), output increases during response
+				if currentOutput > proc.LastOutputTokens || currentInput > proc.LastInputTokens {
+					proc.LastInputTokens = currentInput
 					proc.LastOutputTokens = currentOutput
 					proc.LastTokenCheck = time.Now()
 				} else if time.Since(proc.LastTokenCheck).Milliseconds() > idleAfter {
-					// No new output tokens for idle_after_ms → idle
-					d.debugf("  @%s: active→idle (no new output tokens for %dms)", agentID, idleAfter)
+					// No token activity for idle_after_ms → idle
+					d.debugf("  @%s: active→idle (no token activity for %dms)", agentID, idleAfter)
 					db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agentID, agent.Presence, types.PresenceIdle, "idle_timeout", "daemon", agent.Status)
 				}
 			} else {
@@ -2329,12 +2346,6 @@ func (d *Daemon) updatePresence() {
 				if time.Since(lastActivity).Milliseconds() > idleAfter {
 					db.UpdateAgentPresenceWithAudit(d.database, d.project.DBPath, agentID, agent.Presence, types.PresenceIdle, "idle_timeout", "daemon", agent.Status)
 				}
-			}
-
-			// Fray post resets idle timer (agent is clearly working)
-			lastPostTs, _ := db.GetAgentLastPostTime(d.database, agentID)
-			if lastPostTs > proc.LastTokenCheck.UnixMilli() {
-				proc.LastTokenCheck = time.Now()
 			}
 
 		case types.PresenceIdle:
