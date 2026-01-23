@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Daemon: agents now remain 'idle' (resumable) after clean exit instead of 'offline'
 - Chat: auto-scroll to bottom when navigating to long threads
 - Chat: click-to-copy and click-to-reply targets now accurate (were off by 1-2 lines)
+- Chat: first line no longer cut off in projects with less content (Bubble Tea renderer bug workaround)
+- Chat: thread panel minimum width increased for better visual balance
 - Chat: scroll position now preserved when running slash commands (was forcing scroll to bottom)
 - Chat: multiline pastes collapsed to `[N lines pasted]` placeholder; placeholder now expands correctly even when user types context around it
 - Token tracking: Claude context now includes cached tokens (was showing 0% when caching active)
