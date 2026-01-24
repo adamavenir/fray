@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"sync"
 	"testing"
 
 	"github.com/adamavenir/fray/internal/types"
@@ -507,6 +509,138 @@ func TestGetSharedMachinesDirs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(dirs, expected) {
 		t.Fatalf("expected %v, got %v", expected, dirs)
+	}
+}
+
+func TestGetNextSequenceIncrements(t *testing.T) {
+	projectDir := t.TempDir()
+	localDir := filepath.Join(projectDir, ".fray", "local")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "machine-id"), []byte(`{"id":"laptop","seq":0,"created_at":123}`), 0o644); err != nil {
+		t.Fatalf("write machine-id: %v", err)
+	}
+
+	first, err := GetNextSequence(projectDir)
+	if err != nil {
+		t.Fatalf("get next seq: %v", err)
+	}
+	if first != 1 {
+		t.Fatalf("expected seq 1, got %d", first)
+	}
+	second, err := GetNextSequence(projectDir)
+	if err != nil {
+		t.Fatalf("get next seq: %v", err)
+	}
+	if second != 2 {
+		t.Fatalf("expected seq 2, got %d", second)
+	}
+
+	data, err := os.ReadFile(filepath.Join(localDir, "machine-id"))
+	if err != nil {
+		t.Fatalf("read machine-id: %v", err)
+	}
+	var record machineIDFile
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("decode machine-id: %v", err)
+	}
+	if record.Seq != 2 {
+		t.Fatalf("expected seq persisted as 2, got %d", record.Seq)
+	}
+}
+
+func TestGetNextSequenceConcurrent(t *testing.T) {
+	projectDir := t.TempDir()
+	localDir := filepath.Join(projectDir, ".fray", "local")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "machine-id"), []byte(`{"id":"laptop","seq":0,"created_at":123}`), 0o644); err != nil {
+		t.Fatalf("write machine-id: %v", err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan int64, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			seq, err := GetNextSequence(projectDir)
+			if err != nil {
+				t.Errorf("get next seq: %v", err)
+				return
+			}
+			results <- seq
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	var got []int64
+	for seq := range results {
+		got = append(got, seq)
+	}
+	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Fatalf("expected seqs [1 2], got %v", got)
+	}
+}
+
+func TestGetNextSequenceRecoversFromMissingSeq(t *testing.T) {
+	projectDir := t.TempDir()
+	localDir := filepath.Join(projectDir, ".fray", "local")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "machine-id"), []byte(`{"id":"laptop","created_at":123}`), 0o644); err != nil {
+		t.Fatalf("write machine-id: %v", err)
+	}
+
+	machineDir := filepath.Join(projectDir, ".fray", "shared", "machines", "laptop")
+	if err := os.MkdirAll(machineDir, 0o755); err != nil {
+		t.Fatalf("mkdir machine: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(machineDir, "messages.jsonl"), []byte("{\"seq\":4}\n{\"seq\":2}\n"), 0o644); err != nil {
+		t.Fatalf("write jsonl: %v", err)
+	}
+
+	seq, err := GetNextSequence(projectDir)
+	if err != nil {
+		t.Fatalf("get next seq: %v", err)
+	}
+	if seq != 5 {
+		t.Fatalf("expected seq 5, got %d", seq)
+	}
+}
+
+func TestGetNextSequenceRecoversFromCorruptFile(t *testing.T) {
+	projectDir := t.TempDir()
+	localDir := filepath.Join(projectDir, ".fray", "local")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "machine-id"), []byte(`{"id":"laptop","seq":`), 0o644); err != nil {
+		t.Fatalf("write machine-id: %v", err)
+	}
+
+	machineDir := filepath.Join(projectDir, ".fray", "shared", "machines", "laptop")
+	if err := os.MkdirAll(machineDir, 0o755); err != nil {
+		t.Fatalf("mkdir machine: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(machineDir, "threads.jsonl"), []byte("{\"seq\":9}\n"), 0o644); err != nil {
+		t.Fatalf("write jsonl: %v", err)
+	}
+
+	seq, err := GetNextSequence(projectDir)
+	if err != nil {
+		t.Fatalf("get next seq: %v", err)
+	}
+	if seq != 10 {
+		t.Fatalf("expected seq 10, got %d", seq)
 	}
 }
 
