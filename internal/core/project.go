@@ -102,7 +102,7 @@ func InitProject(dir string, force bool) (Project, error) {
 // EnsureFrayGitignore ensures .fray/.gitignore contains sqlite ignores.
 func EnsureFrayGitignore(frayDir string) {
 	gitignore := filepath.Join(frayDir, ".gitignore")
-	entries := []string{"*.db", "*.db-wal", "*.db-shm"}
+	entries := []string{"*.db", "*.db-wal", "*.db-shm", "local/"}
 
 	data, err := os.ReadFile(gitignore)
 	if err != nil {
