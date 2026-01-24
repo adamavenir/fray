@@ -79,6 +79,9 @@ func UpdateProjectConfig(projectPath string, updates ProjectConfig) (*ProjectCon
 			existing.MachineAliases[id] = alias
 		}
 	}
+	if updates.Sync != nil {
+		existing.Sync = updates.Sync
+	}
 
 	if updates.Version != 0 {
 		existing.Version = updates.Version

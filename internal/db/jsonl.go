@@ -525,6 +525,12 @@ type ProjectKnownAgent struct {
 	Nicks       []string `json:"nicks,omitempty"`
 }
 
+// ProjectSyncConfig stores sync backend configuration for shared storage.
+type ProjectSyncConfig struct {
+	Backend string `json:"backend,omitempty"`
+	Path    string `json:"path,omitempty"`
+}
+
 // ProjectConfig represents the per-project config file.
 type ProjectConfig struct {
 	Version        int                          `json:"version"`
@@ -534,6 +540,7 @@ type ProjectConfig struct {
 	CreatedAt      string                       `json:"created_at,omitempty"`
 	KnownAgents    map[string]ProjectKnownAgent `json:"known_agents,omitempty"`
 	MachineAliases map[string]string            `json:"machine_aliases,omitempty"`
+	Sync           *ProjectSyncConfig           `json:"sync,omitempty"`
 }
 
 // JobCreateJSONLRecord represents a job creation event in JSONL.

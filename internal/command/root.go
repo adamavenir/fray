@@ -101,6 +101,7 @@ func NewRootCmd(version string) *cobra.Command {
 		NewFilterCmd(),
 		NewLsCmd(),
 		NewMigrateCmd(),
+		NewSyncCmd(),
 		NewRoleCmd(),
 		NewRolesCmd(),
 		NewCollisionsCmd(),
