@@ -478,6 +478,7 @@ type ProjectConfig struct {
 	ChannelName    string                       `json:"channel_name,omitempty"`
 	CreatedAt      string                       `json:"created_at,omitempty"`
 	KnownAgents    map[string]ProjectKnownAgent `json:"known_agents,omitempty"`
+	MachineAliases map[string]string            `json:"machine_aliases,omitempty"`
 }
 
 // JobCreateJSONLRecord represents a job creation event in JSONL.

@@ -2,6 +2,7 @@ package core
 
 import (
 	"regexp"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -24,8 +25,8 @@ var (
 
 // MentionResult holds extracted mentions, fork sessions, and interrupts.
 type MentionResult struct {
-	Mentions     []string                      // Mention targets without @ prefix
-	ForkSessions map[string]string             // Agent → session ID for @agent#sessid spawns
+	Mentions     []string                       // Mention targets without @ prefix
+	ForkSessions map[string]string              // Agent → session ID for @agent#sessid spawns
 	Interrupts   map[string]types.InterruptInfo // Agent → interrupt info for !@agent patterns
 }
 
@@ -289,4 +290,86 @@ func ParseJobWorkerName(agentID string) (baseAgent, jobSuffix string, workerIdx 
 		idx = idx*10 + int(c-'0')
 	}
 	return match[1], match[2], idx, true
+}
+
+// EncodeMention adds machine scope to mentions at write time.
+func EncodeMention(mention, localMachine string, machineAliases map[string]string) string {
+	if mention == "" || mention == "all" {
+		return mention
+	}
+	agent, machine, hasMachine := splitMention(mention)
+	if !hasMachine {
+		if localMachine == "" {
+			return mention
+		}
+		return mention + "@" + localMachine
+	}
+	if machine == "all" {
+		return mention
+	}
+	alias := ResolveMachineAlias(machine, machineAliases)
+	return agent + "@" + alias
+}
+
+// EncodeMentions applies EncodeMention to a slice of mentions.
+func EncodeMentions(mentions []string, localMachine string, machineAliases map[string]string) []string {
+	if len(mentions) == 0 {
+		return mentions
+	}
+	encoded := make([]string, 0, len(mentions))
+	for _, mention := range mentions {
+		encoded = append(encoded, EncodeMention(mention, localMachine, machineAliases))
+	}
+	return encoded
+}
+
+// EncodeForkSessions rewrites fork session keys with machine-scoped mentions.
+func EncodeForkSessions(forkSessions map[string]string, localMachine string, machineAliases map[string]string) map[string]string {
+	if len(forkSessions) == 0 {
+		return forkSessions
+	}
+	encoded := make(map[string]string, len(forkSessions))
+	for agent, session := range forkSessions {
+		encoded[EncodeMention(agent, localMachine, machineAliases)] = session
+	}
+	return encoded
+}
+
+// ResolveMachineAlias returns the canonical machine ID after alias resolution.
+func ResolveMachineAlias(machineID string, machineAliases map[string]string) string {
+	if machineAliases == nil {
+		return machineID
+	}
+	if alias, ok := machineAliases[machineID]; ok {
+		if alias == "" {
+			return machineID
+		}
+		return alias
+	}
+	return machineID
+}
+
+// IsRetiredMachine reports whether a machine alias entry explicitly retires the machine.
+func IsRetiredMachine(machineID string, machineAliases map[string]string) bool {
+	if machineAliases == nil {
+		return false
+	}
+	alias, ok := machineAliases[machineID]
+	return ok && alias == ""
+}
+
+func splitMention(mention string) (agent string, machine string, hasMachine bool) {
+	if mention == "" {
+		return "", "", false
+	}
+	idx := strings.LastIndex(mention, "@")
+	if idx == -1 {
+		return mention, "", false
+	}
+	agent = mention[:idx]
+	machine = mention[idx+1:]
+	if agent == "" || machine == "" {
+		return mention, "", false
+	}
+	return agent, machine, true
 }

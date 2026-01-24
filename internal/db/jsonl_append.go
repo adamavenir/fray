@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/types"
 )
 
@@ -97,6 +98,14 @@ func AppendMessage(projectPath string, message types.Message) error {
 	}
 
 	if IsMultiMachineMode(projectPath) {
+		config, err := ReadProjectConfig(projectPath)
+		if err != nil {
+			return err
+		}
+		var aliases map[string]string
+		if config != nil {
+			aliases = config.MachineAliases
+		}
 		origin := GetLocalMachineID(projectPath)
 		if origin == "" {
 			return fmt.Errorf("local machine id not set")
@@ -107,6 +116,8 @@ func AppendMessage(projectPath string, message types.Message) error {
 		}
 		record.Origin = origin
 		record.Seq = seq
+		record.Mentions = core.EncodeMentions(record.Mentions, origin, aliases)
+		record.ForkSessions = core.EncodeForkSessions(record.ForkSessions, origin, aliases)
 	}
 
 	filePath, err := sharedMachinePath(projectPath, messagesFile)

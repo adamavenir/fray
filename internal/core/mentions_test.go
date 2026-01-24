@@ -82,12 +82,12 @@ func TestExtractMentionsWithWorkerIDs(t *testing.T) {
 
 func TestParseJobWorkerName(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         string
-		wantBase      string
-		wantSuffix    string
-		wantIdx       int
-		wantIsWorker  bool
+		name         string
+		input        string
+		wantBase     string
+		wantSuffix   string
+		wantIdx      int
+		wantIsWorker bool
 	}{
 		{
 			name:         "regular agent",
@@ -165,52 +165,52 @@ func TestExtractInterruptSyntax(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		body           string
-		expectAgents   []string
-		expectDouble   map[string]bool
-		expectNoSpawn  map[string]bool
+		name          string
+		body          string
+		expectAgents  []string
+		expectDouble  map[string]bool
+		expectNoSpawn map[string]bool
 	}{
 		{
-			name:         "single interrupt",
-			body:         "!@alice need your help",
-			expectAgents: []string{"alice"},
-			expectDouble: map[string]bool{"alice": false},
+			name:          "single interrupt",
+			body:          "!@alice need your help",
+			expectAgents:  []string{"alice"},
+			expectDouble:  map[string]bool{"alice": false},
 			expectNoSpawn: map[string]bool{"alice": false},
 		},
 		{
-			name:         "double interrupt fresh start",
-			body:         "!!@bob start fresh",
-			expectAgents: []string{"bob"},
-			expectDouble: map[string]bool{"bob": true},
+			name:          "double interrupt fresh start",
+			body:          "!!@bob start fresh",
+			expectAgents:  []string{"bob"},
+			expectDouble:  map[string]bool{"bob": true},
 			expectNoSpawn: map[string]bool{"bob": false},
 		},
 		{
-			name:         "interrupt no spawn",
-			body:         "!@alice! stop now",
-			expectAgents: []string{"alice"},
-			expectDouble: map[string]bool{"alice": false},
+			name:          "interrupt no spawn",
+			body:          "!@alice! stop now",
+			expectAgents:  []string{"alice"},
+			expectDouble:  map[string]bool{"alice": false},
 			expectNoSpawn: map[string]bool{"alice": true},
 		},
 		{
-			name:         "double interrupt no spawn",
-			body:         "!!@bob! force end",
-			expectAgents: []string{"bob"},
-			expectDouble: map[string]bool{"bob": true},
+			name:          "double interrupt no spawn",
+			body:          "!!@bob! force end",
+			expectAgents:  []string{"bob"},
+			expectDouble:  map[string]bool{"bob": true},
 			expectNoSpawn: map[string]bool{"bob": true},
 		},
 		{
-			name:         "multiple interrupts",
-			body:         "!@alice and !!@bob!",
-			expectAgents: []string{"alice", "bob"},
-			expectDouble: map[string]bool{"alice": false, "bob": true},
+			name:          "multiple interrupts",
+			body:          "!@alice and !!@bob!",
+			expectAgents:  []string{"alice", "bob"},
+			expectDouble:  map[string]bool{"alice": false, "bob": true},
 			expectNoSpawn: map[string]bool{"alice": false, "bob": true},
 		},
 		{
-			name:         "mixed regular and interrupt",
-			body:         "@alice regular mention and !@bob interrupt",
-			expectAgents: []string{"alice", "bob"},
-			expectDouble: map[string]bool{"bob": false},
+			name:          "mixed regular and interrupt",
+			body:          "@alice regular mention and !@bob interrupt",
+			expectAgents:  []string{"alice", "bob"},
+			expectDouble:  map[string]bool{"bob": false},
 			expectNoSpawn: map[string]bool{"bob": false},
 		},
 	}
@@ -255,5 +255,35 @@ func TestExtractInterruptSyntax(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEncodeMentionAddsMachine(t *testing.T) {
+	encoded := EncodeMention("opus", "laptop", nil)
+	if encoded != "opus@laptop" {
+		t.Fatalf("expected opus@laptop, got %s", encoded)
+	}
+}
+
+func TestEncodeMentionPreservesExplicitMachine(t *testing.T) {
+	encoded := EncodeMention("opus@server", "laptop", nil)
+	if encoded != "opus@server" {
+		t.Fatalf("expected opus@server, got %s", encoded)
+	}
+}
+
+func TestEncodeMentionResolvesAlias(t *testing.T) {
+	aliases := map[string]string{"old-laptop": "new-laptop"}
+	encoded := EncodeMention("opus@old-laptop", "laptop", aliases)
+	if encoded != "opus@new-laptop" {
+		t.Fatalf("expected opus@new-laptop, got %s", encoded)
+	}
+}
+
+func TestEncodeMentionRetiredMachine(t *testing.T) {
+	aliases := map[string]string{"retired": ""}
+	encoded := EncodeMention("opus@retired", "laptop", aliases)
+	if encoded != "opus@retired" {
+		t.Fatalf("expected opus@retired, got %s", encoded)
 	}
 }

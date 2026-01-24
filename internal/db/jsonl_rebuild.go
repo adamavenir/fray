@@ -67,6 +67,15 @@ func UpdateProjectConfig(projectPath string, updates ProjectConfig) (*ProjectCon
 		existing.KnownAgents[id] = mergeKnownAgent(prior, agent)
 	}
 
+	if updates.MachineAliases != nil {
+		if existing.MachineAliases == nil {
+			existing.MachineAliases = map[string]string{}
+		}
+		for id, alias := range updates.MachineAliases {
+			existing.MachineAliases[id] = alias
+		}
+	}
+
 	if updates.Version != 0 {
 		existing.Version = updates.Version
 	}
