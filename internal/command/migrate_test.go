@@ -139,4 +139,34 @@ func TestMigrateMultiMachineCommand(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(frayDir, "local", "runtime.jsonl")); err != nil {
 		t.Fatalf("missing runtime.jsonl: %v", err)
 	}
+
+	agentStateLines, err := readJSONLLines(filepath.Join(machineDir, "agent-state.jsonl"))
+	if err != nil {
+		t.Fatalf("read agent-state: %v", err)
+	}
+	foundDescriptor := false
+	for _, line := range agentStateLines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+		if envelope.Type != "agent_descriptor" {
+			continue
+		}
+		var record struct {
+			AgentID string `json:"agent_id"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			continue
+		}
+		if record.AgentID == "alice" {
+			foundDescriptor = true
+			break
+		}
+	}
+	if !foundDescriptor {
+		t.Fatalf("expected agent_descriptor for alice")
+	}
 }

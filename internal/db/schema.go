@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS fray_agents (
   tokens_updated_at INTEGER            -- when token watermarks were last updated (Unix ms)
 );
 
+-- Agent descriptors (shared identity hints for onboarding)
+CREATE TABLE IF NOT EXISTS fray_agent_descriptors (
+  agent_id TEXT PRIMARY KEY,
+  display_name TEXT,
+  capabilities TEXT,                   -- JSON array
+  updated_at INTEGER
+);
+
 -- Agent sessions (daemon-managed)
 CREATE TABLE IF NOT EXISTS fray_agent_sessions (
   session_id TEXT PRIMARY KEY,

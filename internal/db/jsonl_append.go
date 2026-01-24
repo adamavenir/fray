@@ -126,6 +126,9 @@ func AppendMessage(projectPath string, message types.Message) error {
 		if origin == "" {
 			return fmt.Errorf("local machine id not set")
 		}
+		if err := ensureAgentDescriptor(projectPath, message.FromAgent, message.TS); err != nil {
+			return err
+		}
 		seq, err := GetNextSequence(projectPath)
 		if err != nil {
 			return err
@@ -683,6 +686,82 @@ func AppendCursorClear(projectPath, agentID, home string, clearedAt int64) error
 	}
 	touchDatabaseFile(projectPath)
 	return nil
+}
+
+// AppendAgentDescriptor appends an agent descriptor event to JSONL.
+func AppendAgentDescriptor(projectPath, agentID string, displayName *string, capabilities []string, ts int64) error {
+	if ts == 0 {
+		ts = time.Now().Unix()
+	}
+	record := AgentDescriptorJSONLRecord{
+		Type:         "agent_descriptor",
+		AgentID:      agentID,
+		DisplayName:  displayName,
+		Capabilities: capabilities,
+		TS:           ts,
+	}
+	if IsMultiMachineMode(projectPath) {
+		seq, err := GetNextSequence(projectPath)
+		if err != nil {
+			return err
+		}
+		record.Seq = seq
+	}
+	filePath, err := agentStatePath(projectPath)
+	if err != nil {
+		return err
+	}
+	if err := appendSharedJSONLine(projectPath, filePath, record); err != nil {
+		return err
+	}
+	touchDatabaseFile(projectPath)
+	return nil
+}
+
+func ensureAgentDescriptor(projectPath, agentID string, ts int64) error {
+	if !IsMultiMachineMode(projectPath) || agentID == "" {
+		return nil
+	}
+	exists, err := agentDescriptorExists(projectPath, agentID)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return AppendAgentDescriptor(projectPath, agentID, nil, nil, ts)
+}
+
+func agentDescriptorExists(projectPath, agentID string) (bool, error) {
+	filePath, err := agentStatePath(projectPath)
+	if err != nil {
+		return false, err
+	}
+	lines, err := readJSONLLines(filePath)
+	if err != nil {
+		return false, err
+	}
+	for _, line := range lines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+		if envelope.Type != "agent_descriptor" {
+			continue
+		}
+		var record struct {
+			AgentID string `json:"agent_id"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			continue
+		}
+		if record.AgentID == agentID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // AppendReaction appends a reaction record to JSONL.

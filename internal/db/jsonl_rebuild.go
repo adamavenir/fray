@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/adamavenir/fray/internal/core"
 	"github.com/adamavenir/fray/internal/types"
@@ -192,8 +193,17 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 	if err != nil {
 		return err
 	}
+	var descriptors []AgentDescriptor
 	if IsMultiMachineMode(projectPath) {
+		descriptors, err = ReadAgentDescriptors(projectPath)
+		if err != nil {
+			return err
+		}
 		agents, err = mergeAgentsFromMessages(agents, messages)
+		if err != nil {
+			return err
+		}
+		agents, err = mergeAgentsFromDescriptors(agents, descriptors)
 		if err != nil {
 			return err
 		}
@@ -229,6 +239,9 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS fray_agents"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS fray_agent_descriptors"); err != nil {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS fray_read_receipts"); err != nil {
@@ -274,6 +287,36 @@ func RebuildDatabaseFromJSONL(db DBTX, projectPath string) error {
 		}
 		if config.ChannelName != "" {
 			if _, err := db.Exec("INSERT OR REPLACE INTO fray_config (key, value) VALUES (?, ?)", "channel_name", config.ChannelName); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(descriptors) > 0 {
+		insertDescriptor := `
+			INSERT OR REPLACE INTO fray_agent_descriptors (
+				agent_id, display_name, capabilities, updated_at
+			) VALUES (?, ?, ?, ?)
+		`
+		for _, descriptor := range descriptors {
+			if descriptor.AgentID == "" {
+				continue
+			}
+			var capabilitiesJSON *string
+			if len(descriptor.Capabilities) > 0 {
+				data, err := json.Marshal(descriptor.Capabilities)
+				if err != nil {
+					return err
+				}
+				s := string(data)
+				capabilitiesJSON = &s
+			}
+			if _, err := db.Exec(insertDescriptor,
+				descriptor.AgentID,
+				descriptor.DisplayName,
+				capabilitiesJSON,
+				descriptor.TS,
+			); err != nil {
 				return err
 			}
 		}
@@ -811,6 +854,51 @@ func mergeAgentsFromMessages(agents []AgentJSONLRecord, messages []MessageJSONLR
 			RegisteredAt: stat.firstSeen,
 			LastSeen:     stat.lastSeen,
 		})
+	}
+
+	return agents, nil
+}
+
+func mergeAgentsFromDescriptors(agents []AgentJSONLRecord, descriptors []AgentDescriptor) ([]AgentJSONLRecord, error) {
+	if len(descriptors) == 0 {
+		return agents, nil
+	}
+	existing := make(map[string]bool, len(agents))
+	for _, agent := range agents {
+		if agent.AgentID == "" {
+			continue
+		}
+		existing[agent.AgentID] = true
+	}
+
+	sort.Slice(descriptors, func(i, j int) bool {
+		return descriptors[i].AgentID < descriptors[j].AgentID
+	})
+
+	for _, descriptor := range descriptors {
+		if descriptor.AgentID == "" {
+			continue
+		}
+		if existing[descriptor.AgentID] {
+			continue
+		}
+		guid, err := core.GenerateGUID("usr")
+		if err != nil {
+			return nil, err
+		}
+		ts := normalizeTimestamp(descriptor.TS)
+		if ts == 0 {
+			ts = time.Now().Unix()
+		}
+		agents = append(agents, AgentJSONLRecord{
+			Type:         "agent",
+			ID:           guid,
+			Name:         descriptor.AgentID,
+			AgentID:      descriptor.AgentID,
+			RegisteredAt: ts,
+			LastSeen:     ts,
+		})
+		existing[descriptor.AgentID] = true
 	}
 
 	return agents, nil

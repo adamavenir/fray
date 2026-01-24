@@ -342,6 +342,16 @@ type PresenceEventJSONLRecord struct {
 	TS      int64   `json:"ts"`               // Unix timestamp of the change
 }
 
+// AgentDescriptorJSONLRecord represents a shared agent descriptor event.
+type AgentDescriptorJSONLRecord struct {
+	Type         string   `json:"type"` // "agent_descriptor"
+	AgentID      string   `json:"agent_id"`
+	DisplayName  *string  `json:"display_name,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Seq          int64    `json:"seq,omitempty"`
+	TS           int64    `json:"ts"`
+}
+
 // GhostCursorJSONLRecord represents a ghost cursor event in JSONL.
 type GhostCursorJSONLRecord struct {
 	Type        string `json:"type"` // "ghost_cursor"

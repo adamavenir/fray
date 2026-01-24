@@ -87,8 +87,8 @@ func TestAppendMessageMultiMachineRouting(t *testing.T) {
 	if record.Origin != "laptop" {
 		t.Fatalf("expected origin laptop, got %s", record.Origin)
 	}
-	if record.Seq != 1 {
-		t.Fatalf("expected seq 1, got %d", record.Seq)
+	if record.Seq != 2 {
+		t.Fatalf("expected seq 2, got %d", record.Seq)
 	}
 }
 

@@ -85,6 +85,9 @@ func migrateMultiMachine(cmd *cobra.Command, project *core.Project) error {
 			return writeCommandError(cmd, err)
 		}
 	}
+	if err := appendAgentDescriptorsFromMessages(filepath.Join(machineDir, legacyMessagesFile), filepath.Join(machineDir, agentStateFileName)); err != nil {
+		return writeCommandError(cmd, err)
+	}
 
 	machineRecord := map[string]any{
 		"id":         machineID,
@@ -201,6 +204,90 @@ func promptMachineID(projectPath, defaultID string) (string, error) {
 	}
 }
 
+func appendAgentDescriptorsFromMessages(messagesPath, agentStatePath string) error {
+	lines, err := readJSONLLines(messagesPath)
+	if err != nil || len(lines) == 0 {
+		return err
+	}
+
+	existingLines, err := readJSONLLines(agentStatePath)
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]bool)
+	for _, line := range existingLines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+		if envelope.Type != "agent_descriptor" {
+			continue
+		}
+		var record struct {
+			AgentID string `json:"agent_id"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			continue
+		}
+		if record.AgentID != "" {
+			existing[record.AgentID] = true
+		}
+	}
+
+	agents := make(map[string]int64)
+	for _, line := range lines {
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			continue
+		}
+		if envelope.Type != "message" {
+			continue
+		}
+		var record struct {
+			FromAgent string `json:"from_agent"`
+			TS        int64  `json:"ts"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			continue
+		}
+		if record.FromAgent == "" {
+			continue
+		}
+		if existingTS, ok := agents[record.FromAgent]; !ok || (record.TS != 0 && record.TS < existingTS) {
+			agents[record.FromAgent] = record.TS
+		}
+	}
+
+	if len(agents) == 0 {
+		return nil
+	}
+
+	for agentID, ts := range agents {
+		if existing[agentID] {
+			continue
+		}
+		if ts == 0 {
+			ts = time.Now().Unix()
+		}
+		record := db.AgentDescriptorJSONLRecord{
+			Type:    "agent_descriptor",
+			AgentID: agentID,
+			TS:      ts,
+		}
+		data, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		existingLines = append(existingLines, string(data))
+	}
+
+	return writeJSONLLines(agentStatePath, existingLines)
+}
+
 func splitAgentsJSONL(path string) ([]string, []string, error) {
 	lines, err := readJSONLLines(path)
 	if err != nil {
@@ -211,13 +298,17 @@ func splitAgentsJSONL(path string) ([]string, []string, error) {
 	}
 
 	agentStateTypes := map[string]bool{
-		"ghost_cursor": true,
-		"agent_fave":   true,
-		"agent_unfave": true,
-		"role_hold":    true,
-		"role_drop":    true,
-		"role_play":    true,
-		"role_stop":    true,
+		"agent_descriptor": true,
+		"ghost_cursor":     true,
+		"cursor_clear":     true,
+		"agent_fave":       true,
+		"agent_unfave":     true,
+		"fave_remove":      true,
+		"role_hold":        true,
+		"role_drop":        true,
+		"role_release":     true,
+		"role_play":        true,
+		"role_stop":        true,
 	}
 
 	var runtimeLines []string
