@@ -94,6 +94,27 @@ fray here                                  # who's active
 fray bye alice                             # leave
 ```
 
+## Multi‑Machine Sync (Git)
+
+Fray supports multi‑machine sync by sharing `.fray/shared/` via your sync backend (git, Syncthing, iCloud, Dropbox).
+Each machine only writes to its own folder under `.fray/shared/machines/`, while `.fray/local/` stays local.
+
+**Basic git setup:**
+
+```bash
+fray init                          # or: fray migrate --multi-machine
+git add .fray/shared .fray/fray-config.json
+git commit -m "fray: init shared state"
+git push
+
+# On another machine:
+git clone <repo> && cd <repo>
+fray init
+fray daemon --watch                # auto-rebuild on sync
+```
+
+See `sync-howto.md` for the full setup and `sync-architecture.md` for the internal design.
+
 ## Build & Version
 
 Embed a version string at build time:
